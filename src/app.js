@@ -6,7 +6,7 @@
 import { mountSplash, navigateAfterAuth } from './screens/splash.js';
 import { mountProfileSetup } from './screens/profileSetup.js';
 import { consumeOAuthReturn, consumeQrGuestParams, decodeJWT, getCurrentUser } from './services/auth.js';
-import { connectQrGuestSocket, emitRaceJoin, sendTap } from './services/socket.js';
+import { connectQrGuestSocket, emitRaceJoin, ensureSocket, sendTap } from './services/socket.js';
 import { showAppToast } from './services/toast.js';
 import { mountLobby } from './screens/lobby.js';
 import { mountTerrainSelect } from './screens/terrainSelect.js';
@@ -338,6 +338,7 @@ function boot() {
     appState.user = u;
     console.log('[dallyeori] app.js boot → JWT 세션 복원');
     navigateAfterAuth(api);
+    ensureSocket();
   } else {
     console.log('[dallyeori] app.js boot → splash');
     navigate('splash');
