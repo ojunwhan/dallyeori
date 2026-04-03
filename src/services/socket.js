@@ -159,6 +159,7 @@ export function ensureSocket() {
       const u = socketUrl();
       console.log('[dallyeori/socket] connected →', u || window.location.origin);
     }
+    import('./chat.js').then((m) => m.setupChatSocketListener());
   });
   return gameSocket;
 }
