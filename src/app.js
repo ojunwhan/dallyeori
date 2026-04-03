@@ -26,6 +26,7 @@ import { mountRanking } from './screens/ranking.js';
 import { mountRaceHistory } from './screens/raceHistory.js';
 import { mountRaceV3Game } from './raceV3Inline.js';
 import { saveRaceResult } from './services/raceHistory.js';
+import { setupChatSocketListener } from './services/chat.js';
 import { DUCKS_NINE } from './constants.js';
 
 function duckDisplayNameById(id) {
@@ -236,8 +237,11 @@ function onRaceFinishPayload(d) {
   if (!appState.qrGuestOneShot) {
     saveRaceResult(appState, normalized, appState.lastOpponent);
   }
-  removeRaceMount();
-  navigate('result', normalized);
+  // 경주 종료 연출 시간 확보 (2초)
+  setTimeout(() => {
+    removeRaceMount();
+    navigate('result', normalized);
+  }, 2000);
 }
 
 const raceFinishChannel = new BroadcastChannel(RACE_FINISH_BC);
@@ -334,6 +338,8 @@ function boot() {
     appState.user = u;
     console.log('[dallyeori] app.js boot → JWT 세션 복원');
     navigateAfterAuth(api);
+    // 채팅 수신 리스너 (로그인 유저만)
+    setTimeout(() => setupChatSocketListener(), 1500);
   } else {
     console.log('[dallyeori] app.js boot → splash');
     navigate('splash');

@@ -4,6 +4,7 @@
 
 import { getMockUser } from './mockUsers.js';
 import { getGameSocket } from './socket.js';
+import { showAppToast } from './toast.js';
 
 const MAX_MSG = 100;
 
@@ -215,15 +216,21 @@ export function sendMessage(uid, targetId, text, opts) {
   return { ok: true };
 }
 
-let chatListenerAttached = false;
+/** @type {import('socket.io-client').Socket | null} */
+let chatListenerSocket = null;
+/** @type {((msg: object) => void) | null} */
+let chatReceiveHandler = null;
 
 export function setupChatSocketListener() {
-  if (chatListenerAttached) return;
   const sock = getGameSocket();
   if (!sock) return;
-  chatListenerAttached = true;
+  if (chatListenerSocket === sock) return;
+  if (chatListenerSocket && chatReceiveHandler) {
+    chatListenerSocket.off('receiveChat', chatReceiveHandler);
+  }
+  chatListenerSocket = sock;
 
-  sock.on('receiveChat', (msg) => {
+  chatReceiveHandler = (msg) => {
     if (!msg || !msg.fromId || !msg.toId || !msg.text) return;
     const myUid = msg.toId;
     const peerId = msg.fromId;
@@ -233,7 +240,22 @@ export function setupChatSocketListener() {
     writeConv(myUid, peerId, arr);
     bumpMeta(myUid, peerId, msg.translatedText || msg.text, true);
     window.dispatchEvent(new CustomEvent('dallyeori-chat-update', { detail: { peerId } }));
-  });
+    showAppToast('💬 새 메시지가 왔어요');
+  };
+  sock.on('receiveChat', chatReceiveHandler);
+}
+
+/**
+ * @param {string | undefined | null} uid
+ */
+export function getTotalUnreadCount(uid) {
+  if (!uid) return 0;
+  const meta = readMeta(uid);
+  let total = 0;
+  for (const key of Object.keys(meta)) {
+    total += meta[key].unread || 0;
+  }
+  return total;
 }
 
 /**

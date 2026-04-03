@@ -7,6 +7,7 @@ import { DUCKS_NINE } from '../constants.js';
 import { getBalance } from '../services/hearts.js';
 import { getNewFriendRejectNotifCount } from '../services/friends.js';
 import { getNewLikesCount } from '../services/likes.js';
+import { getTotalUnreadCount } from '../services/chat.js';
 
 /** @param {string | null | undefined} id */
 function duckById(id) {
@@ -184,7 +185,11 @@ export function createLobbyBottomMenu(api) {
       badge: friendBadge,
       badgeTitle: '새 알림',
     },
-    { label: '메시지', onClick: () => api.navigate('messages'), badge: 0 },
+    {
+      label: '메시지',
+      onClick: () => api.navigate('messages'),
+      badge: getTotalUnreadCount(uid),
+    },
     { label: '랭킹', onClick: () => api.navigate('ranking'), badge: 0 },
   ];
 
