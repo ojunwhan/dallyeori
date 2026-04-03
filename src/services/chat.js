@@ -3,7 +3,7 @@
  */
 
 import { getMockUser } from './mockUsers.js';
-import { getGameSocket, ensureSocket } from './socket.js';
+import { getGameSocket } from './socket.js';
 import { showAppToast } from './toast.js';
 
 const MAX_MSG = 100;
@@ -216,30 +216,22 @@ export function sendMessage(uid, targetId, text, opts) {
   return { ok: true };
 }
 
-/** @type {import('socket.io-client').Socket | null} */
-let chatListenerSocket = null;
 /** @type {((msg: object) => void) | null} */
-let chatReceiveHandler = null;
+let _chatHandler = null;
+/** @type {import('socket.io-client').Socket | null} */
+let _chatBoundSocket = null;
 
 export function setupChatSocketListener() {
-  let sock = getGameSocket();
-  if (!sock) {
-    ensureSocket();
-    sock = getGameSocket();
-  }
-  console.log('[chat] setupChatSocketListener called, sock:', !!sock, 'connected:', sock?.connected);
-  if (!sock) return;
-  if (!sock.connected) {
-    sock.once('connect', () => setupChatSocketListener());
-    return;
-  }
-  if (chatListenerSocket === sock) return;
-  if (chatListenerSocket && chatReceiveHandler) {
-    chatListenerSocket.off('receiveChat', chatReceiveHandler);
-  }
-  chatListenerSocket = sock;
+  const sock = getGameSocket();
+  if (!sock || !sock.connected) return;
+  if (_chatBoundSocket === sock) return;
 
-  chatReceiveHandler = (msg) => {
+  // 이전 소켓에서 리스너 제거
+  if (_chatBoundSocket && _chatHandler) {
+    _chatBoundSocket.off('receiveChat', _chatHandler);
+  }
+
+  _chatHandler = (msg) => {
     console.log('[chat] receiveChat received:', msg);
     if (!msg || !msg.fromId || !msg.toId || !msg.text) return;
     const myUid = msg.toId;
@@ -252,7 +244,10 @@ export function setupChatSocketListener() {
     window.dispatchEvent(new CustomEvent('dallyeori-chat-update', { detail: { peerId } }));
     showAppToast('💬 새 메시지가 왔어요');
   };
-  sock.on('receiveChat', chatReceiveHandler);
+
+  _chatBoundSocket = sock;
+  sock.on('receiveChat', _chatHandler);
+  console.log('[chat] receiveChat listener attached to socket', sock.id);
 }
 
 /**
