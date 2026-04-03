@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>달려라 오리! 🦆</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { 
+    width: 100%; height: 100%; overflow: hidden; 
+    background: #1a1a2e; 
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+  
+  #overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 10; pointer-events: auto;
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+  }
+  #overlay.hidden { display: none; }
+  
+  .title {
+    font-family: 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;
+    font-size: clamp(40px, 10vw, 72px);
+    text-align: center;
+    margin-bottom: 8px;
+    animation: bounceIn 0.6s ease-out;
+  }
+  .subtitle {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: clamp(14px, 3.5vw, 20px);
+    color: #aaa;
+    text-align: center;
+    margin-bottom: 40px;
+    animation: fadeIn 1s ease-out 0.3s both;
+  }
+  .start-btn {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: clamp(20px, 5vw, 32px);
+    font-weight: 700;
+    color: #1a1a2e;
+    background: linear-gradient(135deg, #FFD700, #FFA500);
+    border: none; border-radius: 60px;
+    padding: 16px 48px;
+    cursor: pointer;
+    animation: pulse 2s infinite, fadeIn 1s ease-out 0.6s both;
+    box-shadow: 0 8px 32px rgba(255, 165, 0, 0.4);
+    transition: transform 0.15s;
+  }
+  .start-btn:active { transform: scale(0.95); }
+  
+  .zone-label {
+    position: fixed; 
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px; font-weight: 600;
+    color: rgba(255,255,255,0.25);
+    z-index: 5; pointer-events: none;
+    letter-spacing: 2px; text-transform: uppercase;
+  }
+  .zone-label.p1 { top: 8px; left: 50%; transform: translateX(-50%); }
+  .zone-label.p2 { bottom: 8px; left: 50%; transform: translateX(-50%); }
+  .zone-label.hidden { display: none; }
+  
+  @keyframes bounceIn {
+    0% { transform: scale(0.3); opacity: 0; }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 8px 32px rgba(255, 165, 0, 0.4); }
+    50% { box-shadow: 0 8px 48px rgba(255, 165, 0, 0.7); }
+  }
+</style>
+</head>
+<body>
+
+<div id="overlay">
+  <div class="title">🦆 달려라 오리 🦆</div>
+  <div class="subtitle">화면 위쪽 = P1 🟡 &nbsp;|&nbsp; 아래쪽 = P2 🟠<br>미친듯이 두드려라!</div>
+  <button class="start-btn" id="startBtn">START 🏁</button>
+</div>
+
+<div class="zone-label p1 hidden" id="labelP1">👆 P1 TAP ZONE</div>
+<div class="zone-label p2 hidden" id="labelP2">👇 P2 TAP ZONE</div>
+
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const labelP1 = document.getElementById('labelP1');
+const labelP2 = document.getElementById('labelP2');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth * devicePixelRatio;
+  H = canvas.height = window.innerHeight * devicePixelRatio;
+  ctx.scale(1, 1);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Game state
+const RACE_DISTANCE = 200;
+const FINISH_SPEED_FACTOR = 14; // taps to finish in ~13s at good speed
+
+let gameState = 'menu'; // menu, countdown, racing, finished
+let countdownVal = 3;
+let countdownTimer = 0;
+let raceTime = 0;
+
+const players = [
+  { x: -0.8, progress: 0, speed: 0, taps: 0, wobble: 0, wobbleDir: 1, color: '#FFD700', name: 'P1', feet: 0, headBob: 0, tapFlash: 0, lastStepFoot: null, animStepLift: 0 },
+  { x: 0.8, progress: 0, speed: 0, taps: 0, wobble: 0, wobbleDir: 1, color: '#FF8C00', name: 'P2', feet: 0, headBob: 0, tapFlash: 0, lastStepFoot: null, animStepLift: 0 }
+];
+let winner = null;
+let cameraZ = -5;
+let groundOffset = 0;
+let confetti = [];
+let lastTime = 0;
+
+// Tap effects
+let tapEffects = [];
+
+function resetGame() {
+  players.forEach((p, i) => {
+    p.progress = 0;
+    p.speed = 0;
+    p.taps = 0;
+    p.wobble = 0;
+    p.feet = 0;
+    p.headBob = 0;
+    p.tapFlash = 0;
+    p.lastStepFoot = null;
+    p.animStepLift = 0;
+  });
+  winner = null;
+  cameraZ = -5;
+  groundOffset = 0;
+  confetti = [];
+  tapEffects = [];
+  raceTime = 0;
+}
+
+// Input
+function handleTap(y) {
+  if (gameState !== 'racing') return;
+  const mid = H / 2;
+  const playerIdx = y < mid ? 0 : 1;
+  const p = players[playerIdx];
+  p.speed += FINISH_SPEED_FACTOR / (RACE_DISTANCE * 0.38);
+  p.taps++;
+  p.wobble = 0.3 * p.wobbleDir;
+  p.wobbleDir *= -1;
+  p.feet = 1;
+  p.headBob = 1;
+  p.tapFlash = 1;
+  p.lastStepFoot = p.lastStepFoot === null ? 'left' : (p.lastStepFoot === 'left' ? 'right' : 'left');
+  p.animStepLift = 1;
+  
+  tapEffects.push({
+    x: (playerIdx === 0 ? W * 0.3 : W * 0.7) + (Math.random() - 0.5) * W * 0.15,
+    y: y,
+    life: 1,
+    text: ['꽥!', '빠악!', '삐약!', '고고!', '달려!'][Math.floor(Math.random() * 5)],
+    vx: (Math.random() - 0.5) * 2,
+    vy: -3
+  });
+}
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  for (let t of e.changedTouches) {
+    handleTap(t.clientY * devicePixelRatio);
+  }
+}, { passive: false });
+
+canvas.addEventListener('mousedown', (e) => {
+  handleTap(e.clientY * devicePixelRatio);
+});
+
+// Drawing helpers
+function drawGround(dt) {
+  const horizon = H * 0.28;
+  
+  // Sky gradient
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, horizon);
+  skyGrad.addColorStop(0, '#87CEEB');
+  skyGrad.addColorStop(0.7, '#B0E0E6');
+  skyGrad.addColorStop(1, '#90EE90');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, horizon);
+  
+  // Sun
+  ctx.fillStyle = '#FFF9C4';
+  ctx.beginPath();
+  ctx.arc(W * 0.8, H * 0.1, W * 0.04, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Clouds
+  const cloudY = H * 0.12;
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  for (let i = 0; i < 3; i++) {
+    const cx = ((i * W * 0.35 + groundOffset * 0.3) % (W * 1.3)) - W * 0.15;
+    ctx.beginPath();
+    ctx.ellipse(cx, cloudY + i * 15, W * 0.06, H * 0.02, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx + W * 0.03, cloudY - 8 + i * 15, W * 0.04, H * 0.018, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Ground
+  const groundGrad = ctx.createLinearGradient(0, horizon, 0, H);
+  groundGrad.addColorStop(0, '#7CB342');
+  groundGrad.addColorStop(0.3, '#689F38');
+  groundGrad.addColorStop(1, '#558B2F');
+  ctx.fillStyle = groundGrad;
+  ctx.fillRect(0, horizon, W, H - horizon);
+  
+  // Track (two lanes)
+  const vanishX = W / 2;
+  const vanishY = horizon;
+  
+  // Track surface
+  ctx.fillStyle = '#D2B48C';
+  ctx.beginPath();
+  ctx.moveTo(vanishX - W * 0.03, vanishY);
+  ctx.lineTo(W * 0.05, H);
+  ctx.lineTo(W * 0.95, H);
+  ctx.lineTo(vanishX + W * 0.03, vanishY);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Lane divider
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([15, 20]);
+  ctx.lineDashOffset = -groundOffset * 8;
+  ctx.beginPath();
+  ctx.moveTo(vanishX, vanishY);
+  ctx.lineTo(W / 2, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  
+  // Track borders
+  ctx.strokeStyle = '#8D6E63';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(vanishX - W * 0.03, vanishY);
+  ctx.lineTo(W * 0.05, H);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(vanishX + W * 0.03, vanishY);
+  ctx.lineTo(W * 0.95, H);
+  ctx.stroke();
+  
+  // Distance markers on track
+  const avgProgress = (players[0].progress + players[1].progress) / 2;
+  for (let m = 0; m < RACE_DISTANCE; m += 20) {
+    const relDist = m - avgProgress;
+    if (relDist < 0 || relDist > 60) continue;
+    const t = 1 - relDist / 60;
+    const markerY = vanishY + (H - vanishY) * t;
+    const leftX = vanishX + (W * 0.05 - vanishX) * t - 5;
+    const rightX = vanishX + (W * 0.95 - vanishX) * t + 5;
+    
+    ctx.fillStyle = `rgba(255,255,255,${0.3 * t})`;
+    ctx.fillRect(leftX, markerY - 1, rightX - leftX, 2);
+    
+    ctx.fillStyle = `rgba(255,255,255,${0.4 * t})`;
+    ctx.font = `${10 + 8 * t}px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`${m}m`, vanishX, markerY - 5);
+  }
+  
+  // Finish line
+  const finishRel = RACE_DISTANCE - avgProgress;
+  if (finishRel > 0 && finishRel < 60) {
+    const t = 1 - finishRel / 60;
+    const fy = vanishY + (H - vanishY) * t;
+    const flx = vanishX + (W * 0.05 - vanishX) * t;
+    const frx = vanishX + (W * 0.95 - vanishX) * t;
+    
+    // Checkered pattern
+    const segments = 12;
+    const segW = (frx - flx) / segments;
+    for (let s = 0; s < segments; s++) {
+      ctx.fillStyle = s % 2 === 0 ? '#111' : '#fff';
+      ctx.fillRect(flx + s * segW, fy - 4 * t, segW, 8 * t);
+    }
+    
+    ctx.fillStyle = `rgba(255,0,0,${0.6 * t})`;
+    ctx.font = `bold ${12 + 14 * t}px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('🏁 FINISH', vanishX, fy - 10 * t);
+  }
+}
+
+function drawDuckLegV3(ctx, baseSize, legHalfSpread, side, hipY, legLen, stridePx, isRearLeg) {
+  const legW = baseSize * 0.12;
+  const sx = side === 'left' ? -1 : 1;
+  const footX = sx * legHalfSpread;
+  const ankleY = hipY + legLen + stridePx * 0.9;
+  const legH = Math.max(baseSize * 0.15, ankleY - hipY);
+  ctx.fillStyle = '#FF6D00';
+  ctx.beginPath();
+  ctx.roundRect(footX - legW / 2, hipY, legW, legH, legW * 0.42);
+  ctx.fill();
+  const bodyW = baseSize * 0.75 * 2;
+  const footRx = bodyW * 0.15;
+  const footRy = baseSize * 0.11;
+  ctx.save();
+  ctx.translate(footX, hipY + legH);
+  if (isRearLeg) ctx.rotate(side === 'left' ? -0.48 : 0.48);
+  else ctx.rotate(side === 'left' ? 0.06 : -0.06);
+  ctx.beginPath();
+  ctx.ellipse(0, baseSize * 0.05, footRx, footRy * 0.92, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-footRx * 0.12, baseSize * 0.02);
+  ctx.arc(0, baseSize * 0.07, footRx * 1.06, Math.PI * 1.06, Math.PI * 1.94);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#E65100';
+  ctx.lineWidth = Math.max(1.2, baseSize * 0.035);
+  const toeBaseY = baseSize * 0.1;
+  for (let t = -1; t <= 1; t++) {
+    ctx.beginPath();
+    ctx.moveTo(t * footRx * 0.15, baseSize * 0.02);
+    ctx.lineTo(t * footRx * 0.82 + sx * footRx * 0.42, toeBaseY + baseSize * 0.045);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawDuck(p, laneX, dt) {
+  const horizon = H * 0.28;
+  const vanishX = W / 2;
+  const vanishY = horizon;
+  const avgProgress = (players[0].progress + players[1].progress) / 2;
+  
+  const relDist = p.progress - avgProgress + 8;
+  const t = Math.max(0.1, Math.min(1, 1 - (60 - relDist) / 60));
+  
+  const screenY = vanishY + (H - vanishY) * t;
+  const laneCenter = laneX < 0 ? -0.25 : 0.25;
+  const screenX = vanishX + (W * (0.5 + laneCenter) - vanishX) * t;
+  
+  const scale = 0.3 + 0.7 * t;
+  const baseSize = Math.min(W, H) * 0.09 * scale;
+  
+  ctx.save();
+  ctx.translate(screenX, screenY);
+
+  const buttHalfW = baseSize * 0.75;
+  const legGap = buttHalfW * 2 * 0.4;
+  const legWDesign = baseSize * 0.12;
+  const legHalfSpread = legGap * 0.5 + legWDesign * 0.5;
+  const stepLift = p.animStepLift ?? 0;
+  const idleSwing = Math.sin(p.feet * Math.PI * 2) * baseSize * 0.07 * Math.min(1, p.speed * 2.5 + 0.15);
+  let leftStride = 0;
+  let rightStride = 0;
+  if (p.lastStepFoot === 'left') {
+    leftStride = stepLift * baseSize * 0.22 + idleSwing;
+    rightStride = -stepLift * baseSize * 0.22 - idleSwing;
+  } else if (p.lastStepFoot === 'right') {
+    rightStride = stepLift * baseSize * 0.22 + idleSwing;
+    leftStride = -stepLift * baseSize * 0.22 - idleSwing;
+  } else {
+    leftStride = idleSwing;
+    rightStride = -idleSwing;
+  }
+  const wad = Math.min(0.14, (p.animStepLift ?? 0) * 0.125);
+  let wobbleRot = 0;
+  if (p.lastStepFoot === 'left') wobbleRot = wad + p.wobble * 0.22;
+  else if (p.lastStepFoot === 'right') wobbleRot = -wad + p.wobble * 0.22;
+  else wobbleRot = p.wobble * 0.32;
+  ctx.rotate(wobbleRot);
+  
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.beginPath();
+  ctx.ellipse(0, baseSize * 0.35, baseSize * 0.7, baseSize * 0.15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Tap flash effect
+  if (p.tapFlash > 0) {
+    ctx.fillStyle = `rgba(255,255,200,${p.tapFlash * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(0, -baseSize * 0.1, baseSize * 1.5 * p.tapFlash, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const hipY = baseSize * 0.5;
+  const legLen = baseSize * 0.5;
+  drawDuckLegV3(ctx, baseSize, legHalfSpread, 'left', hipY, legLen, leftStride, leftStride < -1e-6);
+  drawDuckLegV3(ctx, baseSize, legHalfSpread, 'right', hipY, legLen, rightStride, rightStride < -1e-6);
+  
+  // Body (big round butt from behind)
+  const bodyGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, baseSize);
+  bodyGrad.addColorStop(0, p.color);
+  bodyGrad.addColorStop(0.6, p.color);
+  bodyGrad.addColorStop(1, p === players[0] ? '#DAA520' : '#CC7000');
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, baseSize * 0.75, baseSize * 0.7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Body outline
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, baseSize * 0.75, baseSize * 0.7, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  
+  // Tail feathers (cute little tail poking up)
+  ctx.fillStyle = '#FFF9C4';
+  const tailY = -baseSize * 0.4;
+  ctx.beginPath();
+  ctx.moveTo(-baseSize * 0.08, tailY);
+  ctx.quadraticCurveTo(0, tailY - baseSize * 0.35, baseSize * 0.05, tailY - baseSize * 0.25);
+  ctx.quadraticCurveTo(baseSize * 0.02, tailY - baseSize * 0.15, baseSize * 0.08, tailY);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Extra tail feather
+  ctx.beginPath();
+  ctx.moveTo(-baseSize * 0.03, tailY - baseSize * 0.05);
+  ctx.quadraticCurveTo(baseSize * 0.06, tailY - baseSize * 0.4, baseSize * 0.12, tailY - baseSize * 0.2);
+  ctx.quadraticCurveTo(baseSize * 0.08, tailY - baseSize * 0.1, baseSize * 0.03, tailY - baseSize * 0.05);
+  ctx.closePath();
+  ctx.fillStyle = '#FFFDE7';
+  ctx.fill();
+  
+  // Wings (sides, seen from behind)
+  ctx.fillStyle = p === players[0] ? '#E6C200' : '#E07800';
+  // Left wing
+  ctx.beginPath();
+  ctx.ellipse(-baseSize * 0.65, -baseSize * 0.05, baseSize * 0.22, baseSize * 0.4, 0.15 + Math.sin(p.feet * Math.PI * 4) * 0.1, 0, Math.PI * 2);
+  ctx.fill();
+  // Right wing
+  ctx.beginPath();
+  ctx.ellipse(baseSize * 0.65, -baseSize * 0.05, baseSize * 0.22, baseSize * 0.4, -0.15 - Math.sin(p.feet * Math.PI * 4) * 0.1, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Head (small, poking above body, seen from behind)
+  const headBob = Math.sin(p.headBob * Math.PI) * baseSize * 0.05;
+  const headY = -baseSize * 0.7 + headBob;
+  ctx.fillStyle = p.color;
+  ctx.beginPath();
+  ctx.arc(0, headY, baseSize * 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  
+  // Small tuft on head
+  ctx.fillStyle = p === players[0] ? '#DAA520' : '#CC7000';
+  ctx.beginPath();
+  ctx.moveTo(-baseSize * 0.03, headY - baseSize * 0.28);
+  ctx.quadraticCurveTo(baseSize * 0.02, headY - baseSize * 0.42, baseSize * 0.06, headY - baseSize * 0.32);
+  ctx.quadraticCurveTo(baseSize * 0.03, headY - baseSize * 0.26, baseSize * 0.01, headY - baseSize * 0.28);
+  ctx.fill();
+  
+  // Player label
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = `bold ${baseSize * 0.3}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(p.name, 0, -baseSize * 1.1);
+  
+  ctx.restore();
+}
+
+function drawHUD() {
+  const barW = W * 0.35;
+  const barH = H * 0.018;
+  const padding = W * 0.04;
+  
+  for (let i = 0; i < 2; i++) {
+    const p = players[i];
+    const x = i === 0 ? padding : W - padding - barW;
+    const y = H * 0.04;
+    
+    // Progress bar background
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.roundRect(x, y, barW, barH, barH / 2);
+    ctx.fill();
+    
+    // Progress bar fill
+    const progress = Math.min(1, p.progress / RACE_DISTANCE);
+    const grad = ctx.createLinearGradient(x, 0, x + barW, 0);
+    grad.addColorStop(0, p.color);
+    grad.addColorStop(1, i === 0 ? '#FFF176' : '#FFAB40');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(x, y, barW * progress, barH, barH / 2);
+    ctx.fill();
+    
+    // Label
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.min(W, H) * 0.025}px -apple-system, sans-serif`;
+    ctx.textAlign = i === 0 ? 'left' : 'right';
+    ctx.fillText(`${p.name} 🦆 ${Math.floor(progress * 100)}%`, 
+      i === 0 ? x : x + barW, y - 6);
+    
+    // Taps counter
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = `${Math.min(W, H) * 0.018}px -apple-system, sans-serif`;
+    ctx.fillText(`${p.taps} taps`, i === 0 ? x : x + barW, y + barH + 14);
+  }
+  
+  // Timer
+  if (gameState === 'racing' || gameState === 'finished') {
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.font = `bold ${Math.min(W, H) * 0.03}px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`${raceTime.toFixed(1)}s`, W / 2, H * 0.055);
+  }
+  
+  // Divider line (tap zone indicator)
+  if (gameState === 'racing') {
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 10]);
+    ctx.beginPath();
+    ctx.moveTo(0, H / 2);
+    ctx.lineTo(W, H / 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function drawCountdown() {
+  if (gameState !== 'countdown') return;
+  
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(0, 0, W, H);
+  
+  const text = countdownVal > 0 ? countdownVal.toString() : 'GO!';
+  const size = Math.min(W, H) * 0.25;
+  
+  ctx.fillStyle = countdownVal > 0 ? '#fff' : '#FFD700';
+  ctx.font = `bold ${size}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, W / 2, H / 2);
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawFinish() {
+  if (gameState !== 'finished' || !winner) return;
+  
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Confetti
+  confetti.forEach(c => {
+    ctx.fillStyle = c.color;
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.r);
+    ctx.fillRect(-c.size / 2, -c.size / 2, c.size, c.size * 0.4);
+    ctx.restore();
+  });
+  
+  const size = Math.min(W, H) * 0.08;
+  ctx.fillStyle = '#FFD700';
+  ctx.font = `bold ${size}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(`🏆 ${winner.name} 승리! 🏆`, W / 2, H * 0.4);
+  
+  ctx.fillStyle = '#fff';
+  ctx.font = `${size * 0.45}px -apple-system, sans-serif`;
+  ctx.fillText(`${raceTime.toFixed(1)}초  |  ${winner.taps} taps`, W / 2, H * 0.48);
+  
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = `${size * 0.35}px -apple-system, sans-serif`;
+  ctx.fillText('탭하면 다시 시작', W / 2, H * 0.56);
+}
+
+function drawTapEffects() {
+  tapEffects.forEach(e => {
+    ctx.fillStyle = `rgba(255,255,255,${e.life * 0.8})`;
+    ctx.font = `bold ${16 + (1 - e.life) * 20}px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(e.text, e.x, e.y);
+  });
+}
+
+function update(dt) {
+  if (gameState === 'countdown') {
+    countdownTimer += dt;
+    if (countdownTimer >= 1) {
+      countdownTimer = 0;
+      countdownVal--;
+      if (countdownVal < 0) {
+        gameState = 'racing';
+        labelP1.classList.remove('hidden');
+        labelP2.classList.remove('hidden');
+      }
+    }
+    return;
+  }
+  
+  if (gameState === 'racing') {
+    raceTime += dt;
+    
+    players.forEach(p => {
+      p.progress += p.speed * dt * 60;
+      p.speed *= 0.96; // friction
+      
+      // Animation
+      if (p.speed > 0.05) {
+        p.feet += p.speed * dt * 8;
+      }
+      if (p.animStepLift > 0.012) p.animStepLift *= Math.exp(-dt * 9);
+      else p.animStepLift = 0;
+      p.wobble *= 0.9;
+      p.headBob *= 0.92;
+      p.tapFlash *= 0.9;
+      
+      // Check finish
+      if (p.progress >= RACE_DISTANCE && !winner) {
+        winner = p;
+        gameState = 'finished';
+        labelP1.classList.add('hidden');
+        labelP2.classList.add('hidden');
+        
+        // Create confetti
+        for (let i = 0; i < 80; i++) {
+          confetti.push({
+            x: Math.random() * W,
+            y: -Math.random() * H * 0.3,
+            vx: (Math.random() - 0.5) * 4,
+            vy: Math.random() * 3 + 1,
+            r: Math.random() * Math.PI * 2,
+            vr: (Math.random() - 0.5) * 0.2,
+            size: 8 + Math.random() * 12,
+            color: ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#FF8C00', '#C084FC', '#FB7185'][Math.floor(Math.random() * 7)]
+          });
+        }
+      }
+    });
+    
+    // Update ground scroll based on average progress
+    groundOffset = (players[0].progress + players[1].progress) / 2;
+  }
+  
+  if (gameState === 'finished') {
+    confetti.forEach(c => {
+      c.x += c.vx;
+      c.y += c.vy;
+      c.r += c.vr;
+      c.vy += 0.05;
+    });
+    
+    players.forEach(p => {
+      p.speed *= 0.95;
+      p.progress += p.speed * dt * 60;
+      if (p.speed > 0.05) p.feet += p.speed * dt * 8;
+      if (p.animStepLift > 0.012) p.animStepLift *= Math.exp(-dt * 9);
+      else p.animStepLift = 0;
+      p.wobble *= 0.9;
+      p.tapFlash *= 0.9;
+    });
+  }
+  
+  // Tap effects
+  tapEffects.forEach(e => {
+    e.life -= dt * 2.5;
+    e.x += e.vx;
+    e.y += e.vy;
+  });
+  tapEffects = tapEffects.filter(e => e.life > 0);
+}
+
+function gameLoop(time) {
+  const dt = Math.min((time - lastTime) / 1000, 0.05);
+  lastTime = time;
+  
+  ctx.clearRect(0, 0, W, H);
+  
+  if (gameState !== 'menu') {
+    update(dt);
+    drawGround(dt);
+    
+    // Draw ducks (further one first)
+    const sorted = [...players].sort((a, b) => a.progress - b.progress);
+    sorted.forEach(p => drawDuck(p, p.x, dt));
+    
+    drawHUD();
+    drawTapEffects();
+    drawCountdown();
+    drawFinish();
+  }
+  
+  requestAnimationFrame(gameLoop);
+}
+
+// Start
+document.getElementById('startBtn').addEventListener('click', () => {
+  overlay.classList.add('hidden');
+  resetGame();
+  gameState = 'countdown';
+  countdownVal = 3;
+  countdownTimer = 0;
+  lastTime = performance.now();
+  requestAnimationFrame(gameLoop);
+});
+
+// Restart on tap after finish
+canvas.addEventListener('touchstart', (e) => {
+  if (gameState === 'finished') {
+    // Small delay to prevent accidental restart
+    setTimeout(() => {
+      if (gameState === 'finished') {
+        resetGame();
+        gameState = 'countdown';
+        countdownVal = 3;
+        countdownTimer = 0;
+      }
+    }, 500);
+  }
+}, { passive: true });
+
+canvas.addEventListener('click', () => {
+  if (gameState === 'finished') {
+    setTimeout(() => {
+      if (gameState === 'finished') {
+        resetGame();
+        gameState = 'countdown';
+        countdownVal = 3;
+        countdownTimer = 0;
+      }
+    }, 500);
+  }
+});
+</script>
+</body>
+</html>

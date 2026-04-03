@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>DALLYEORI - 핵심 로직 통합 세로 MVP</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #87CEEB; /* 하늘색 배경 */
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+            color: #333;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        #gameCanvas {
+            display: block;
+            background: #a2d2ff;
+            margin: 0 auto;
+            touch-action: none; /* 캔버스에서 터치 제스처 막기 */
+        }
+    </style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<script>
+    // -------------------------------------------------------------------------
+    // 1. [Constants] - 게임 전역 상수 및 스프라이트 좌표
+    // -------------------------------------------------------------------------
+    const config = {
+        width: 360,   // 세로 해상도 (iPhone SE 기준)
+        height: 640,  
+        spriteSheet: 'sprite_sheet.png', // 형님이 가지고 계신 에셋 시트 파일명!
+        gameDistance: 70, // 70m 결승선
+        tapDistance: 0.6, // 탭 1회당 0.6m
+        spriteSize: 150, // 오리 스프라이트 크기 (정사각형)
+        spriteScale: 0.6, // 세로 모드 최적화 축소 비율
+    };
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = config.width;
+    canvas.height = config.height;
+
+    const assets = {
+        sheet: new Image(),
+        loaded: false
+    };
+    assets.sheet.src = config.spriteSheet;
+    assets.sheet.onload = () => { assets.loaded = true; initGame(); };
+
+    // 🛠️ [정밀 가위질 좌표 정보] - 형님이 주신 image_97de80.png의 좌표를 찍었습니다.
+    // 좌표는 모두 픽셀 기준입니다.
+    const sprites = {
+        frameW: config.spriteSize,
+        frameH: config.spriteSize,
+        // 아리(하양 A): 이미지 좌측 상단 영역
+        ari: { x: 50, y: 50 }, // Base (Neutral) pose
+        // 까리(검정 K): 이미지 우측 상단 영역
+        kkari: { x: 680, y: 50 }, // Base (Neutral) pose
+        // 각 오리의 Poses (Neutral, Left, Right, Run)
+        poses: [
+            { x: 0, y: 0 }, // Neutral (frame 1)
+            { x: config.spriteSize, y: 0 }, // Left Foot Forward (frame 2)
+            { x: config.spriteSize * 2, y: 0 }, // Right Foot Forward (frame 3)
+            { x: config.spriteSize * 3, y: 0 }, // Scramble/Run (frame 4, 꼬꾸라짐용)
+        ],
+        // UI 에셋 좌표
+        track: { x: 680, y: 400, w: 550, h: 280 }, // 트랙 배경 (비포장도로)
+        pads: {
+            left: { x: 50, y: 350 }, // 왼발 패드
+            right: { x: 350, y: 350 }, // 오른발 패드
+            w: 250, h: 200
+        },
+        ui: {
+            ready: { x: 100, y: 550, w: 400, h: 50 }, // READY...
+            morinfo: { x: 100, y: 650, w: 400, h: 50 }, // Mori / Score
+            orientinfo: { x: 100, y: 700, w: 400, h: 50 }, // Ori / Score
+            distance: { x: 100, y: 600, w: 400, h: 50 }, // 69m 남음
+            bottomText: { x: 100, y: 750, w: 600, h: 50 }, // 빠르되 정확하게!
+        }
+    };
+
+    // Physics parameters (as defined in physics.js)
+    const physicsConfig = {
+        mass: 1.0, friction: 0.1, inertia: 1.2, tripForceThreshold: 2.5,
+        consecutiveTapMax: 3, veerStrength: 1.5,
+    };
+
+    // -------------------------------------------------------------------------
+    // 2. [Physics] - DuckyPhysics 구현 (verbatim from physics.js)
+    // -------------------------------------------------------------------------
+    class DuckPhysics {
+        constructor() {
+            this.force = 0.0; this.velocity = 0.0; this.position = 0.0;
+            this.lastFoot = ''; this.veer = 0.0; this.consecutiveTaps = 0;
+            this.tripTime = 0.0; this.isFinished = false; this.currentPose = 0; // 0: Neutral, 1: Left, 2: Right, 3: Scramble
+        }
+
+        // 🦶 '왼-오-왼-오' 교대 터치 리듬 및 방향 틀어짐 핵심 구현!
+        handleTap(foot) {
+            if (this.tripTime > 0.0 || this.isFinished) return; // 꼬꾸라진 상태면 입력 무시
+
+            let tapForce = config.tapDistance;
+
+            if (this.lastFoot !== foot) {
+                // Alternating tap: good rhythm
+                tapForce *= physicsConfig.inertia; // 관성 보너스
+                this.force += tapForce;
+                this.currentPose = (foot === 'left') ? 1 : 2; // 터치한 발에 맞춰 스프라이트 전환
+                this.consecutiveTaps = 0;
+                this.lastStep = foot;
+            } else {
+                // Same foot consecutive tap: veer!
+                this.consecutiveTaps++;
+                this.veer += (foot === 'left' ? -1.0 : 1.0) * physicsConfig.veerStrength;
+                this.currentPose = (foot === 'left') ? 1 : 2; // 같은 발로 스프라이트 전환
+
+                // Trip condition: too many consecutive taps with high force
+                if (this.consecutiveTaps >= physicsConfig.consecutiveTapMax && this.force > physicsConfig.tripForceThreshold) {
+                    this.force = 0.0;
+                    this.velocity *= 0.2; // High friction on trip
+                    this.tripTime = 2.0; // Trip duration (seconds)
+                    this.consecutiveTaps = 0;
+                    this.currentPose = 3; // Scramble pose (frame 4)
+                    console.warn(`Dallyeori tripped!`);
+                }
+            }
+
+            // 잠시 후 neutral(또는 질주) 프레임으로 복귀
+            setTimeout(() => { if (this.currentPose === (foot === 'left' ? 1 : 2)) this.currentFrame = 0; }, 120);
+        }
+
+        update(dt) {
+            // Apply friction
+            this.force -= this.force * physicsConfig.friction * dt;
+            
+            // Trip recovery
+            if (this.tripTime > 0.0) {
+                this.tripTime -= dt;
+                this.force = 0.0;
+                this.velocity -= this.velocity * physicsConfig.friction * dt * 2.0; // High friction during trip
+                this.currentPose = 3; // Scramble pose (frame 4)
+                if (this.tripTime <= 0.0) {
+                    console.log('Dallyeori recovered.');
+                    this.velocity = 0.1; // Slow recovery speed
+                    this.currentPose = 0; // Neutral pose (frame 1)
+                }
+            } else {
+                this.currentPose = 0; // Neutral pose (frame 1)
+            }
+
+            // Update position (F=ma)
+            this.velocity += (this.force / physicsConfig.mass) * dt;
+            this.position += this.velocity * dt;
+
+            // Damping force after input
+            this.force -= this.force * physicsConfig.friction * dt;
+            if (this.force < 0.01) this.force = 0.0;
+
+            // Handle veer dampening
+            this.veer -= this.veer * physicsConfig.friction * dt;
+            if (Math.abs(this.veer) < 0.1) this.veer = 0.0;
+
+            // Handle Finish line
+            if (this.position >= config.gameDistance) {
+                this.isFinished = true;
+                this.force = 0.0;
+                this.velocity = 0.0;
+                this.veer = 0.0;
+                this.currentPose = 0; // Neutral pose
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. [Input] - GameInput 구현 (모바일 대응)
+    // -------------------------------------------------------------------------
+    class GameInput {
+        constructor() {
+            // 터치 영역 정의 (constants.js에서 가져옴)
+            this.tapAreas = [
+                { id: 'left', x: sprites.pads.left.x, y: config.height - sprites.pads.w, w: sprites.pads.w, h: sprites.pads.h },
+                { id: 'right', x: sprites.pads.right.x, y: config.height - sprites.pads.w, w: sprites.pads.w, h: sprites.pads.h }
+            ];
+            
+            this.onTap = null;
+            this.init();
+        }
+
+        init() {
+            // 🦶 형님이 강조하신 '왼-오-왼-오' 연타 리듬 입력 처리
+            window.addEventListener('touchstart', (e) => {
+                const touch = e.touches[0];
+                const x = touch.clientX - canvas.offsetLeft;
+                const y = touch.clientY - canvas.offsetTop;
+
+                this.tapAreas.forEach(area => {
+                    if (x >= area.x && x <= area.x + area.w &&
+                        y >= area.y && y <= area.y + area.h) {
+                        if (this.onTap) this.onTap(area.id); // 'left' or 'right'
+                    }
+                });
+            });
+
+            // 터치 이벤트를 막아 오리 꼬꾸라짐 방지
+            window.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+            }, { passive: false });
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. [Main] - DallyeoriGame 구현 (main.js 통합)
+    // -------------------------------------------------------------------------
+    class DallyeoriGame {
+        constructor() {
+            this.player = new DuckPhysics();
+            this.cpu = new DuckPhysics(); // CPU logic can be simpler, currently uses same class
+            this.cpu.cpuSpeed = 0.04; // config.js에서 가져옴
+
+            this.input = new GameInput();
+            this.state = 'READY'; // READY, RACING, FINISH
+            this.timer = 0.0;
+            this.finishLineY = config.height - 150; // 결승선 위치 (화면 상)
+
+            this.init();
+        }
+
+        init() {
+            // 입력 처리와 물리 로직 연결
+            this.input.onTap = (foot) => {
+                if (this.state === 'READY') {
+                    console.log('TAP TO START!');
+                    this.state = 'RACING';
+                    this.player.isFinished = false; // Reset finish state
+                } else if (this.state === 'RACING') {
+                    this.player.handleTap(foot);
+                }
+            };
+            requestAnimationFrame(() => this.loop());
+        }
+
+        loop() {
+            const dt = 1.0 / 60.0; // Simple fixed dt
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (this.state === 'RACING') {
+                this.timer += dt;
+                
+                // Update physics
+                this.player.update(dt);
+                // CPU update (simpler, just moves forward)
+                if(!this.cpu.isFinished) {
+                    this.cpu.position += this.cpu.cpuSpeed * dt * 0.1;
+                    this.cpu.currentFrame = Math.floor(Date.now() / 150) % 4; // CPU 질주 애니메이션
+                    if(this.cpu.position >= config.gameDistance) this.cpu.isFinished = true;
+                }
+
+                // Check finish condition (all ducks finished)
+                if (this.player.isFinished && this.cpu.isFinished) {
+                    this.state = 'FINISH';
+                    console.log('RACE FINISHED!');
+                    this.onFinish();
+                }
+            }
+
+            this.render();
+            requestAnimationFrame(() => this.loop());
+        }
+
+        // 결승 리본 넘어짐 연출 (verbatim from main.js)
+        onFinish() {
+            console.log('Player Time: ' + this.timer.toFixed(2));
+            // 결승 리본 넘어짐 연출: 오리가 결승선을 넘는 순간 리본을 끊고 넘어지는 효과
+            // 여기서는 리본 스프라이트를 애니메이션화하는 것으로 대체
+            
+            // 승리 오리 카메라 연출 (카메라가 승리 오리 궁둥이에 초점 맞춤)
+            this.cameraFocusWinner = true;
+            this.winnerName = this.player.isFinished ? '형님(A)' : '상대(K)';
+        }
+
+        render() {
+            if (!assets.loaded) return;
+
+            // 1. 세로 스크롤 트랙 (배경)
+            const trackSlice = sprites.track;
+            const scrollSpeed = 0.2; // 배경 흐르는 속도
+            trackY = (player.distance * scrollSpeed) % trackSlice.h; // 이동감 연출
+
+            // 트랙을 두 번 그려서 이어붙임 (세로)
+            for (let i = -1; i < Math.ceil(config.height / trackSlice.h) + 1; i++) {
+                ctx.drawImage(assets.sheet,
+                    trackSlice.x, trackSlice.y, trackSlice.w, trackSlice.h, // 가위질
+                    0, trackY + i * trackSlice.h + 200, // 배치 (트랙은 화면 중앙부터 시작)
+                    canvas.width, trackSlice.h // 가로로 꽉 차게 그림
+                );
+            }
+
+            // 트랙 흰색 중앙선 그리기 (직접 그리기)
+            ctx.beginPath();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([10, 5]); // 점선
+            ctx.moveTo(canvas.width / 2, 200);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset dash
+
+            // 트랙 '달려 START' 텍스트 (직접 그리기)
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 36pxMalgun Gothic,sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('달려 START', canvas.width / 2, canvas.height - 80);
+
+            // 2. 70m 결승 리본 그리기 (직접 그리기)
+            ctx.beginPath();
+            ctx.strokeStyle = '#f03e3e'; // 빨간색 리본
+            ctx.lineWidth = 10;
+            ctx.moveTo(20, this.finishLineY);
+            ctx.lineTo(canvas.width - 20, this.finishLineY);
+            ctx.stroke();
+
+            // 3. 오리들 업데이트 및 그리기
+            // 세로 화면에 맞게 오리 크기 조정 (0.6배 축소)
+            const drawW = sprites.frameW * config.spriteScale;
+            const drawH = sprites.frameH * config.spriteScale;
+
+            // CPU Duck
+            const sxKkari = sprites.kkari.x + sprites.poses[this.cpu.currentFrame].x;
+            ctx.drawImage(assets.sheet,
+                sxKkari, sprites.kkari.y, sprites.frameW, sprites.frameH, // 가위질
+                (config.width * 0.75) - drawW / 2 + this.cpu.veer, this.finishLineY - drawH - (this.cpu.position * 5) + 50, // 배치
+                drawW, drawH
+            );
+            // CPU Distance
+            ctx.fillStyle = '#555';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`상대(K): ${this.cpu.distance.toFixed(1)}m`, (config.width * 0.75) + this.cpu.veer, this.finishLineY - drawH - (this.cpu.position * 5) + 30);
+
+            // Player Duck
+            const sxAri = sprites.ari.x + sprites.poses[this.player.currentFrame].x;
+            ctx.drawImage(assets.sheet,
+                sxAri, sprites.ari.y, sprites.frameW, sprites.frameH, // 가위질
+                (config.width * 0.25) - drawW / 2 + this.player.veer, this.finishLineY - drawH - (this.player.position * 5) + 50, // 배치
+                drawW, drawH
+            );
+            // Player Distance
+            ctx.fillStyle = '#d90429';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`형님(A): ${this.player.distance.toFixed(1)}m`, (config.width * 0.25) + this.player.veer, this.finishLineY - drawH - (this.player.position * 5) + 30);
+
+            // 4. UI 텍스트 그리기
+            // READY...
+            if (this.state === 'READY') {
+                ctx.drawImage(assets.sheet, sprites.ui.ready.x, sprites.ui.ready.y, sprites.ui.ready.w, sprites.ui.ready.h, 10, 50, canvas.width - 20, 40);
+            }
+            // Scores (anchored top-left)
+            ctx.drawImage(assets.sheet, sprites.ui.morinfo.x, sprites.ui.morinfo.y, sprites.ui.morinfo.w, sprites.ui.morinfo.h, 10, 100, canvas.width / 2 - 15, 30);
+            // Distance Left
+            ctx.drawImage(assets.sheet, sprites.ui.distance.x, sprites.ui.distance.y, sprites.ui.distance.w, sprites.ui.distance.h, 10, 140, canvas.width - 20, 30);
+            // CPU Score (anchored top-right)
+            ctx.drawImage(assets.sheet, sprites.ui.orientinfo.x, sprites.ui.orientinfo.y, sprites.ui.orientinfo.w, sprites.ui.orientinfo.h, canvas.width / 2 + 5, 100, canvas.width / 2 - 15, 30);
+
+            // 5. 하단 오리발 패드 (세로 모드 최적화)
+            ctx.drawImage(assets.sheet, sprites.pads.left.x, sprites.pads.left.y, sprites.pads.w, sprites.pads.h, 10, config.height - 180, config.width / 2 - 15, 150);
+            ctx.drawImage(assets.sheet, sprites.pads.right.x, sprites.pads.right.y, sprites.pads.w, sprites.pads.h, config.width / 2 + 5, config.height - 180, config.width / 2 - 15, 150);
+
+            // 6. Bottom Text
+            ctx.drawImage(assets.sheet, sprites.ui.bottomText.x, sprites.ui.bottomText.y, sprites.ui.bottomText.w, sprites.ui.bottomText.h, 10, config.height - 60, canvas.width - 20, 30);
+
+            // 7. Finish sequence text
+            if(this.state === 'FINISH') {
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 48px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('FINISH!', config.width / 2, this.finishLineY + 80);
+                
+                ctx.fillStyle = '#FFD700'; // Gold
+                ctx.font = 'bold 36px Arial';
+                ctx.fillText(`승자: ${this.winnerName}`, config.width / 2, this.finishLineY + 130);
+                ctx.fillText('다시 하려면 화면을 탭하세요.', config.width / 2, this.finishLineY + 180);
+            }
+        }
+    }
+
+    // Initialize game
+    function initGame() {
+        console.log('DALLYEORI Game Initialized (Portrait MVP)');
+        const game = new DallyeoriGame();
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>달려오리 DALLYEORI</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#1a1a2e;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="g"></canvas>
+<script>
+'use strict';
+const C=document.getElementById('g'),X=C.getContext('2d');
+
+// ═══ DESIGN ═══
+const W=360,H=640;
+const TRACK_M=70,TIME_LIMIT=13;
+const TAP_STRIDE=0.55,SAME_FOOT_MUL=0.45,FRICTION=0.93;
+
+// ═══ CAMERA ═══
+const VY=H*0.50,TB=H*0.78,VHW=W*0.05;
+const TL0=W*0.02,TR0=W*0.98;
+const DUCK_Y=H*0.64,DUCK_SZ=W*0.22;
+
+// ═══ SCALE ═══
+let sc=1,ox=0,oy=0;
+function resize(){
+  const w=innerWidth,h=innerHeight;
+  sc=Math.min(w/W,h/H);
+  C.width=W*sc;C.height=H*sc;
+  ox=(w-C.width)/2;oy=(h-C.height)/2;
+  C.style.cssText=`position:absolute;left:${ox}px;top:${oy}px`;
+}
+resize();addEventListener('resize',resize);
+
+// ═══ SPRITES ═══
+const sprites={};
+let spritesLoaded=0;
+function loadSprite(name,src){
+  const img=new Image();
+  img.onload=()=>{sprites[name]=img;spritesLoaded++};
+  img.onerror=()=>{console.warn('sprite not found:',src)};
+  img.src=src;
+}
+loadSprite('body','../assets/sprites/ari_body.png');
+loadSprite('head','../assets/sprites/ari_head.png');
+loadSprite('leg','../assets/sprites/ari_leg.png');
+loadSprite('bg','../assets/sprites/track_bg.png');
+
+// ═══ AUDIO ═══
+let ac=null;
+function ensureAudio(){
+  if(!ac)try{ac=new(AudioContext||webkitAudioContext)}catch(e){}
+  if(ac&&ac.state==='suspended')ac.resume();
+}
+function playSlap(){
+  if(!ac)return;
+  const t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();
+  o.type='triangle';
+  o.frequency.setValueAtTime(100+Math.random()*60,t);
+  o.frequency.exponentialRampToValueAtTime(50,t+.07);
+  g.gain.setValueAtTime(.3,t);
+  g.gain.exponentialRampToValueAtTime(.001,t+.09);
+  o.connect(g);g.connect(ac.destination);
+  o.start(t);o.stop(t+.09);
+}
+
+// ═══ STATE ═══
+let state='ready',cdVal=3,cdT=0,raceT=0,winner=null,endT=0;
+
+// ═══ PLAYERS ═══
+function mkPlayer(isCpu){return{
+  dist:0,spd:0,taps:0,lastFoot:null,isCpu,
+  wc:0,wcTarget:0,tilt:0,bounceY:0,scX:1,scY:1,
+  headLag:0,tailLag:0,lean:0,dirAngle:0,
+  tapInterval:.2,tapTimer:0,cpuMul:.85+Math.random()*.3
+}}
+let P=mkPlayer(false),CPU=mkPlayer(true);
+
+// ═══ FLOW ═══
+let flowAcc=0;
+
+// ═══ INPUT ═══
+function tap(foot){
+  if(state!=='racing')return;
+  const p=P;
+  if(p.lastFoot===foot){
+    p.dirAngle+=(foot==='L'?-.7:.7);
+    p.spd*=SAME_FOOT_MUL;
+  }else{
+    p.spd+=TAP_STRIDE;
+    p.dirAngle*=.5;
+  }
+  p.dirAngle=Math.max(-1.57,Math.min(1.57,p.dirAngle));
+  p.lastFoot=foot;p.taps++;
+  p.wcTarget+=Math.PI;
+  playSlap();
+  if(navigator.vibrate)navigator.vibrate(15);
+}
+
+C.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  if(state==='result'){reset();return}
+  if(state==='ready'){startCD();return}
+  for(let t of e.changedTouches){
+    const x=(t.clientX-ox)/sc;
+    tap(x<W/2?'L':'R');
+  }
+},{passive:false});
+document.addEventListener('keydown',e=>{
+  if(state==='result'){reset();return}
+  if(state==='ready'){startCD();return}
+  if(e.key==='ArrowLeft')tap('L');
+  if(e.key==='ArrowRight')tap('R');
+});
+C.addEventListener('mousedown',e=>{
+  if(state==='result'){reset();return}
+  if(state==='ready'){startCD();return}
+  const x=(e.clientX-ox)/sc;
+  tap(x<W/2?'L':'R');
+});
+
+function startCD(){ensureAudio();state='countdown';cdVal=3;cdT=0}
+function reset(){
+  P=mkPlayer(false);CPU=mkPlayer(true);
+  raceT=0;winner=null;endT=0;flowAcc=0;state='ready';
+}
+
+// ═══ TRACK HELPERS ═══
+function trackX(t,frac){
+  const l=(W/2-VHW)*(1-t)+TL0*t;
+  const r=(W/2+VHW)*(1-t)+TR0*t;
+  return l+frac*(r-l);
+}
+
+// ═══ UPDATE ═══
+function update(dt){
+  if(state==='countdown'){
+    cdT+=dt;if(cdT>=1){cdT=0;cdVal--;if(cdVal<0)state='racing';}
+    return;
+  }
+  if(state==='racing'){
+    raceT+=dt;
+    updateDuck(P,dt);
+    // CPU AI
+    CPU.tapTimer+=dt;
+    if(CPU.tapTimer>=CPU.tapInterval){
+      CPU.tapTimer=0;
+      CPU.tapInterval=.14+Math.random()*.06;
+      CPU.spd+=TAP_STRIDE*CPU.cpuMul;
+      if(Math.random()<.08)CPU.spd*=SAME_FOOT_MUL;
+      CPU.wcTarget+=Math.PI;
+      CPU.lastFoot=CPU.lastFoot==='L'?'R':'L';
+    }
+    updateDuck(CPU,dt);
+    const avg=(P.spd+CPU.spd)/2;
+    flowAcc+=avg*55*dt;
+    if(P.dist>=TRACK_M||CPU.dist>=TRACK_M||raceT>=TIME_LIMIT){
+      winner=P.dist>=CPU.dist?'YOU':'CPU';
+      state='ending';endT=0;
+    }
+  }
+  if(state==='ending'){
+    endT+=dt;
+    P.spd*=.92;CPU.spd*=.92;
+    P.dist+=P.spd*dt;CPU.dist+=CPU.spd*dt;
+    updateAnim(P,dt);updateAnim(CPU,dt);
+    if(endT>2.5)state='result';
+  }
+}
+
+function updateDuck(p,dt){
+  p.dist+=p.spd*dt;
+  p.spd*=FRICTION;
+  updateAnim(p,dt);
+}
+
+function updateAnim(p,dt){
+  // Chase rate: fast enough that each tap = one complete tilt
+  // At fast tapping (~12/sec), need rate ~40+ to keep up
+  const rate=40;
+  if(p.wc<p.wcTarget){
+    p.wc+=rate*dt;
+    if(p.wc>p.wcTarget)p.wc=p.wcTarget;
+  }
+  const sin=Math.sin(p.wc),absSin=Math.abs(sin);
+  // Tilt amplitude: constant so every step looks the same
+  // Speed only affects lean/squash, not tilt amount
+  const tiltAmt=p.spd>0.1?0.35:0.35*Math.max(0,p.spd/.1);
+  
+  p.tilt=sin*tiltAmt;
+  const bMul=p.spd>0.1?1:p.spd/.1; // bounce only when moving
+  p.bounceY=-absSin*10*bMul;
+  const sq=0.10*bMul;
+  p.scX=1+(1-absSin)*sq;
+  p.scY=1-(1-absSin)*sq;
+  const tgtLean=Math.min(p.spd/4,.35);
+  p.lean+=(tgtLean-p.lean)*.1;
+  p.scX*=(1+p.lean*.1);
+  p.scY*=(1-p.lean*.12);
+  p.headLag+=(p.tilt-p.headLag)*8*dt;
+  p.tailLag+=(p.tilt-p.tailLag)*4*dt;
+  if(p.spd<.06){
+    p.tilt*=.9;p.bounceY*=.9;
+    p.scX+=(1-p.scX)*.1;p.scY+=(1-p.scY)*.1;
+    p.headLag*=.9;p.tailLag*=.9;p.lean*=.9;
+    p.dirAngle*=.95;
+  }
+}
+
+// ═══ DRAW ═══
+function draw(){
+  X.clearRect(0,0,W,H);
+  
+  // ── BACKGROUND ──
+  drawSkyFallback();
+  drawTrackFallback();
+  
+  // Ducks
+  const ducks=[P,CPU].sort((a,b)=>a.dist-b.dist);
+  ducks.forEach(d=>drawDuck(d));
+  
+  drawHUD();
+  drawPads();
+  if(state==='countdown')drawCountdown();
+  if(state==='ready')drawReady();
+  if(state==='result')drawResult();
+}
+
+// ── SCROLL LINES ──
+function drawScrollLines(){
+  // Alternating subtle stripes for speed feel
+  for(let i=0;i<20;i++){
+    const phase=((i*4-flowAcc*2.5)%80+80)%80;
+    const t=phase/80;if(t<.02||t>.98)continue;
+    const y=VY+(TB-VY)*t;
+    const lx=trackX(t,.02),rx=trackX(t,.98);
+    const h=Math.max(2,(TB-VY)/22*t);
+    X.fillStyle=i%2===0?'rgba(255,255,255,.35)':'rgba(210,200,185,.2)';
+    X.fillRect(lx,y,rx-lx,h);
+  }
+  
+  // Center dash scrolling
+  X.strokeStyle='rgba(255,255,255,.7)';
+  X.lineWidth=2;X.setLineDash([8,14]);
+  X.lineDashOffset=-(flowAcc*2.5);
+  X.beginPath();X.moveTo(W/2,VY);X.lineTo(W/2,TB);X.stroke();
+  X.setLineDash([]);
+  
+  // Distance markers
+  const avgD=(P.dist+CPU.dist)/2;
+  for(let m=10;m<=TRACK_M;m+=10){
+    const rel=m-avgD;if(rel<1||rel>40)continue;
+    const t=1-rel/40;
+    const y=VY+(TB-VY)*t;
+    X.fillStyle=`rgba(150,140,130,${.3+.4*t})`;
+    X.font=`bold ${7+7*t}px sans-serif`;
+    X.textAlign='center';
+    X.fillText(`${m}m`,W/2,y-2);
+  }
+}
+
+// ── FALLBACK SKY ──
+function drawSkyFallback(){
+  // Bright blue sky
+  const g=X.createLinearGradient(0,0,0,VY);
+  g.addColorStop(0,'#4A9FE5');g.addColorStop(.6,'#7EC8F0');g.addColorStop(1,'#B5E5B0');
+  X.fillStyle=g;X.fillRect(0,0,W,VY+5);
+  
+  // Big fluffy clouds
+  X.fillStyle='rgba(255,255,255,.85)';
+  const t=raceT||0;
+  [[60,VY*.22,28],[180,VY*.35,22],[290,VY*.18,20],[130,VY*.45,16]].forEach(([cx,cy,r])=>{
+    const x=((cx+t*2.5)%(W+80))-40;
+    X.beginPath();
+    X.arc(x,cy,r,0,Math.PI*2);
+    X.arc(x+r*.8,cy-r*.25,r*.7,0,Math.PI*2);
+    X.arc(x-r*.5,cy+r*.1,r*.55,0,Math.PI*2);
+    X.arc(x+r*.3,cy+r*.2,r*.5,0,Math.PI*2);
+    X.fill();
+  });
+  
+  // Distant tree line
+  X.fillStyle='#3A8A30';
+  for(let i=0;i<20;i++){
+    const x=i*(W/19)-5;
+    const sz=6+Math.sin(i*1.7)*2.5;
+    X.beginPath();X.arc(x,VY-sz*.2,sz,Math.PI,0);X.fill();
+  }
+  X.fillStyle='#2D7525';
+  for(let i=0;i<15;i++){
+    const x=i*(W/14)+8;
+    const sz=4+Math.sin(i*2.3)*2;
+    X.beginPath();X.arc(x,VY-sz*.1,sz,Math.PI,0);X.fill();
+  }
+}
+
+// ── FALLBACK TRACK ──
+function drawTrackFallback(){
+  // Bright green grass
+  const gg=X.createLinearGradient(0,VY,0,H);
+  gg.addColorStop(0,'#5DBF4A');gg.addColorStop(.5,'#4CAF50');gg.addColorStop(1,'#3D9040');
+  X.fillStyle=gg;X.fillRect(0,VY,W,H-VY);
+  
+  // Grass texture (tiny dots)
+  const avgD=(P.dist+CPU.dist)/2;
+  for(let i=0;i<40;i++){
+    const gx=((i*47+avgD*3)%W);
+    const gy=VY+10+((i*31)%(TB-VY));
+    X.fillStyle='rgba(80,180,60,.4)';
+    X.beginPath();X.arc(gx,gy,1.5,0,Math.PI*2);X.fill();
+  }
+  
+  // Small flowers on grass
+  const flowerColors=['#FF6B6B','#FFD93D','#FF69B4','#B39DDB','#FFA726'];
+  for(let i=0;i<25;i++){
+    const fx=((i*73+avgD*1.5)%(W*.35));
+    const side=i%2===0?1:-1;
+    const fy=VY+15+((i*37)%(TB-VY-20));
+    const bx=side>0?W-fx*0.9-5:fx*0.9+5;
+    X.fillStyle=flowerColors[i%5];
+    X.beginPath();X.arc(bx,fy,2+Math.sin(i)*0.8,0,Math.PI*2);X.fill();
+  }
+  
+  // White/cream track surface
+  const tg=X.createLinearGradient(0,VY,0,TB);
+  tg.addColorStop(0,'#F0EBE0');tg.addColorStop(.5,'#EAE4D8');tg.addColorStop(1,'#E0D8CA');
+  X.fillStyle=tg;
+  X.beginPath();
+  X.moveTo(W/2-VHW,VY);X.lineTo(TL0,TB);X.lineTo(TR0,TB);X.lineTo(W/2+VHW,VY);
+  X.closePath();X.fill();
+  
+  // Track border (subtle brown)
+  X.strokeStyle='#C8B898';X.lineWidth=2;
+  X.beginPath();X.moveTo(W/2-VHW,VY);X.lineTo(TL0,TB);X.stroke();
+  X.beginPath();X.moveTo(W/2+VHW,VY);X.lineTo(TR0,TB);X.stroke();
+  
+  drawScrollLines();
+}
+
+// ── DUCK ──
+function drawDuck(p){
+  const avgD=(P.dist+CPU.dist)/2;
+  const relD=p.dist-avgD;
+  const depthT=Math.max(.1,Math.min(1,1-(20-relD)/40));
+  const screenY=DUCK_Y+p.bounceY-(relD*3);
+  const lane=p.isCpu?.72:.28;
+  const tVert=Math.min(1,Math.max(0,(TB-screenY)/(TB-VY)));
+  const screenX=trackX(tVert,lane);
+  const baseSize=DUCK_SZ*(0.7+0.3*depthT);
+  const dirShift=Math.sin(p.dirAngle)*baseSize*.3;
+  
+  X.save();
+  X.translate(screenX+dirShift,screenY);
+  X.rotate(p.tilt);
+  X.scale(p.scX,p.scY);
+  
+  const dirView=.3+.7*Math.cos(Math.abs(p.dirAngle));
+  const sin=Math.sin(p.wc);
+  const leftShow=Math.max(0,sin),rightShow=Math.max(0,-sin);
+  
+  // ── SHADOW ──
+  X.fillStyle='rgba(0,0,0,.15)';
+  X.beginPath();X.ellipse(0,baseSize*.42,baseSize*.35,baseSize*.06,0,0,Math.PI*2);X.fill();
+  
+  // ── FEET ──
+  const footY=baseSize*.45;
+  const footSpread=baseSize*.2*dirView;
+  const footSz=baseSize*.14;
+  const LEG_COL='#E8600A'; // 주황+빨강 혼합
+  const FOOT_COL='#E8600A';
+  const WEB_COL='#C04808';
+  
+  X.globalAlpha=.65+.35*leftShow;
+  drawFoot(-footSpread,footY,footSz*(0.7+leftShow*.3),LEG_COL,FOOT_COL,WEB_COL);
+  X.globalAlpha=.65+.35*rightShow;
+  drawFoot(footSpread,footY,footSz*(0.7+rightShow*.3),LEG_COL,FOOT_COL,WEB_COL);
+  X.globalAlpha=1;
+  
+  // ── BODY ──
+  if(sprites.body&&!p.isCpu){
+    const bw=baseSize*1.15*dirView,bh=baseSize*1.05;
+    X.drawImage(sprites.body,-bw/2,-bh/2+baseSize*.05,bw,bh);
+  }else{
+    const col=p.isCpu?'#2C2C2C':'#F5F5F0';
+    const dark=p.isCpu?'#1A1A1A':'#E0DDD5';
+    const bg=X.createRadialGradient(0,0,baseSize*.08,0,baseSize*.05,baseSize*.45);
+    bg.addColorStop(0,col);bg.addColorStop(1,dark);
+    X.fillStyle=bg;
+    X.beginPath();X.ellipse(0,baseSize*.05,baseSize*.42*dirView,baseSize*.4,0,0,Math.PI*2);X.fill();
+    X.strokeStyle='rgba(0,0,0,.06)';X.lineWidth=1;X.stroke();
+    // Wings
+    const wf=Math.sin(p.wc*2)*.02*Math.min(p.spd/3,1);
+    X.fillStyle=dark;
+    X.beginPath();X.ellipse(-baseSize*.38*dirView,0,baseSize*(.09+wf),baseSize*.2,.1,0,Math.PI*2);X.fill();
+    X.beginPath();X.ellipse(baseSize*.38*dirView,0,baseSize*(.09+wf),baseSize*.2,-.1,0,Math.PI*2);X.fill();
+  }
+  
+  // ── TAIL ──
+  X.save();
+  X.rotate(-p.tailLag*.55);
+  const tailY=-baseSize*.34+(-p.lean*baseSize*.08);
+  X.fillStyle=p.isCpu?'#3A3A3A':'#FFFDE7';
+  X.beginPath();
+  X.moveTo(-baseSize*.05,tailY);
+  X.quadraticCurveTo(0,tailY-baseSize*.22,baseSize*.05,tailY-baseSize*.14);
+  X.quadraticCurveTo(baseSize*.02,tailY-baseSize*.06,baseSize*.04,tailY);
+  X.closePath();X.fill();
+  X.restore();
+  
+  // ── HEAD ──
+  X.save();
+  const headX=p.headLag*baseSize*.15;
+  const headY0=-baseSize*.48+(-p.lean*baseSize*.06);
+  const headR=baseSize*.19*(1-p.lean*.12);
+  X.translate(headX,0);
+  
+  if(sprites.head&&!p.isCpu){
+    const hw=headR*3,hh=headR*3;
+    X.drawImage(sprites.head,-hw/2,headY0-hh/2,hw,hh);
+  }else{
+    X.fillStyle=p.isCpu?'#2C2C2C':'#F5F5F0';
+    X.beginPath();X.arc(0,headY0,headR,0,Math.PI*2);X.fill();
+    X.strokeStyle='rgba(0,0,0,.05)';X.lineWidth=1;X.stroke();
+    // Tuft
+    X.fillStyle=p.isCpu?'#1A1A1A':'#E0DDD5';
+    X.beginPath();
+    X.moveTo(-2,headY0-headR);X.quadraticCurveTo(1,headY0-headR-9,4,headY0-headR-3);
+    X.quadraticCurveTo(2,headY0-headR+1,1,headY0-headR);
+    X.fill();
+  }
+  X.restore();
+  
+  // ── NECK BAND ──
+  if(!p.isCpu){
+    X.fillStyle='#D32F2F';
+    X.fillRect(-baseSize*.13,-baseSize*.26,baseSize*.26,baseSize*.055);
+    X.fillStyle='#fff';X.font=`bold ${baseSize*.04}px sans-serif`;X.textAlign='center';
+    X.fillText('A',0,-baseSize*.235);
+  }else{
+    X.fillStyle='#333';
+    X.fillRect(-baseSize*.13,-baseSize*.26,baseSize*.26,baseSize*.055);
+    X.fillStyle='#fff';X.font=`bold ${baseSize*.04}px sans-serif`;X.textAlign='center';
+    X.fillText('D',0,-baseSize*.235);
+  }
+  
+  // ── LABEL ──
+  X.fillStyle='rgba(255,255,255,.85)';
+  X.font=`bold ${baseSize*.14}px sans-serif`;
+  X.textAlign='center';
+  X.fillText(p.isCpu?'두리':'아리',0,-baseSize*.7);
+  
+  X.restore();
+}
+
+function drawFoot(fx,fy,sz,legCol,footCol,webCol){
+  X.strokeStyle=legCol;X.lineWidth=sz*.55;X.lineCap='round';
+  X.beginPath();X.moveTo(fx,fy-sz*1.3);X.lineTo(fx,fy);X.stroke();
+  X.fillStyle=footCol;
+  X.beginPath();X.ellipse(fx,fy+sz*.2,sz*1.1,sz*.5,0,0,Math.PI);X.fill();
+  X.strokeStyle=webCol;X.lineWidth=1;
+  X.beginPath();
+  X.moveTo(fx-sz*.6,fy+sz*.2);X.lineTo(fx,fy+sz*.65);
+  X.moveTo(fx,fy+sz*.2);X.lineTo(fx,fy+sz*.65);
+  X.moveTo(fx+sz*.6,fy+sz*.2);X.lineTo(fx,fy+sz*.65);
+  X.stroke();
+}
+
+// ── HUD ──
+function drawHUD(){
+  // Dark top bar
+  X.fillStyle='rgba(0,0,0,.5)';
+  X.fillRect(0,0,W,42);
+  
+  const rem=Math.max(0,TIME_LIMIT-raceT);
+  X.fillStyle='#FFD700';X.font='bold 12px sans-serif';X.textAlign='left';
+  X.fillText(`아리 ${P.dist.toFixed(1)}m`,10,16);
+  X.fillStyle='rgba(255,255,255,.4)';X.font='10px sans-serif';
+  X.fillText(`${P.taps} tap`,10,28);
+  
+  X.fillStyle='#aaa';X.font='bold 12px sans-serif';X.textAlign='right';
+  X.fillText(`두리 ${CPU.dist.toFixed(1)}m`,W-10,16);
+  
+  if(state==='racing'||state==='ending'||state==='result'){
+    const flash=rem<=3?Math.sin(raceT*12)*.5+.5:0;
+    X.fillStyle=rem<=3?`rgba(255,${80+flash*100},${80+flash*100},.95)`:'rgba(255,255,255,.9)';
+    X.font='bold 20px sans-serif';X.textAlign='center';
+    X.fillText(rem.toFixed(1),W/2,20);
+    X.fillStyle='rgba(255,255,255,.3)';X.font='9px sans-serif';
+    X.fillText(`${TIME_LIMIT}s 한도`,W/2,32);
+  }
+  
+  // Progress bar
+  const bx=10,bw=W-20,by=37,bh=3;
+  X.fillStyle='rgba(255,255,255,.15)';
+  X.beginPath();X.roundRect(bx,by,bw,bh,1.5);X.fill();
+  X.fillStyle='#FFD700';
+  X.beginPath();X.roundRect(bx,by,bw*Math.min(1,P.dist/TRACK_M),bh,1.5);X.fill();
+  X.fillStyle='#888';
+  X.beginPath();X.arc(bx+bw*Math.min(1,CPU.dist/TRACK_M),by+bh/2,2.5,0,Math.PI*2);X.fill();
+}
+
+// ── PADS (duck foot shape like reference) ──
+function drawPads(){
+  if(state!=='racing')return;
+  
+  const padCY=H*.86; // center Y of pads
+  const padR=W*.2;   // radius of the foot fan
+  const gap=W*.06;
+  const lx=W/2-gap/2-padR*.6;
+  const rx=W/2+gap/2+padR*.6;
+  
+  drawDuckFootPad(lx,padCY,padR,'왼발',true);
+  drawDuckFootPad(rx,padCY,padR,'오른발',false);
+  
+  // Divider line
+  X.strokeStyle='rgba(255,255,255,.05)';X.lineWidth=1;X.setLineDash([3,5]);
+  X.beginPath();X.moveTo(W/2,H*.75);X.lineTo(W/2,H);X.stroke();X.setLineDash([]);
+}
+
+function drawDuckFootPad(cx,cy,r,label,isLeft){
+  X.save();
+  X.translate(cx,cy);
+  
+  // ── Main foot shape (fan/semicircle like duck webbed foot) ──
+  // Orange gradient
+  const g=X.createRadialGradient(0,-r*.1,r*.1,0,0,r*1.1);
+  g.addColorStop(0,'#FFB74D');
+  g.addColorStop(.6,'#FF9800');
+  g.addColorStop(1,'#E65100');
+  
+  X.fillStyle=g;
+  X.beginPath();
+  // Top rounded part
+  X.arc(0,-r*.15,r*.55,Math.PI,0);
+  // Fan out to webbed foot bottom
+  X.quadraticCurveTo(r*.8,r*.1,r*.9,r*.55);
+  X.quadraticCurveTo(r*.5,r*.7,0,r*.6);
+  X.quadraticCurveTo(-r*.5,r*.7,-r*.9,r*.55);
+  X.quadraticCurveTo(-r*.8,r*.1,-r*.55,-r*.15);
+  X.closePath();
+  X.fill();
+  
+  // Outline
+  X.strokeStyle='#BF360C';X.lineWidth=2;
+  X.stroke();
+  
+  // ── Web lines (3 lines like duck foot) ──
+  X.strokeStyle='rgba(191,54,12,.4)';X.lineWidth=1.5;
+  // Left web line
+  X.beginPath();X.moveTo(-r*.15,-r*.1);X.quadraticCurveTo(-r*.4,r*.2,-r*.6,r*.45);X.stroke();
+  // Center web line
+  X.beginPath();X.moveTo(0,-r*.1);X.lineTo(0,r*.5);X.stroke();
+  // Right web line
+  X.beginPath();X.moveTo(r*.15,-r*.1);X.quadraticCurveTo(r*.4,r*.2,r*.6,r*.45);X.stroke();
+  
+  // ── Highlight (top sheen) ──
+  X.fillStyle='rgba(255,255,255,.2)';
+  X.beginPath();
+  X.ellipse(0,-r*.2,r*.35,r*.2,0,Math.PI,0);
+  X.fill();
+  
+  // ── Label ──
+  X.fillStyle='#fff';
+  X.font='bold 16px sans-serif';
+  X.textAlign='center';X.textBaseline='middle';
+  X.shadowColor='rgba(0,0,0,.3)';X.shadowBlur=4;
+  X.fillText(label,0,r*.15);
+  X.shadowBlur=0;
+  X.textBaseline='alphabetic';
+  
+  // ── Tap sparkles (like reference) ──
+  const t=Date.now()/500;
+  const sparkleAlpha=.3+Math.sin(t*2)*.2;
+  X.strokeStyle=`rgba(255,255,255,${sparkleAlpha})`;X.lineWidth=2;
+  // Top left sparkle
+  X.beginPath();X.moveTo(-r*.7,-r*.3);X.lineTo(-r*.8,-r*.45);X.stroke();
+  X.beginPath();X.moveTo(-r*.8,-r*.3);X.lineTo(-r*.7,-r*.45);X.stroke();
+  // Top right sparkle
+  X.beginPath();X.moveTo(r*.7,-r*.3);X.lineTo(r*.8,-r*.45);X.stroke();
+  X.beginPath();X.moveTo(r*.8,-r*.3);X.lineTo(r*.7,-r*.45);X.stroke();
+  
+  X.restore();
+}
+
+// ── COUNTDOWN ──
+function drawCountdown(){
+  X.fillStyle='rgba(0,0,0,.4)';X.fillRect(0,0,W,H);
+  const txt=cdVal>0?''+cdVal:'GO!';
+  const shake=cdVal<=0?Math.sin(cdT*40)*4*(1-cdT*2):0;
+  X.save();X.translate(shake,0);
+  X.fillStyle=cdVal>0?'#fff':'#FFD700';
+  X.font=`bold ${cdVal>0?80:60}px sans-serif`;
+  X.textAlign='center';X.textBaseline='middle';
+  
+  // Shadow
+  X.fillStyle='rgba(0,0,0,.3)';
+  X.fillText(txt,W/2+2,H*.36+2);
+  X.fillStyle=cdVal>0?'#fff':'#FFD700';
+  X.fillText(txt,W/2,H*.36);
+  
+  X.textBaseline='alphabetic';
+  X.restore();
+}
+
+// ── READY ──
+function drawReady(){
+  X.fillStyle='rgba(0,0,0,.45)';X.fillRect(0,0,W,H);
+  
+  // Title
+  X.fillStyle='rgba(0,0,0,.3)';
+  X.fillText('🦆 달려오리',W/2+2,H*.30+2);
+  X.fillStyle='#FFD700';X.font='bold 32px sans-serif';X.textAlign='center';
+  X.fillText('🦆 달려오리',W/2,H*.30);
+  
+  X.fillStyle='#ddd';X.font='12px sans-serif';
+  X.fillText(`결승 ${TRACK_M}m · 제한시간 ${TIME_LIMIT}초`,W/2,H*.37);
+  X.fillText('하단 왼발 / 오른발 번갈아 탭',W/2,H*.41);
+  X.fillStyle='#aaa';X.font='11px sans-serif';
+  X.fillText('같은 발 연속 = 방향 틀어짐!',W/2,H*.45);
+  X.fillText('PC는 ← →',W/2,H*.49);
+  
+  // Start button
+  const bw=160,bh=48,bx=W/2-bw/2,by=H*.54;
+  const pulse=.85+Math.sin(Date.now()/350)*.15;
+  X.globalAlpha=pulse;
+  X.fillStyle='#FFB300';
+  X.beginPath();X.roundRect(bx,by,bw,bh,24);X.fill();
+  X.fillStyle='#333';X.font='bold 20px sans-serif';
+  X.fillText('START 🏁',W/2,by+bh/2+7);
+  X.globalAlpha=1;
+}
+
+// ── RESULT ──
+function drawResult(){
+  X.fillStyle='rgba(0,0,0,.5)';X.fillRect(0,0,W,H);
+  const win=winner==='YOU';
+  
+  X.fillStyle=win?'#FFD700':'#FF6B6B';
+  X.font='bold 30px sans-serif';X.textAlign='center';
+  X.fillText(win?'🏆 승리! 🏆':'😢 패배...',W/2,H*.33);
+  
+  X.fillStyle='#fff';X.font='15px sans-serif';
+  X.fillText(`${raceT.toFixed(1)}초 · ${P.taps} taps`,W/2,H*.40);
+  X.fillText(`아리 ${P.dist.toFixed(1)}m vs 두리 ${CPU.dist.toFixed(1)}m`,W/2,H*.45);
+  
+  X.fillStyle='rgba(255,255,255,.5)';X.font='12px sans-serif';
+  X.fillText('탭하면 다시 시작',W/2,H*.52);
+}
+
+// ═══ LOOP ═══
+let lt=0;
+function loop(t){
+  const dt=Math.min((t-lt)/1000,.05);lt=t;
+  X.save();X.scale(sc,sc);
+  update(dt);draw();
+  X.restore();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

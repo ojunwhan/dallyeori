@@ -1,0 +1,19 @@
+{
+  "name": "dallyeori",
+  "private": true,
+  "description": "달려오리 (DALLYEORI) — 1대1 탭 레이싱",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve-static": "npx --yes serve src -l 5173"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  }
+}

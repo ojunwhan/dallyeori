@@ -1,0 +1,1708 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>달려오리 BASIC</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #0d0d12;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+  #overlay {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 10; pointer-events: auto;
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+  }
+  #overlay.hidden { display: none; }
+  .title {
+    font-family: 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;
+    font-size: clamp(36px, 9vw, 64px);
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: clamp(13px, 3.2vw, 18px);
+    color: #aaa;
+    text-align: center;
+    margin-bottom: 32px;
+    line-height: 1.5;
+    max-width: 92vw;
+  }
+  .start-btn {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: clamp(18px, 4.5vw, 28px);
+    font-weight: 700;
+    color: #1a1a2e;
+    background: linear-gradient(135deg, #FFD700, #FFA500);
+    border: none; border-radius: 60px;
+    padding: 14px 40px;
+    cursor: pointer;
+    box-shadow: 0 8px 32px rgba(255, 165, 0, 0.4);
+    transition: transform 0.15s;
+  }
+  .start-btn:active { transform: scale(0.95); }
+</style>
+</head>
+<body>
+
+<div id="overlay">
+  <div class="title">🦆 달려오리 BASIC</div>
+  <div class="subtitle" id="overlaySubtitle"></div>
+  <button class="start-btn" id="startBtn">START 🏁</button>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+(function () {
+'use strict';
+
+// ============ 상단 상수 (조정용) ============
+const DESIGN_W = 360;
+const DESIGN_H = 640;
+
+/** 카트라이더식 근접 카메라 — 소실점·트랙·오리 (GH = DESIGN_H) */
+const CAM_VANISH_Y = DESIGN_H * 0.5;
+const CAM_TRACK_BOTTOM = DESIGN_H * 0.78;
+const CAM_DUCK_ANCHOR_Y = DESIGN_H * 0.65;
+/** 트랙 하단 좌우 (거의 전폭) */
+const CAM_TRACK_NEAR_X0 = DESIGN_W * 0.02;
+const CAM_TRACK_NEAR_X1 = DESIGN_W * 0.98;
+/** 몸통 가로 지름 ≈ baseSize×1.5 (겹침 완화 위해 ~12% 축소) */
+const CAM_DUCK_BASE = DESIGN_W * (0.28 / 1.5) * 0.88;
+/** 소실점에서 도로 반폭 */
+const CAM_VANISH_HALF_W = DESIGN_W * 0.05;
+
+const DUCK_LEG_ORANGE = '#FF8F00';
+const DUCK_LEG_STROKE = '#CC7700';
+
+/**
+ * 메인 게임과 동일 sprite_sheet.png 레이아웃 (2800×1504, 프레임 350×700)
+ * prototype에서 상대 경로로 로드 · 없으면 기존 벡터 오리 사용
+ */
+const DUCK_SPRITE_SHEET = Object.freeze({
+  frameW: 350,
+  frameH: 700,
+  ari: { x: 0, y: 0 },
+  kkari: { x: 1400, y: 0 },
+  poses: Object.freeze([
+    { x: 0, y: 0 },
+    { x: 350, y: 0 },
+    { x: 700, y: 0 },
+    { x: 1050, y: 0 },
+  ]),
+});
+
+/** YOU 아리 / CPU 두리 */
+function duckPalette(p) {
+  if (p.isCpu) {
+    return {
+      body: '#2C2C2C',
+      dark: '#1A1A1A',
+      tailA: '#3A3A3A',
+      tailB: '#252525',
+    };
+  }
+  return {
+    body: '#F5F5F0',
+    dark: '#E0DDD5',
+    tailA: '#EDEAE4',
+    tailB: '#DDD9D0',
+  };
+}
+
+/** 결승까지 거리 (m) */
+const TRACK_DISTANCE_M = 70;
+/** 경주 제한 시간 (초) */
+const RACE_TIME_LIMIT_SEC = 13;
+/** 시작 화면 부제 — 제한시간 문구는 RACE_TIME_LIMIT_SEC와 동기화 */
+(function initOverlaySubtitle() {
+  const el = document.getElementById('overlaySubtitle');
+  if (!el) return;
+  el.innerHTML = `결승 <strong>70m</strong> · 제한시간 <strong>${RACE_TIME_LIMIT_SEC}초</strong><br>
+    하단 <strong>왼발 / 오른발</strong> 번갈아 탭 · PC는 <strong>← →</strong><br>
+    상대는 CPU · 먼저 결승선 또는 ${RACE_TIME_LIMIT_SEC}초 후 더 멀리 간 쪽 승리`;
+})();
+/** 정상 교대 발 한 번당 전진 (m) */
+const TAP_STRIDE_M = 0.58;
+/** 같은 발 연속 시 전진 배율 */
+const SAME_FOOT_STRIDE_MUL = 0.32;
+/** CPU 기본 탭 간격(초) 중앙값 */
+const CPU_TAP_BASE_SEC = 0.22;
+/** CPU 속도 배율 매 판 랜덤 범위 */
+const CPU_SPEED_JITTER = 0.18;
+/** 같은 발 실수 확률 (CPU) — 가끔 휴먼틱 */
+const CPU_SAME_FOOT_MISTAKE = 0.14;
+/** CPU 가끔 멈칫(탭 지연 배율) */
+const CPU_HESITATE_CHANCE = 0.08;
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+
+let duckSpriteSheetImg = null;
+(function loadDuckSpriteSheet() {
+  const im = new Image();
+  im.onload = () => {
+    duckSpriteSheetImg = im;
+  };
+  im.onerror = () => {
+    duckSpriteSheetImg = null;
+  };
+  im.src = new URL('../src/sprites/sprite_sheet.png', window.location.href).href;
+})();
+
+let dpr = 1;
+let letter = { s: 1, ox: 0, oy: 0, cw: 0, ch: 0 };
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cssW = window.innerWidth;
+  const cssH = window.innerHeight;
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  const scale = Math.min(cssW / DESIGN_W, cssH / DESIGN_H);
+  const gameW = DESIGN_W * scale;
+  const gameH = DESIGN_H * scale;
+  letter = {
+    s: scale * dpr,
+    ox: (canvas.width - DESIGN_W * scale * dpr) * 0.5,
+    oy: (canvas.height - DESIGN_H * scale * dpr) * 0.5,
+    cw: canvas.width,
+    ch: canvas.height,
+  };
+}
+resize();
+window.addEventListener('resize', resize);
+
+function toDesign(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  const x = (clientX - r.left) * (canvas.width / r.width);
+  const y = (clientY - r.top) * (canvas.height / r.height);
+  const dx = (x - letter.ox) / letter.s;
+  const dy = (y - letter.oy) / letter.s;
+  return { x: dx, y: dy };
+}
+
+// ============ 게임 상태 ============
+let gameState = 'menu';
+/** countdown: ready1s → 3,2,1 → go(shake) */
+let cdPhase = 'ready';
+let cdTimer = 0;
+let raceTime = 0;
+let finishSeqT = 0;
+let winner = null;
+let raceEndReason = null;
+let shakeT = 0;
+let groundOffset = 0;
+let scrollVel = 0;
+/** 속도감: 줄무늬·점선·잔디 등에 가산되는 흐름 위상 (avg speed·dt 적분) */
+let speedFlowAccum = 0;
+/** 구름 저속 좌우 이동 (레퍼런스) */
+let cloudDriftAccum = 0;
+let confetti = [];
+let tapEffects = [];
+let lastTime = 0;
+let loopStarted = false;
+
+/** 패드 플래시·라벨 스케일 */
+const padFlash = { left: 0, right: 0 };
+const padLabelScale = { left: 1, right: 1 };
+
+const players = [
+  {
+    progressMeters: 0,
+    speed: 0,
+    taps: 0,
+    color: '#F5F5F0',
+    name: 'YOU',
+    laneX: -0.22,
+    tapFlash: 0,
+    lastStepFoot: null,
+    isCpu: false,
+    lastTapClock: 0,
+    tapIntervalEwma: 0.35,
+    walkCycle: 0,
+    walkCycleTarget: 0,
+    walkSpeed: 0,
+    bodyTilt: 0,
+    bodyY: 0,
+    bodyScaleX: 1,
+    bodyScaleY: 1,
+    headLag: 0,
+    tailLag: 0,
+    directionAngle: 0,
+    leanFactor: 0,
+  },
+  {
+    progressMeters: 0,
+    speed: 0,
+    taps: 0,
+    color: '#2C2C2C',
+    name: 'CPU',
+    laneX: 0.22,
+    tapFlash: 0,
+    lastStepFoot: null,
+    isCpu: true,
+    cpuNextTap: 0,
+    cpuSpeedMul: 1,
+    lastTapClock: 0,
+    tapIntervalEwma: 0.35,
+    walkCycle: 0,
+    walkCycleTarget: 0,
+    walkSpeed: 0,
+    bodyTilt: 0,
+    bodyY: 0,
+    bodyScaleX: 1,
+    bodyScaleY: 1,
+    headLag: 0,
+    tailLag: 0,
+    directionAngle: 0,
+    leanFactor: 0,
+  },
+];
+
+function resetGame() {
+  players.forEach((p) => {
+    p.progressMeters = 0;
+    p.speed = 0;
+    p.taps = 0;
+    p.tapFlash = 0;
+    p.lastStepFoot = null;
+    p.lastTapClock = 0;
+    p.tapIntervalEwma = 0.35;
+    p.walkCycle = 0;
+    p.walkCycleTarget = 0;
+    p.walkSpeed = 0;
+    p.bodyTilt = 0;
+    p.bodyY = 0;
+    p.bodyScaleX = 1;
+    p.bodyScaleY = 1;
+    p.headLag = 0;
+    p.tailLag = 0;
+    p.directionAngle = 0;
+    p.leanFactor = 0;
+    if (p.isCpu) {
+      p.cpuNextTap = 0.4 + Math.random() * 0.5;
+      p.cpuSpeedMul = 1 + (Math.random() * 2 - 1) * CPU_SPEED_JITTER;
+    }
+  });
+  winner = null;
+  raceEndReason = null;
+  raceTime = 0;
+  finishSeqT = 0;
+  shakeT = 0;
+  groundOffset = 0;
+  scrollVel = 0;
+  speedFlowAccum = 0;
+  cloudDriftAccum = 0;
+  confetti = [];
+  tapEffects = [];
+  padFlash.left = padFlash.right = 0;
+  padLabelScale.left = padLabelScale.right = 1;
+}
+
+function spawnConfetti() {
+  for (let i = 0; i < 80; i++) {
+    confetti.push({
+      x: Math.random() * DESIGN_W,
+      y: -Math.random() * DESIGN_H * 0.35,
+      vx: (Math.random() - 0.5) * 5,
+      vy: Math.random() * 3 + 1.2,
+      r: Math.random() * Math.PI * 2,
+      vr: (Math.random() - 0.5) * 0.25,
+      size: 6 + Math.random() * 12,
+      color: ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#FF8C00', '#C084FC', '#FB7185'][Math.floor(Math.random() * 7)],
+    });
+  }
+}
+
+function pickWinnerOnEnd() {
+  const a = players[0].progressMeters;
+  const b = players[1].progressMeters;
+  if (a >= TRACK_DISTANCE_M && b >= TRACK_DISTANCE_M) {
+    return a >= b ? players[0] : players[1];
+  }
+  if (a >= TRACK_DISTANCE_M) return players[0];
+  if (b >= TRACK_DISTANCE_M) return players[1];
+  return a >= b ? players[0] : players[1];
+}
+
+function beginFinishSequence(reason) {
+  raceEndReason = reason;
+  winner = pickWinnerOnEnd();
+  gameState = 'finish_sequence';
+  finishSeqT = 0;
+  shakeT = 0;
+}
+
+function tryEndRace() {
+  if (gameState !== 'racing') return;
+  const tLim = raceTime >= RACE_TIME_LIMIT_SEC;
+  const p0f = players[0].progressMeters >= TRACK_DISTANCE_M;
+  const p1f = players[1].progressMeters >= TRACK_DISTANCE_M;
+  if (tLim || p0f || p1f) {
+    beginFinishSequence(tLim ? 'time' : 'finish');
+  }
+}
+
+// ============ Web Audio — 발 착지 (오실레이터) ============
+let audioCtx = null;
+
+function ensureAudio() {
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      return null;
+    }
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+function playFootSlap() {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'triangle';
+  const startFreq = 100 + Math.random() * 60;
+  osc.frequency.setValueAtTime(startFreq, now);
+  osc.frequency.exponentialRampToValueAtTime(50, now + 0.07);
+
+  gain.gain.setValueAtTime(0.35, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(now);
+  osc.stop(now + 0.09);
+}
+
+// ============ 입력: P1만 / ← → / 하단 패드 ============
+const keysDown = { left: false, right: false };
+
+function footTapP1(foot) {
+  if (gameState !== 'racing') return;
+  playFootSlap();
+  if (navigator.vibrate) navigator.vibrate(15);
+  const p = players[0];
+  const now = performance.now() / 1000;
+  const dtTap = p.lastTapClock > 0 ? Math.min(0.8, now - p.lastTapClock) : 0.35;
+  p.lastTapClock = now;
+  p.tapIntervalEwma = p.tapIntervalEwma * 0.65 + dtTap * 0.35;
+
+  const prevFoot = p.lastStepFoot;
+  let add = TAP_STRIDE_M;
+  if (prevFoot === foot) {
+    add *= SAME_FOOT_STRIDE_MUL;
+    if (foot === 'left') p.directionAngle -= 0.7;
+    else p.directionAngle += 0.7;
+    p.speed *= 0.5;
+  } else if (prevFoot !== null) {
+    p.directionAngle *= 0.5;
+  }
+  p.directionAngle = Math.max(-1.57, Math.min(1.57, p.directionAngle));
+
+  p.progressMeters = Math.min(TRACK_DISTANCE_M, p.progressMeters + add);
+  p.lastStepFoot = foot;
+  p.taps++;
+  p.speed += 0.045;
+  p.tapFlash = 1;
+  p.walkCycleTarget += Math.PI;
+
+  const pk = foot === 'left' ? 'left' : 'right';
+  padFlash[pk] = 1;
+  padLabelScale[pk] = 1.38;
+
+  tapEffects.push({
+    x: (foot === 'left' ? DESIGN_W * 0.22 : DESIGN_W * 0.78) + (Math.random() - 0.5) * 28,
+    y: DESIGN_H * 0.88,
+    life: 1,
+    text: ['꽥!', '빠악!', '삐약!', '고고!', '달려!'][Math.floor(Math.random() * 5)],
+    vx: (Math.random() - 0.5) * 2,
+    vy: -2.8,
+  });
+
+  tryEndRace();
+}
+
+function hitTestPad(designX, designY) {
+  if (designY < DESIGN_H * 0.52) return null;
+  const mid = DESIGN_W / 2;
+  const gap = 6;
+  const leftW = mid - gap * 1.5;
+  if (designX >= gap && designX < gap + leftW) return 'left';
+  if (designX >= mid + gap * 0.5 && designX < mid + gap * 0.5 + leftW) return 'right';
+  return null;
+}
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (gameState === 'finished') return;
+  for (const t of e.changedTouches) {
+    const { x, y } = toDesign(t.clientX, t.clientY);
+    if (gameState === 'racing') {
+      const foot = hitTestPad(x, y);
+      if (foot) footTapP1(foot);
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener('mousedown', (e) => {
+  if (gameState !== 'racing') return;
+  const { x, y } = toDesign(e.clientX, e.clientY);
+  const foot = hitTestPad(x, y);
+  if (foot) footTapP1(foot);
+});
+
+window.addEventListener('keydown', (e) => {
+  if (gameState !== 'racing') return;
+  if (e.code === 'ArrowLeft' && !keysDown.left) {
+    keysDown.left = true;
+    footTapP1('left');
+  }
+  if (e.code === 'ArrowRight' && !keysDown.right) {
+    keysDown.right = true;
+    footTapP1('right');
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'ArrowLeft') keysDown.left = false;
+  if (e.code === 'ArrowRight') keysDown.right = false;
+});
+
+// ============ CPU ============
+function tickCpu(dt) {
+  const cpu = players[1];
+  cpu.cpuNextTap -= dt;
+  if (cpu.cpuNextTap > 0) return;
+
+  const nowSec = performance.now() / 1000;
+  const dtTapCpu = cpu.lastTapClock > 0 ? Math.min(0.8, nowSec - cpu.lastTapClock) : 0.35;
+  cpu.lastTapClock = nowSec;
+  cpu.tapIntervalEwma = cpu.tapIntervalEwma * 0.65 + dtTapCpu * 0.35;
+
+  const mistake = Math.random() < CPU_SAME_FOOT_MISTAKE;
+  let foot =
+    cpu.lastStepFoot === null
+      ? Math.random() < 0.5
+        ? 'left'
+        : 'right'
+      : cpu.lastStepFoot === 'left'
+        ? 'right'
+        : 'left';
+  if (mistake && cpu.lastStepFoot) foot = cpu.lastStepFoot;
+
+  const prevCpu = cpu.lastStepFoot;
+  let add = TAP_STRIDE_M * cpu.cpuSpeedMul;
+  if (prevCpu === foot) {
+    add *= SAME_FOOT_STRIDE_MUL;
+    if (foot === 'left') cpu.directionAngle -= 0.7;
+    else cpu.directionAngle += 0.7;
+    cpu.speed *= 0.5;
+  } else if (prevCpu !== null) {
+    cpu.directionAngle *= 0.5;
+  }
+  cpu.directionAngle = Math.max(-1.57, Math.min(1.57, cpu.directionAngle));
+
+  cpu.progressMeters = Math.min(TRACK_DISTANCE_M, cpu.progressMeters + add);
+  cpu.lastStepFoot = foot;
+  cpu.taps++;
+  cpu.speed += 0.042 * cpu.cpuSpeedMul;
+  cpu.tapFlash = 1;
+  cpu.walkCycleTarget += Math.PI;
+
+  let gap = CPU_TAP_BASE_SEC / cpu.cpuSpeedMul * (0.72 + Math.random() * 0.58);
+  if (Math.random() < CPU_HESITATE_CHANCE) gap *= 1.35 + Math.random() * 0.5;
+  cpu.cpuNextTap = gap;
+  tryEndRace();
+}
+
+// ============ 오리 달리기 — 걷기 위상 + 실사 느낌 스쿼시/기울기 ============
+function advanceWalkCycle(p, dt) {
+  const gap = p.walkCycleTarget - p.walkCycle;
+  const tapUrgency = p.isCpu
+    ? 3.2 / Math.max(0.12, CPU_TAP_BASE_SEC / (p.cpuSpeedMul || 1))
+    : 5 / Math.max(0.08, p.tapIntervalEwma);
+  const rate = 12 + p.speed * 48 + tapUrgency;
+  p.walkCycle += gap * Math.min(1, dt * rate);
+  if (p.walkCycle > Math.PI * 10) {
+    const cut = Math.PI * 4;
+    p.walkCycle -= cut;
+    p.walkCycleTarget -= cut;
+  }
+}
+
+function updateDuckAnimation(p, dt) {
+  advanceWalkCycle(p, dt);
+
+  const cycle = p.walkCycle;
+  const sin = Math.sin(cycle);
+  const absSin = Math.abs(sin);
+
+  p.walkSpeed = Math.min(1.5, p.speed / 0.085 + absSin * 0.35);
+  const speedMul = Math.min(1.5, p.speed / 0.12 + 0.25 * p.walkSpeed);
+
+  const tiltAmount = 0.4;
+  p.bodyTilt = sin * tiltAmount * speedMul;
+
+  const bounceAmount = 14;
+  p.bodyY = -absSin * bounceAmount * speedMul;
+
+  const squashAmount = 0.14 * speedMul;
+  p.bodyScaleX = 1 + (1 - absSin) * squashAmount;
+  p.bodyScaleY = 1 - (1 - absSin) * squashAmount;
+
+  const targetLean = Math.min(p.speed / 4, 0.35);
+  p.leanFactor += (targetLean - p.leanFactor) * Math.min(1, dt * 10);
+  p.bodyScaleX *= 1 + p.leanFactor * 0.1;
+  p.bodyScaleY *= 1 - p.leanFactor * 0.12;
+
+  const headLagSpeed = 8;
+  const tailLagSpeed = 4;
+  p.headLag += (p.bodyTilt - p.headLag) * Math.min(1, headLagSpeed * dt);
+  p.tailLag += (p.bodyTilt - p.tailLag) * Math.min(1, tailLagSpeed * dt);
+
+  if (p.speed < 0.055) {
+    p.walkCycle *= 0.96;
+    p.walkCycleTarget = p.walkCycle + (p.walkCycleTarget - p.walkCycle) * 0.92;
+    p.bodyTilt *= 0.88;
+    p.bodyY *= 0.88;
+    p.bodyScaleX += (1 - p.bodyScaleX) * 0.14 * Math.min(1, dt * 12);
+    p.bodyScaleY += (1 - p.bodyScaleY) * 0.14 * Math.min(1, dt * 12);
+    p.headLag *= 0.9;
+    p.tailLag *= 0.88;
+    p.leanFactor += (0 - p.leanFactor) * Math.min(1, dt * 8);
+  }
+}
+
+/** 뒷모습 물갈퀴 발 (착지 시에만 가시) */
+function drawDuckFoot(ctx, x, y, size) {
+  ctx.fillStyle = DUCK_LEG_ORANGE;
+  ctx.beginPath();
+  ctx.ellipse(x, y, size, size * 0.45, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = DUCK_LEG_STROKE;
+  ctx.lineWidth = Math.max(1, size * 0.12);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x - size * 0.52, y + size * 0.06);
+  ctx.lineTo(x, y + size * 0.36);
+  ctx.moveTo(x, y + size * 0.02);
+  ctx.lineTo(x, y + size * 0.36);
+  ctx.moveTo(x + size * 0.52, y + size * 0.06);
+  ctx.lineTo(x, y + size * 0.36);
+  ctx.stroke();
+}
+
+function drawDuckLegAndFoot(ctx, baseSize, x, footY, footSize, alpha) {
+  const legBoneLen = baseSize * 0.12;
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = '#FF8F00';
+  ctx.lineWidth = baseSize * 0.06;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x, footY - legBoneLen);
+  ctx.lineTo(x, footY);
+  ctx.stroke();
+  drawDuckFoot(ctx, x, footY, footSize);
+  ctx.globalAlpha = 1;
+}
+
+function computeFinishAnim(t) {
+  const ribbon = Math.min(1, t / 0.34);
+  const ribbonPop = ribbon * ribbon * (2 - ribbon);
+  let fall01 = 0;
+  if (t > 0.14) fall01 = Math.min(1, (t - 0.14) / 0.68);
+  fall01 *= fall01;
+  /** 한 바퀴 넘어 구르는 느낌(과장) */
+  const tumble = fall01 * (Math.PI * 2.65);
+  let eyeMode = 'normal';
+  if (t > 0.38) eyeMode = 'x';
+  if (t > 1.38) eyeMode = 'dazed';
+  return { ribbonPop, fall01, tumble, eyeMode };
+}
+
+function drawDuckSpriteFrame(ctx, img, which, poseIndex, dx, dy, dw, dh) {
+  const base = which === 'ari' ? DUCK_SPRITE_SHEET.ari : DUCK_SPRITE_SHEET.kkari;
+  const off = DUCK_SPRITE_SHEET.poses[Math.max(0, Math.min(3, poseIndex))];
+  const sx = base.x + off.x;
+  const sy = base.y + off.y;
+  ctx.drawImage(
+    img,
+    sx,
+    sy,
+    DUCK_SPRITE_SHEET.frameW,
+    DUCK_SPRITE_SHEET.frameH,
+    dx,
+    dy,
+    dw,
+    dh,
+  );
+}
+
+/** 0 대기 · 1 왼발 앞 · 2 오른발 앞 — 렌더러 fullSheetPoseIndex에 맞춤 */
+function duckSpritePoseIndex(p) {
+  if (p.tapFlash > 0.11 && p.lastStepFoot === 'left') return 1;
+  if (p.tapFlash > 0.11 && p.lastStepFoot === 'right') return 2;
+  if (p.speed > 0.038) {
+    return Math.sin(p.walkCycle) >= 0 ? 1 : 2;
+  }
+  return 0;
+}
+
+function drawDuckEyes(ctx, headY, baseSize, eyeMode) {
+  const ex = baseSize * 0.12;
+  const ey = headY - baseSize * 0.02;
+  ctx.lineCap = 'round';
+  if (eyeMode === 'x') {
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = Math.max(2, baseSize * 0.08);
+    for (const sx of [-1, 1]) {
+      const cx = sx * ex;
+      ctx.beginPath();
+      ctx.moveTo(cx - baseSize * 0.07, ey - baseSize * 0.06);
+      ctx.lineTo(cx + baseSize * 0.07, ey + baseSize * 0.06);
+      ctx.moveTo(cx + baseSize * 0.07, ey - baseSize * 0.06);
+      ctx.lineTo(cx - baseSize * 0.07, ey + baseSize * 0.06);
+      ctx.stroke();
+    }
+  } else if (eyeMode === 'dazed') {
+    ctx.strokeStyle = '#37474F';
+    ctx.lineWidth = Math.max(1.5, baseSize * 0.05);
+    for (const sx of [-1, 1]) {
+      const cx = sx * ex;
+      ctx.beginPath();
+      ctx.arc(cx, ey + baseSize * 0.02, baseSize * 0.065, 0.35, Math.PI - 0.35);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(55,71,79,0.5)';
+    ctx.beginPath();
+    ctx.arc(0, ey - baseSize * 0.02, baseSize * 0.05, 2.5, 5.6);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, ey - baseSize * 0.01, baseSize * 0.04, 1.2, 4.8);
+    ctx.stroke();
+  }
+}
+
+function getDuckLayout(p) {
+  const vanishX = DESIGN_W / 2;
+  const vh = CAM_VANISH_HALF_W;
+  const avgM = (players[0].progressMeters + players[1].progressMeters) * 0.5;
+  const relDist = p.progressMeters - avgM + 8;
+  const tDepth = Math.max(0.12, Math.min(0.98, 1 - (60 - relDist) / 60));
+  /** 화면 약 65% 높이에 궁둥이 근접, 앞서면 아주 살짝 아래로 */
+  const screenY = CAM_DUCK_ANCHOR_Y + (tDepth - 0.55) * 12;
+  /** 해당 Y에서 트랙 좌·우 가장자리 보간 → 25%/75% 레인 */
+  const tVert = Math.max(
+    0,
+    Math.min(1, (screenY - CAM_VANISH_Y) / (CAM_TRACK_BOTTOM - CAM_VANISH_Y)),
+  );
+  const leftAtY = (vanishX - vh) * (1 - tVert) + CAM_TRACK_NEAR_X0 * tVert;
+  const rightAtY = (vanishX + vh) * (1 - tVert) + CAM_TRACK_NEAR_X1 * tVert;
+  const laneFrac = p.isCpu ? 0.75 : 0.25;
+  const baseSize = CAM_DUCK_BASE * (0.94 + tDepth * 0.1);
+  const dir = p.directionAngle || 0;
+  const screenX =
+    leftAtY + laneFrac * (rightAtY - leftAtY) + Math.sin(dir) * baseSize * 0.34;
+  return {
+    screenX,
+    screenY,
+    baseSize,
+    ribbonX: screenX,
+    ribbonY: screenY + baseSize * 0.34,
+  };
+}
+
+function drawDuck(p, dt, finishA) {
+  const { screenX, screenY, baseSize } = getDuckLayout(p);
+  const pal = duckPalette(p);
+  const wPhase = p.walkCycle;
+  const speedMul = finishA
+    ? 0
+    : Math.min(1.5, p.speed / 0.12 + 0.25 * (p.walkSpeed || 0));
+  const wingFlutter = finishA ? 0 : Math.sin(wPhase * 2) * 0.03 * speedMul;
+  const lean = finishA ? 0 : p.leanFactor || 0;
+
+  const footY = baseSize * 0.52;
+  const footSpread = baseSize * 0.19;
+  const footSize = baseSize * 0.18;
+  let leftShow = 0;
+  let rightShow = 0;
+  if (!finishA) {
+    const sinShow = Math.sin(wPhase);
+    leftShow = Math.max(0, sinShow);
+    rightShow = Math.max(0, -sinShow);
+  }
+
+  ctx.save();
+  ctx.translate(screenX, screenY);
+
+  if (finishA) {
+    const fp = DESIGN_H * 0.012;
+    ctx.translate(0, fp);
+    ctx.rotate(finishA.tumble);
+    ctx.translate(0, -fp);
+    ctx.translate(0, finishA.fall01 * baseSize * 1.05);
+  } else {
+    ctx.translate(0, p.bodyY);
+    ctx.rotate(p.bodyTilt);
+    const dirA = Math.abs(p.directionAngle || 0);
+    const dirViewX = 0.3 + 0.7 * Math.cos(dirA);
+    ctx.scale(p.bodyScaleX * dirViewX, p.bodyScaleY);
+  }
+
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.beginPath();
+  ctx.ellipse(0, baseSize * 0.35, baseSize * 0.7, baseSize * 0.15, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (p.tapFlash > 0) {
+    ctx.fillStyle = `rgba(255,255,200,${p.tapFlash * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(0, -baseSize * 0.1, baseSize * 1.5 * p.tapFlash, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const spriteReady =
+    duckSpriteSheetImg &&
+    duckSpriteSheetImg.complete &&
+    duckSpriteSheetImg.naturalWidth > 0;
+  if (!finishA && spriteReady) {
+    let wobbleRot = 0;
+    const wad = Math.min(0.12, p.tapFlash * 0.22);
+    if (p.lastStepFoot === 'left') wobbleRot = wad + (p.leanFactor || 0) * 0.08;
+    else if (p.lastStepFoot === 'right') wobbleRot = -wad + (p.leanFactor || 0) * 0.08;
+    else wobbleRot = (p.leanFactor || 0) * 0.1;
+    ctx.save();
+    ctx.rotate(wobbleRot);
+    const which = p.isCpu ? 'kkari' : 'ari';
+    const poseIx = duckSpritePoseIndex(p);
+    const dh = baseSize * 2.28;
+    const dw = dh * (DUCK_SPRITE_SHEET.frameW / DUCK_SPRITE_SHEET.frameH);
+    const dx = -dw * 0.5;
+    const dy = -dh * 0.84;
+    drawDuckSpriteFrame(ctx, duckSpriteSheetImg, which, poseIx, dx, dy, dw, dh);
+    ctx.restore();
+
+    ctx.fillStyle = p.isCpu ? 'rgba(255,255,255,0.92)' : 'rgba(40,40,40,0.88)';
+    ctx.font = `bold ${baseSize * 0.28}px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(p.name, 0, -baseSize * 1.05);
+
+    ctx.restore();
+    return;
+  }
+
+  const bodyGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, baseSize);
+  bodyGrad.addColorStop(0, pal.body);
+  bodyGrad.addColorStop(0.55, pal.body);
+  bodyGrad.addColorStop(1, pal.dark);
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, baseSize * 0.75, baseSize * 0.7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = p.isCpu ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = pal.dark;
+  ctx.save();
+  ctx.translate(-baseSize * 0.65, -baseSize * 0.05);
+  ctx.scale(1 + wingFlutter, 1);
+  ctx.rotate(0.15);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, baseSize * 0.22, baseSize * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.translate(baseSize * 0.65, -baseSize * 0.05);
+  ctx.scale(1 + wingFlutter, 1);
+  ctx.rotate(-0.15);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, baseSize * 0.22, baseSize * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  const tm = 0.55;
+  const tailAy = -baseSize * 0.52 - lean * baseSize * 0.08;
+  ctx.save();
+  ctx.rotate(finishA ? 0 : -p.tailLag * 0.55);
+  ctx.fillStyle = pal.tailA;
+  ctx.beginPath();
+  ctx.moveTo(-baseSize * 0.045 * tm, tailAy);
+  ctx.quadraticCurveTo(0, tailAy - baseSize * 0.1 * tm, baseSize * 0.045 * tm, tailAy - baseSize * 0.05 * tm);
+  ctx.quadraticCurveTo(baseSize * 0.02 * tm, tailAy + baseSize * 0.02 * tm, -baseSize * 0.02 * tm, tailAy + baseSize * 0.015 * tm);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(baseSize * 0.01 * tm, tailAy - baseSize * 0.02 * tm);
+  ctx.quadraticCurveTo(baseSize * 0.07 * tm, tailAy - baseSize * 0.12 * tm, baseSize * 0.09 * tm, tailAy - baseSize * 0.06 * tm);
+  ctx.quadraticCurveTo(baseSize * 0.05 * tm, tailAy, baseSize * 0.02 * tm, tailAy - baseSize * 0.01 * tm);
+  ctx.fillStyle = pal.tailB;
+  ctx.fill();
+  ctx.restore();
+
+  const headY0 = -baseSize * 0.7 - lean * baseSize * 0.06;
+  const headRad = baseSize * 0.3 * (1 - lean * 0.12);
+  ctx.save();
+  ctx.translate(finishA ? 0 : p.headLag * baseSize * 0.16, 0);
+  const headY = headY0;
+  ctx.fillStyle = pal.body;
+  ctx.beginPath();
+  ctx.arc(0, headY, headRad, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = p.isCpu ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.fillStyle = pal.dark;
+  ctx.beginPath();
+  ctx.moveTo(-baseSize * 0.03, headY - baseSize * 0.28);
+  ctx.quadraticCurveTo(baseSize * 0.02, headY - baseSize * 0.42, baseSize * 0.06, headY - baseSize * 0.32);
+  ctx.quadraticCurveTo(baseSize * 0.03, headY - baseSize * 0.26, baseSize * 0.01, headY - baseSize * 0.28);
+  ctx.fill();
+
+  if (finishA && finishA.eyeMode !== 'normal') {
+    drawDuckEyes(ctx, headY, baseSize, finishA.eyeMode);
+  }
+  ctx.restore();
+
+  ctx.fillStyle = p.isCpu ? 'rgba(255,255,255,0.9)' : 'rgba(40,40,40,0.88)';
+  ctx.font = `bold ${baseSize * 0.28}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(p.name, 0, -baseSize * 1.05);
+
+  if (!finishA) {
+    const minAlpha = 0.65;
+    const aL = minAlpha + (1 - minAlpha) * leftShow;
+    const aR = minAlpha + (1 - minAlpha) * rightShow;
+    const sL = footSize * (0.82 + 0.18 * leftShow);
+    const sR = footSize * (0.82 + 0.18 * rightShow);
+    if (leftShow >= rightShow) {
+      drawDuckLegAndFoot(ctx, baseSize, footSpread, footY, sR, aR);
+      drawDuckLegAndFoot(ctx, baseSize, -footSpread, footY, sL, aL);
+    } else {
+      drawDuckLegAndFoot(ctx, baseSize, -footSpread, footY, sL, aL);
+      drawDuckLegAndFoot(ctx, baseSize, footSpread, footY, sR, aR);
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawFinishRibbon(cx, cy, baseSize, pop) {
+  if (pop < 0.04) return;
+  const tapeW = baseSize * 2.4;
+  const tapeH = baseSize * 0.42 * pop;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.transform(1, 0, -0.1 * pop, 1, 0, 0);
+  const strips = 10;
+  const sw = tapeW / strips;
+  for (let i = 0; i < strips; i++) {
+    ctx.fillStyle = i % 2 === 0 ? '#C62828' : '#FFEBEE';
+    ctx.fillRect(-tapeW / 2 + i * sw, -tapeH, sw + 1, tapeH);
+  }
+  ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(-tapeW / 2, -tapeH, tapeW, tapeH);
+  ctx.restore();
+}
+
+function decorHash01(n) {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function drawPuffyCloud(cx, cy, scale) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  const blobs = [
+    { x: 0, y: 0, rx: 28, ry: 17 },
+    { x: -24, y: 5, rx: 22, ry: 14 },
+    { x: 24, y: 5, rx: 24, ry: 15 },
+    { x: -12, y: -10, rx: 21, ry: 13 },
+    { x: 14, y: -8, rx: 19, ry: 12 },
+  ];
+  for (let b = 0; b < blobs.length; b++) {
+    const B = blobs[b];
+    ctx.beginPath();
+    ctx.ellipse(B.x, B.y, B.rx, B.ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawGround(dt) {
+  const horizon = CAM_VANISH_Y;
+  const trackBottom = CAM_TRACK_BOTTOM;
+  const trackSpan = trackBottom - horizon;
+  const avgM = (players[0].progressMeters + players[1].progressMeters) * 0.5;
+  const avgSp = (players[0].speed + players[1].speed) * 0.5;
+  const runParallax =
+    gameState === 'racing' || gameState === 'finish_sequence';
+  /** 속도 0이면 스크롤 정지 (거리만으로는 바닥이 밀리지 않음) */
+  const scrollInput = runParallax ? avgSp : 0;
+  scrollVel = scrollVel * 0.86 + scrollInput * (560 + avgM * 6.8) * dt;
+  const groundScrollMul = 3.6;
+  groundOffset += scrollVel * dt * 1.08 * groundScrollMul;
+  if (runParallax) {
+    speedFlowAccum += avgSp * 54 * dt;
+  }
+  cloudDriftAccum += dt * (runParallax ? 10.5 : 5.5);
+
+  const vanishX = DESIGN_W / 2;
+  const vanishY = horizon;
+  const x0 = CAM_TRACK_NEAR_X0;
+  const x1 = CAM_TRACK_NEAR_X1;
+  const vh = CAM_VANISH_HALF_W;
+  const flowBoost = avgSp * 5.5;
+
+  function trackLeftAtT(tt) {
+    const k = Math.max(0, Math.min(1, tt));
+    return (vanishX - vh) * (1 - k) + x0 * k;
+  }
+  function trackRightAtT(tt) {
+    const k = Math.max(0, Math.min(1, tt));
+    return (vanishX + vh) * (1 - k) + x1 * k;
+  }
+
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, horizon);
+  skyGrad.addColorStop(0, '#4A90D9');
+  skyGrad.addColorStop(0.55, '#6BA3E0');
+  skyGrad.addColorStop(1, '#87CEEB');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, DESIGN_W, horizon);
+
+  const cloudSlow = cloudDriftAccum * 0.55;
+  const cloudLayouts = [
+    { x: 0.1, scale: 1.08, yOff: 2 },
+    { x: 0.44, scale: 1.35, yOff: 14 },
+    { x: 0.76, scale: 1.0, yOff: 4 },
+    { x: 0.28, scale: 1.2, yOff: 34 },
+  ];
+  const cloudBaseY = DESIGN_H * 0.065;
+  for (let ci = 0; ci < cloudLayouts.length; ci++) {
+    const cl = cloudLayouts[ci];
+    const wob = Math.sin(cloudDriftAccum * 0.022 + ci * 1.7) * 2.5;
+    const cx =
+      ((cl.x * DESIGN_W + cloudSlow * (0.28 + ci * 0.14) + wob + DESIGN_W * 1.45) %
+        (DESIGN_W * 1.7)) -
+      DESIGN_W * 0.2;
+    drawPuffyCloud(cx, cloudBaseY + cl.yOff, cl.scale);
+  }
+
+  const farNudge = avgM * 0.11 + groundOffset * 0.016;
+  const bandTop = horizon - 18;
+  const bandH = 16;
+  ctx.fillStyle = '#2D5A27';
+  ctx.fillRect(0, bandTop, DESIGN_W, bandH);
+  for (let ti = 0; ti < 40; ti++) {
+    const fx = ((ti * 16.5 - farNudge * 6.2) % (DESIGN_W + 28)) - 14;
+    const fh = 7 + decorHash01(ti * 2.17) * 11;
+    const fw = 4.5 + decorHash01(ti * 5.03) * 4;
+    ctx.fillStyle = '#254A22';
+    ctx.fillRect(fx, bandTop + bandH - fh, fw, fh);
+  }
+  for (let fi = 0; fi < 20; fi++) {
+    const fx = ((fi * 30 - farNudge * 4.8 + 9) % (DESIGN_W + 55)) - 28;
+    const poleH = 10 + (fi % 4) * 2;
+    const yPole = bandTop + bandH - poleH - 1;
+    ctx.fillStyle = '#4E342E';
+    ctx.fillRect(fx - 0.5, yPole, 2, poleH + 2);
+    ctx.fillStyle = fi % 2 === 0 ? '#D32F2F' : '#1565C0';
+    ctx.beginPath();
+    ctx.moveTo(fx + 1.5, yPole);
+    ctx.lineTo(fx + 10, yPole + 3);
+    ctx.lineTo(fx + 1.5, yPole + 6);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  const grassGrad = ctx.createLinearGradient(0, horizon, 0, DESIGN_H);
+  grassGrad.addColorStop(0, '#3D8B37');
+  grassGrad.addColorStop(0.5, '#43A047');
+  grassGrad.addColorStop(1, '#4CAF50');
+  ctx.fillStyle = grassGrad;
+  ctx.fillRect(0, horizon, DESIGN_W, DESIGN_H - horizon);
+
+  const sideScroll =
+    groundOffset * 0.48 + speedFlowAccum * 5.5 + avgM * 2.05;
+  const FLOWER_COLORS = ['#FF6B6B', '#FFD93D', '#FF69B4', '#9B59B6'];
+  for (let fl = 0; fl < 110; fl++) {
+    const seed = fl * 19.17;
+    const t = decorHash01(seed) * 0.92 + 0.035;
+    const leftSide = decorHash01(seed + 0.3) < 0.5;
+    const y = vanishY + trackSpan * t;
+    const le = trackLeftAtT(t);
+    const ri = trackRightAtT(t);
+    const par = 0.12 + t * 0.86;
+    const slot = (fl * 37 + sideScroll * par * 54) % 320;
+    let x;
+    if (leftSide) {
+      const span = Math.max(8, le - 12);
+      x = 4 + (slot / 320) * span;
+      if (x > le - 4) continue;
+    } else {
+      const span = Math.max(8, DESIGN_W - ri - 12);
+      x = ri + 4 + (slot / 320) * span;
+      if (x < ri + 4) continue;
+    }
+    const sz = 2 + decorHash01(seed + 2) * 1.5;
+    ctx.globalAlpha = 0.48 + t * 0.52;
+    ctx.fillStyle = FLOWER_COLORS[Math.floor(decorHash01(seed + 3) * 4)];
+    ctx.fillRect(x, y, sz, Math.max(2, sz * 0.85));
+    ctx.globalAlpha = 1;
+  }
+
+  for (let rk = 0; rk < 48; rk++) {
+    const seed = rk * 11.91 + 60;
+    const t = decorHash01(seed) * 0.9 + 0.042;
+    const leftSide = decorHash01(seed + 0.2) < 0.52;
+    const yG = vanishY + trackSpan * t;
+    const le = trackLeftAtT(t);
+    const riX = trackRightAtT(t);
+    const par = 0.1 + t * 0.8;
+    const slot = (rk * 43 + sideScroll * par * 46) % 300;
+    const rx = 2.5 + t * 6;
+    const ry = 1.8 + t * 4.5;
+    let cx;
+    if (leftSide) {
+      const span = Math.max(10, le - rx - 8);
+      cx = 4 + (slot / 300) * span;
+      if (cx + rx > le - 2) continue;
+    } else {
+      const span = Math.max(10, DESIGN_W - riX - rx - 8);
+      cx = riX + 5 + (slot / 300) * span;
+      if (cx - rx < riX + 2) continue;
+    }
+    ctx.fillStyle = decorHash01(seed + 1) < 0.5 ? '#9E9E9E' : '#BDBDBD';
+    ctx.globalAlpha = 0.38 + t * 0.58;
+    ctx.beginPath();
+    ctx.ellipse(
+      cx,
+      yG,
+      rx,
+      ry,
+      (decorHash01(seed + 4) - 0.5) * 0.5,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  const crowdScroll = sideScroll * 1.01;
+  const crowdT = performance.now();
+  for (let row = 0; row < 4; row++) {
+    const t = 0.19 + row * 0.168;
+    const yRow = vanishY + trackSpan * t;
+    const le = trackLeftAtT(t);
+    const ri = trackRightAtT(t);
+    const par = 0.16 + t * 0.74;
+    const count = 6 + (row % 3);
+    for (let s = 0; s < count; s++) {
+      for (let pass = 0; pass < 2; pass++) {
+        const leftD = pass === 0;
+        const span = leftD
+          ? Math.max(14, le - 14)
+          : Math.max(14, DESIGN_W - ri - 14);
+        const wrap =
+          (s * 23 +
+            row * 41 +
+            crowdScroll * par * (28 + t * 42) +
+            (leftD ? 0 : 17)) %
+          (span + 50);
+        const cx = leftD ? 5 + wrap % span : ri + 6 + wrap % span;
+        if (leftD && cx > le - 9) continue;
+        if (!leftD && cx < ri + 9) continue;
+        const bounce =
+          Math.sin(crowdT * 0.0025 + row * 1.35 + s * 0.71 + pass) *
+          (0.9 + t * 2.4);
+        const cy = yRow + bounce * (0.25 + t * 0.85);
+        const bodyW = 4.5 + t * 13;
+        const bodyH = 3 + t * 8;
+        const headR = 1.8 + t * 5.2;
+        const depthA = 0.42 + t * 0.55;
+        ctx.globalAlpha = depthA;
+        ctx.fillStyle = '#E8E8E0';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + 1.2, bodyW * 0.95, bodyH * 1.05, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#F5F5F0';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, bodyW, bodyH, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx - bodyW * 0.52, cy - bodyH * 0.32, headR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  ctx.fillStyle = '#C4A070';
+  ctx.beginPath();
+  ctx.moveTo(vanishX - vh, vanishY);
+  ctx.lineTo(x0, trackBottom);
+  ctx.lineTo(x1, trackBottom);
+  ctx.lineTo(vanishX + vh, vanishY);
+  ctx.closePath();
+  ctx.fill();
+
+  for (let ni = 0; ni < 140; ni++) {
+    const seed = ni * 9.13;
+    const ty = 0.04 + decorHash01(seed) * 0.94;
+    const yN = vanishY + trackSpan * ty;
+    const lN = trackLeftAtT(ty);
+    const rN = trackRightAtT(ty);
+    const xN = lN + 3 + decorHash01(seed + 1) * (rN - lN - 6);
+    ctx.fillStyle =
+      decorHash01(seed + 2) < 0.5
+        ? 'rgba(168,136,77,0.45)'
+        : 'rgba(120,90,50,0.35)';
+    const ps = 1 + decorHash01(seed + 3) * 2;
+    ctx.fillRect(xN, yN, ps, ps);
+  }
+
+  /** 트랙 바닥 밝은/어두운 갈색 줄무늬 — speedFlowAccum으로 속도에 비례해 빠르게 흐름 */
+  const stripePitch = 3.8;
+  const stripeScroll = groundOffset * 1.15 + speedFlowAccum * 17 * 2.5;
+  for (let si = -3; si < 42; si++) {
+    const d = si * stripePitch - (stripeScroll % stripePitch);
+    if (d < -1 || d > 58) continue;
+    const t0 = 1 - d / 58;
+    const t1 = 1 - (d + stripePitch * 0.85) / 58;
+    if (t1 < 0.02 || t0 > 0.995) continue;
+    const tt0 = Math.max(0.03, Math.min(0.98, t0));
+    const tt1 = Math.max(0.03, Math.min(0.98, t1));
+    const y0s = vanishY + trackSpan * tt0;
+    const y1s = vanishY + trackSpan * tt1;
+    const lx0 = trackLeftAtT(tt0);
+    const rx0 = trackRightAtT(tt0);
+    const lx1 = trackLeftAtT(tt1);
+    const rx1 = trackRightAtT(tt1);
+    ctx.fillStyle = si % 2 === 0 ? '#C4A070' : '#A8884D';
+    ctx.beginPath();
+    ctx.moveTo(lx0, y0s);
+    ctx.lineTo(rx0, y0s);
+    ctx.lineTo(rx1, y1s);
+    ctx.lineTo(lx1, y1s);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /** 가로 속도선 */
+  const hLinePitch = 4;
+  const hLinePhase = groundOffset * 1.02 + speedFlowAccum * 15 * 2;
+  for (let hi = -4; hi < 48; hi++) {
+    const hd = hi * hLinePitch - (hLinePhase % hLinePitch);
+    if (hd < -0.5 || hd > 60) continue;
+    const ht = 1 - hd / 58;
+    if (ht < 0.025 || ht > 0.99) continue;
+    const hy = vanishY + trackSpan * ht;
+    const hl = trackLeftAtT(ht) + 2;
+    const hr = trackRightAtT(ht) - 2;
+    ctx.fillStyle = `rgba(255,255,255,${0.4 * ht})`;
+    ctx.fillRect(hl, hy - 1.5, hr - hl, 3);
+  }
+
+  const dashSpeed = (14 + scrollVel * 0.062 + avgSp * 310) * 3.5;
+  const dashFlow = speedFlowAccum * (52 + avgSp * 155) * 2.5;
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([8, 12]);
+  ctx.lineDashOffset = -(groundOffset * dashSpeed * 0.019 + dashFlow);
+  ctx.beginPath();
+  ctx.moveTo(vanishX, vanishY);
+  ctx.lineTo(DESIGN_W / 2, trackBottom);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  /** 고속 시 소실점 기준 속도선 (avgSp 높을수록 강함; 정지에 가깝면 숨김) */
+  if (runParallax && avgSp > 0.055) {
+    const sl = Math.min(1, (avgSp - 0.055) / 0.1);
+    ctx.save();
+    ctx.strokeStyle = `rgba(255,255,255,${0.06 + sl * 0.2})`;
+    ctx.lineWidth = 0.9 + sl * 2;
+    for (let ai = -8; ai <= 8; ai++) {
+      const a = ai * 0.09;
+      const reach = trackSpan * (0.95 + sl * 1.05);
+      ctx.beginPath();
+      ctx.moveTo(vanishX, vanishY);
+      ctx.lineTo(vanishX + Math.sin(a) * DESIGN_W * 0.48 * (0.4 + sl * 0.6), vanishY + reach);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  ctx.strokeStyle = '#8B6914';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(vanishX - vh, vanishY);
+  ctx.lineTo(x0, trackBottom);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(vanishX + vh, vanishY);
+  ctx.lineTo(x1, trackBottom);
+  ctx.stroke();
+
+  for (let sb = 0.055; sb <= 0.99; sb += 0.042) {
+    const yS = vanishY + trackSpan * sb;
+    const lS = trackLeftAtT(sb);
+    const rS = trackRightAtT(sb);
+    const ph = (groundOffset * 0.35 + sideScroll * 0.14 + sb * 55) % 2;
+    const stoneR = 2 + sb * 4.5;
+    ctx.fillStyle = ph < 1 ? '#9E9E9E' : '#BDBDBD';
+    ctx.globalAlpha = 0.48 + sb * 0.5;
+    ctx.beginPath();
+    ctx.ellipse(lS + 2.5 + ph * 2, yS, stoneR, stoneR * 0.68, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(rS - 2.5 - ph * 2, yS, stoneR, stoneR * 0.68, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  const startRel = -avgM;
+  if (startRel > -7 && startRel < 52) {
+    const st = 1 - startRel / 50;
+    if (st > 0.025 && st < 0.995) {
+      const sy = vanishY + trackSpan * st + flowBoost;
+      const slx = trackLeftAtT(st);
+      const srx = trackRightAtT(st);
+      ctx.fillStyle = 'rgba(255,255,255,0.96)';
+      ctx.fillRect(slx, sy - 3, srx - slx, 6);
+      ctx.fillStyle = `rgba(255,255,255,${0.82 * st})`;
+      ctx.font = `bold ${8 + 6 * st}px -apple-system, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('START', vanishX, sy - 9 * st);
+    }
+  }
+
+  for (let m = 0; m <= TRACK_DISTANCE_M; m += 10) {
+    const relDist = m - avgM;
+    if (relDist < -6 || relDist > 62) continue;
+    const t = 1 - relDist / 50;
+    const markerY = vanishY + trackSpan * t + flowBoost;
+    const leftX = trackLeftAtT(t) - 3;
+    const rightX = trackRightAtT(t) + 3;
+    ctx.fillStyle = `rgba(255,255,255,${0.4 * t})`;
+    ctx.fillRect(leftX, markerY - 1.5, rightX - leftX, 3);
+    ctx.fillStyle = `rgba(255,255,255,${0.42 * t})`;
+    ctx.font = `${9 + 7 * t}px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`${m}m`, vanishX, markerY - 5);
+  }
+
+  const finishRel = TRACK_DISTANCE_M - avgM;
+  if (finishRel > 0 && finishRel < 65) {
+    const t = 1 - finishRel / 65;
+    const fy = vanishY + trackSpan * t + flowBoost;
+    const flx = trackLeftAtT(t);
+    const frx = trackRightAtT(t);
+    const archH = 16 * t + 10;
+    const postW = Math.max(2.5, 3.5 * t);
+    const archTop = fy - archH;
+    const curveLift = 7 * t;
+    ctx.fillStyle = '#8D6E63';
+    ctx.beginPath();
+    ctx.moveTo(flx - 1, fy);
+    ctx.lineTo(flx - 1, archTop + 4);
+    ctx.quadraticCurveTo(vanishX, archTop - curveLift, frx + 1, archTop + 4);
+    ctx.lineTo(frx + 1, fy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#5D4037';
+    ctx.fillRect(flx - postW - 0.5, archTop + 3, postW * 0.95, fy - archTop - 3);
+    ctx.fillRect(frx - postW * 0.45, archTop + 3, postW * 0.95, fy - archTop - 3);
+    ctx.fillStyle = `rgba(255,255,255,${0.9 * t})`;
+    ctx.font = `bold ${9 + 12 * t}px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('FINISH', vanishX, archTop - 5 * t);
+    const segments = 12;
+    const segW = (frx - flx) / segments;
+    for (let s = 0; s < segments; s++) {
+      ctx.fillStyle = s % 2 === 0 ? '#111' : '#fff';
+      ctx.fillRect(flx + s * segW, fy - 4 * t, segW, 8 * t);
+    }
+  }
+}
+
+function drawPads() {
+  if (gameState !== 'racing') return;
+  const y0 = DESIGN_H * 0.73;
+  const h = DESIGN_H - y0;
+  const mid = DESIGN_W / 2;
+  const gap = 6;
+  const pads = [
+    { side: 'left', x: gap, w: mid - gap * 1.5, label: '왼발', key: 'left' },
+    { side: 'right', x: mid + gap * 0.5, w: mid - gap * 1.5, label: '오른발', key: 'right' },
+  ];
+  pads.forEach((pd) => {
+    const flash = padFlash[pd.key];
+    const sc = padLabelScale[pd.key];
+    padLabelScale[pd.key] = Math.max(1, sc - 0.028);
+
+    ctx.save();
+    ctx.strokeStyle = flash > 0.2 ? 'rgba(255,235,160,0.98)' : 'rgba(255,255,255,0.48)';
+    ctx.lineWidth = 4 + flash * 5;
+    ctx.fillStyle = flash > 0.15 ? `rgba(255,255,255,${0.14 + flash * 0.24})` : 'rgba(255,255,255,0.08)';
+    const r = 20;
+    ctx.beginPath();
+    ctx.roundRect(pd.x, y0 + 4, pd.w, h - 8, r);
+    ctx.fill();
+    ctx.stroke();
+
+    if (flash > 0.05) {
+      ctx.fillStyle = `rgba(255,255,220,${flash * 0.45})`;
+      ctx.beginPath();
+      ctx.roundRect(pd.x, y0 + 4, pd.w, h - 8, r);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${15 * sc}px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(pd.label, pd.x + pd.w / 2, y0 + h * 0.5);
+    ctx.restore();
+  });
+}
+
+function drawHUD() {
+  const barW = DESIGN_W * 0.36;
+  const barH = 10;
+  const padding = 14;
+
+  for (let i = 0; i < 2; i++) {
+    const p = players[i];
+    const x = i === 0 ? padding : DESIGN_W - padding - barW;
+    const y = 22;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.roundRect(x, y, barW, barH, 5);
+    ctx.fill();
+    const progress = Math.min(1, p.progressMeters / TRACK_DISTANCE_M);
+    const grad = ctx.createLinearGradient(x, 0, x + barW, 0);
+    grad.addColorStop(0, p.color);
+    grad.addColorStop(1, i === 0 ? '#FFF176' : '#FFAB40');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(x, y, barW * progress, barH, 5);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 11px -apple-system, sans-serif';
+    ctx.textAlign = i === 0 ? 'left' : 'right';
+    ctx.fillText(`${p.name} ${p.progressMeters.toFixed(1)}m`, i === 0 ? x : x + barW, y - 5);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.font = '9px -apple-system, sans-serif';
+    ctx.fillText(`${p.taps} tap`, i === 0 ? x : x + barW, y + barH + 11);
+  }
+
+  if (gameState === 'racing' || gameState === 'finish_sequence') {
+    const rem = Math.max(0, RACE_TIME_LIMIT_SEC - raceTime);
+    const blink = rem <= 3 ? 0.45 + 0.55 * Math.sin(performance.now() * 0.018) : 1;
+    ctx.fillStyle = rem <= 3 ? `rgba(255,55,55,${blink})` : 'rgba(255,255,255,0.92)';
+    ctx.font = 'bold 16px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(rem.toFixed(1), DESIGN_W / 2, 36);
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.font = '9px -apple-system, sans-serif';
+    ctx.fillText(`남은 시간 · ${RACE_TIME_LIMIT_SEC}s 한도`, DESIGN_W / 2, 50);
+  }
+
+  if (gameState === 'racing') {
+    const hudAvgSp = (players[0].speed + players[1].speed) * 0.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([4, 6]);
+    const hudDashSpeed = (scrollVel * 0.22 + hudAvgSp * 420 + 18) * 3.5;
+    const hudDashFlow = speedFlowAccum * (56 + hudAvgSp * 105) * 2.5;
+    ctx.lineDashOffset = -(groundOffset * hudDashSpeed * 0.019 + hudDashFlow);
+    ctx.beginPath();
+    ctx.moveTo(DESIGN_W / 2, 58);
+    ctx.lineTo(DESIGN_W / 2, CAM_TRACK_BOTTOM * 0.88);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
+  }
+}
+
+function drawCountdownOverlay() {
+  if (gameState !== 'countdown') return;
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+
+  let text = '';
+  let color = '#fff';
+  let size = 0.2;
+  if (cdPhase === 'ready') {
+    text = 'READY...';
+    size = 0.11;
+    color = '#E3F2FD';
+  } else if (cdPhase === '321') {
+    const idx = Math.min(2, Math.floor(cdTimer));
+    text = String(3 - idx);
+    size = 0.26;
+  } else if (cdPhase === 'go') {
+    text = 'GO!';
+    size = 0.3;
+    color = '#FFD700';
+  }
+
+  ctx.fillStyle = color;
+  ctx.font = `bold ${Math.min(DESIGN_W, DESIGN_H) * size}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, DESIGN_W / 2, DESIGN_H * 0.45);
+  if (cdPhase === 'ready') {
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.font = `bold ${Math.min(DESIGN_W, DESIGN_H) * 0.055}px -apple-system, sans-serif`;
+    ctx.fillText('3 · 2 · 1', DESIGN_W / 2, DESIGN_H * 0.56);
+  }
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawFinishOverlay() {
+  if (gameState !== 'finished') return;
+  ctx.fillStyle = 'rgba(0,0,0,0.52)';
+  ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+  confetti.forEach((c) => {
+    ctx.fillStyle = c.color;
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.r);
+    ctx.fillRect(-c.size / 2, -c.size / 2, c.size, c.size * 0.4);
+    ctx.restore();
+  });
+  const size = Math.min(DESIGN_W, DESIGN_H) * 0.075;
+  ctx.fillStyle = '#FFD700';
+  ctx.font = `bold ${size}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  const reason =
+    raceEndReason === 'time'
+      ? `시간 종료 (${RACE_TIME_LIMIT_SEC}s)`
+      : '결승선 도달!';
+  ctx.fillText(`🏆 ${winner.name} 승리!`, DESIGN_W / 2, DESIGN_H * 0.38);
+  ctx.fillStyle = '#fff';
+  ctx.font = `${size * 0.38}px -apple-system, sans-serif`;
+  ctx.fillText(reason, DESIGN_W / 2, DESIGN_H * 0.46);
+  ctx.fillText(
+    `YOU ${players[0].progressMeters.toFixed(1)}m · CPU ${players[1].progressMeters.toFixed(1)}m`,
+    DESIGN_W / 2,
+    DESIGN_H * 0.52,
+  );
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = `${size * 0.32}px -apple-system, sans-serif`;
+  ctx.fillText('탭하면 다시 시작', DESIGN_W / 2, DESIGN_H * 0.62);
+}
+
+function drawTapEffects() {
+  tapEffects.forEach((e) => {
+    ctx.fillStyle = `rgba(255,255,255,${e.life * 0.85})`;
+    ctx.font = `bold ${12 + (1 - e.life) * 18}px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(e.text, e.x, e.y);
+  });
+}
+
+function update(dt) {
+  if (gameState === 'countdown') {
+    cdTimer += dt;
+    if (shakeT > 0) shakeT = Math.max(0, shakeT - dt * 1.15);
+    if (cdPhase === 'ready') {
+      if (cdTimer >= 1) {
+        cdPhase = '321';
+        cdTimer = 0;
+      }
+    } else if (cdPhase === '321') {
+      if (cdTimer >= 3) {
+        cdPhase = 'go';
+        cdTimer = 0;
+        shakeT = 0.38;
+      }
+    } else if (cdPhase === 'go') {
+      if (cdTimer >= 0.45) {
+        gameState = 'racing';
+        raceTime = 0;
+        cdTimer = 0;
+      }
+    }
+    return;
+  }
+
+  if (shakeT > 0) {
+    shakeT = Math.max(0, shakeT - dt * 1.25);
+  }
+
+  if (gameState === 'racing') {
+    raceTime += dt;
+    tickCpu(dt);
+
+    players.forEach((p) => {
+      p.speed *= 0.94;
+      p.tapFlash *= 0.9;
+      updateDuckAnimation(p, dt);
+    });
+
+    padFlash.left *= Math.exp(-dt * 10);
+    padFlash.right *= Math.exp(-dt * 10);
+
+    tryEndRace();
+  }
+
+  if (gameState === 'finish_sequence') {
+    finishSeqT += dt;
+
+    players.forEach((p) => {
+      p.speed *= 0.91;
+      p.tapFlash *= 0.92;
+      updateDuckAnimation(p, dt);
+    });
+
+    if (finishSeqT > 2.35) {
+      gameState = 'finished';
+      spawnConfetti();
+    }
+  }
+
+  if (gameState === 'finished') {
+    confetti.forEach((c) => {
+      c.x += c.vx * dt * 2.2;
+      c.y += c.vy * dt * 2.2;
+      c.r += c.vr * dt * 2.2;
+      c.vy += 0.05 * dt * 60;
+    });
+  }
+
+  tapEffects.forEach((e) => {
+    e.life -= dt * 2.8;
+    e.x += e.vx * dt * 2.2;
+    e.y += e.vy * dt * 2.2;
+  });
+  tapEffects = tapEffects.filter((e) => e.life > 0);
+}
+
+function gameLoop(time) {
+  const dt = Math.min((time - lastTime) / 1000, 0.055);
+  lastTime = time;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (gameState === 'menu') {
+    requestAnimationFrame(gameLoop);
+    return;
+  }
+
+  update(dt);
+
+  let sx = 0;
+  let sy = 0;
+  if (shakeT > 0) {
+    const mag = shakeT * 12 * dpr;
+    sx = (Math.random() - 0.5) * 2 * mag;
+    sy = (Math.random() - 0.5) * 2 * mag;
+  }
+
+  ctx.setTransform(letter.s, 0, 0, letter.s, letter.ox + sx, letter.oy + sy);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, DESIGN_W, DESIGN_H);
+  ctx.clip();
+
+  const fa =
+    gameState === 'finish_sequence' || gameState === 'finished'
+      ? computeFinishAnim(finishSeqT)
+      : null;
+  const ribbonP = fa && gameState === 'finish_sequence' ? fa.ribbonPop : 0;
+
+  drawGround(dt);
+
+  const sorted = [...players].sort((a, b) => a.progressMeters - b.progressMeters);
+  if (ribbonP > 0) {
+    sorted.forEach((p) => {
+      const ly = getDuckLayout(p);
+      drawFinishRibbon(ly.ribbonX ?? ly.screenX, ly.ribbonY, ly.baseSize, ribbonP);
+    });
+  }
+  sorted.forEach((p) => {
+    const finPose = fa && (gameState === 'finish_sequence' || gameState === 'finished');
+    drawDuck(p, dt, finPose ? fa : null);
+  });
+
+  drawPads();
+  drawHUD();
+  drawTapEffects();
+  drawCountdownOverlay();
+
+  ctx.restore();
+
+  drawFinishOverlay();
+
+  requestAnimationFrame(gameLoop);
+}
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  ensureAudio();
+  overlay.classList.add('hidden');
+  resetGame();
+  gameState = 'countdown';
+  cdPhase = 'ready';
+  cdTimer = 0;
+  lastTime = performance.now();
+  if (!loopStarted) {
+    loopStarted = true;
+    requestAnimationFrame(gameLoop);
+  }
+});
+
+function restartFromFinished() {
+  resetGame();
+  gameState = 'countdown';
+  cdPhase = 'ready';
+  cdTimer = 0;
+}
+
+canvas.addEventListener(
+  'touchstart',
+  (e) => {
+    if (gameState === 'finished') {
+      setTimeout(restartFromFinished, 400);
+    }
+  },
+  { passive: true },
+);
+
+canvas.addEventListener('click', () => {
+  if (gameState === 'finished') {
+    setTimeout(restartFromFinished, 400);
+  }
+});
+})();
+</script>
+</body>
+</html>

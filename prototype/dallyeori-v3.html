@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>달려오리 DALLYEORI</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#222;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="g"></canvas>
+<script>
+'use strict';
+const C=document.getElementById('g'),X=C.getContext('2d');
+
+// ═══ DESIGN ═══
+const W=360,H=640;
+const TRACK_M=70,TIME_LIMIT=13;
+const TAP_STRIDE=0.55,SAME_FOOT_MUL=0.45,FRICTION=0.93;
+
+// ═══ CAMERA ═══
+const VY=H*0.48,TB=H*0.76,VHW=W*0.06;
+const TL0=W*0.03,TR0=W*0.97;
+const DUCK_Y=H*0.62,DUCK_SZ=W*0.24;
+
+// ═══ SCALE ═══
+let sc=1,ox=0,oy=0;
+function resize(){
+  const w=innerWidth,h=innerHeight;
+  sc=Math.min(w/W,h/H);
+  C.width=W*sc;C.height=H*sc;
+  ox=(w-C.width)/2;oy=(h-C.height)/2;
+  C.style.cssText=`position:absolute;left:${ox}px;top:${oy}px`;
+}
+resize();addEventListener('resize',resize);
+
+// ═══ SPRITES ═══
+const sprites={};
+function loadSprite(n,s){const i=new Image();i.onload=()=>{sprites[n]=i};i.onerror=()=>{};i.src=s}
+loadSprite('body','../assets/sprites/ari_body.png');
+loadSprite('head','../assets/sprites/ari_head.png');
+loadSprite('leg','../assets/sprites/ari_leg.png');
+
+// ═══ AUDIO ═══
+let ac=null;
+function ensureAudio(){
+  if(!ac)try{ac=new(AudioContext||webkitAudioContext)}catch(e){}
+  if(ac&&ac.state==='suspended')ac.resume();
+}
+function playSlap(){
+  if(!ac)return;const t=ac.currentTime;
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.type='triangle';
+  o.frequency.setValueAtTime(100+Math.random()*60,t);
+  o.frequency.exponentialRampToValueAtTime(50,t+.07);
+  g.gain.setValueAtTime(.3,t);g.gain.exponentialRampToValueAtTime(.001,t+.09);
+  o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+.09);
+}
+
+// ═══ STATE ═══
+let state='ready',cdVal=3,cdT=0,raceT=0,winner=null,endT=0,flowAcc=0;
+
+// ═══ PLAYERS ═══
+function mk(cpu){return{
+  dist:0,spd:0,taps:0,lastFoot:null,isCpu:cpu,
+  // Walk cycle: each tap advances target by PI
+  wc:0,wcTgt:0,
+  // Animation outputs
+  tilt:0,by:0,scX:1,scY:1,hLag:0,tLag:0,lean:0,
+  // Leg angles (radians, positive = back/showing sole)
+  leftLegA:0,rightLegA:0,
+  leftLegTarget:0,rightLegTarget:0,
+  // Direction
+  dirA:0,
+  // CPU
+  tapT:0,tapI:.18,cpuM:.85+Math.random()*.3
+}}
+let P=mk(false),CPU=mk(true);
+
+// ═══ INPUT ═══
+function tap(foot){
+  if(state!=='racing')return;
+  const p=P;
+  if(p.lastFoot===foot){
+    p.dirA+=(foot==='L'?-.7:.7);
+    p.spd*=SAME_FOOT_MUL;
+  }else{
+    p.spd+=TAP_STRIDE;
+    p.dirA*=.5;
+  }
+  p.dirA=Math.max(-1.57,Math.min(1.57,p.dirA));
+  p.lastFoot=foot;p.taps++;
+  p.wcTgt+=Math.PI;
+  
+  // Set leg targets: tapped foot goes BACK (showing sole), other goes forward
+  if(foot==='L'){
+    p.leftLegTarget=0.7;   // back = big angle = sole visible
+    p.rightLegTarget=-0.3;  // forward = tucked under body
+  }else{
+    p.rightLegTarget=0.7;
+    p.leftLegTarget=-0.3;
+  }
+  
+  playSlap();
+  if(navigator.vibrate)navigator.vibrate(15);
+}
+
+C.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  if(state==='result'){reset();return}
+  if(state==='ready'){startCD();return}
+  for(let t of e.changedTouches){tap((t.clientX-ox)/sc<W/2?'L':'R')}
+},{passive:false});
+document.addEventListener('keydown',e=>{
+  if(state==='result'){reset();return}
+  if(state==='ready'){startCD();return}
+  if(e.key==='ArrowLeft')tap('L');if(e.key==='ArrowRight')tap('R');
+});
+C.addEventListener('mousedown',e=>{
+  if(state==='result'){reset();return}
+  if(state==='ready'){startCD();return}
+  tap((e.clientX-ox)/sc<W/2?'L':'R');
+});
+
+function startCD(){ensureAudio();state='countdown';cdVal=3;cdT=0}
+function reset(){P=mk(false);CPU=mk(true);raceT=0;winner=null;endT=0;flowAcc=0;state='ready'}
+
+// ═══ HELPERS ═══
+function trackX(t,f){
+  const l=(W/2-VHW)*(1-t)+TL0*t, r=(W/2+VHW)*(1-t)+TR0*t;
+  return l+f*(r-l);
+}
+function lerp(a,b,t){return a+(b-a)*t}
+
+// ═══ UPDATE ═══
+function update(dt){
+  if(state==='countdown'){
+    cdT+=dt;if(cdT>=1){cdT=0;cdVal--;if(cdVal<0)state='racing'}
+    return;
+  }
+  if(state==='racing'){
+    raceT+=dt;
+    updDuck(P,dt);
+    // CPU
+    CPU.tapT+=dt;
+    if(CPU.tapT>=CPU.tapI){
+      CPU.tapT=0;CPU.tapI=.13+Math.random()*.07;
+      CPU.spd+=TAP_STRIDE*CPU.cpuM;
+      if(Math.random()<.07)CPU.spd*=SAME_FOOT_MUL;
+      CPU.wcTgt+=Math.PI;
+      const f=CPU.lastFoot==='L'?'R':'L';
+      CPU.lastFoot=f;
+      if(f==='L'){CPU.leftLegTarget=.7;CPU.rightLegTarget=-.3}
+      else{CPU.rightLegTarget=.7;CPU.leftLegTarget=-.3}
+    }
+    updDuck(CPU,dt);
+    flowAcc+=((P.spd+CPU.spd)/2)*55*dt;
+    if(P.dist>=TRACK_M||CPU.dist>=TRACK_M||raceT>=TIME_LIMIT){
+      winner=P.dist>=CPU.dist?'YOU':'CPU';state='ending';endT=0;
+    }
+  }
+  if(state==='ending'){
+    endT+=dt;P.spd*=.92;CPU.spd*=.92;
+    P.dist+=P.spd*dt;CPU.dist+=CPU.spd*dt;
+    updAnim(P,dt);updAnim(CPU,dt);
+    if(endT>2.5)state='result';
+  }
+}
+
+function updDuck(p,dt){
+  p.dist+=p.spd*dt;p.spd*=FRICTION;
+  updAnim(p,dt);
+}
+
+function updAnim(p,dt){
+  // Chase walk cycle
+  if(p.wc<p.wcTgt){p.wc+=40*dt;if(p.wc>p.wcTgt)p.wc=p.wcTgt}
+  const sin=Math.sin(p.wc),absSin=Math.abs(sin);
+  const moving=p.spd>0.08?1:p.spd/0.08;
+  
+  // Tilt: each step tilts the same amount
+  p.tilt=sin*0.35*moving;
+  // Bounce
+  p.by=-absSin*10*moving;
+  // Squash/Stretch
+  const sq=0.1*moving;
+  p.scX=1+(1-absSin)*sq;p.scY=1-(1-absSin)*sq;
+  // Lean forward when fast
+  const tgtLean=Math.min(p.spd/4,.3);
+  p.lean+=(tgtLean-p.lean)*.08;
+  p.scX*=(1+p.lean*.08);p.scY*=(1-p.lean*.1);
+  // Head/tail follow-through
+  p.hLag+=(p.tilt-p.hLag)*10*dt;
+  p.tLag+=(p.tilt-p.tLag)*5*dt;
+  
+  // Leg angles: smooth chase toward targets
+  const legSpeed=18; // fast enough for responsive feel
+  p.leftLegA+=(p.leftLegTarget-p.leftLegA)*legSpeed*dt;
+  p.rightLegA+=(p.rightLegTarget-p.rightLegA)*legSpeed*dt;
+  
+  // When stopped, legs return to neutral
+  if(p.spd<.06){
+    p.tilt*=.9;p.by*=.9;p.scX+=(1-p.scX)*.1;p.scY+=(1-p.scY)*.1;
+    p.hLag*=.9;p.tLag*=.9;p.lean*=.9;p.dirA*=.95;
+    p.leftLegTarget*=.85;p.rightLegTarget*=.85;
+  }
+}
+
+// ═══ DRAW ═══
+function draw(){
+  X.clearRect(0,0,W,H);
+  drawSky();drawGrass();drawTrack();
+  // Ducks
+  [P,CPU].sort((a,b)=>a.dist-b.dist).forEach(d=>drawDuck(d));
+  drawHUD();drawPads();
+  if(state==='countdown')drawCD();
+  if(state==='ready')drawReady();
+  if(state==='result')drawResult();
+}
+
+// ═══ SKY ═══
+function drawSky(){
+  // Bright vivid sky like reference
+  const g=X.createLinearGradient(0,0,0,VY);
+  g.addColorStop(0,'#3B8FD9');g.addColorStop(.4,'#5AABEE');
+  g.addColorStop(.8,'#8ECDF5');g.addColorStop(1,'#C5E8C0');
+  X.fillStyle=g;X.fillRect(0,0,W,VY+5);
+  
+  // Big fluffy clouds
+  const t=raceT||0;
+  X.fillStyle='#fff';
+  [[50,VY*.18,30,1],[170,VY*.28,24,.9],[280,VY*.15,22,.85],[100,VY*.4,18,.8]].forEach(([cx,cy,r,a])=>{
+    X.globalAlpha=a;
+    const x=((cx+t*2)%(W+100))-50;
+    X.beginPath();
+    X.arc(x,cy,r,0,Math.PI*2);
+    X.arc(x+r*.9,cy-r*.2,r*.75,0,Math.PI*2);
+    X.arc(x-r*.5,cy+r*.15,r*.6,0,Math.PI*2);
+    X.arc(x+r*.4,cy+r*.25,r*.55,0,Math.PI*2);
+    X.arc(x+r*1.4,cy+r*.1,r*.5,0,Math.PI*2);
+    X.fill();
+  });
+  X.globalAlpha=1;
+  
+  // Trees at horizon (lush green like reference)
+  for(let layer=0;layer<2;layer++){
+    X.fillStyle=layer===0?'#2B7A25':'#3D9635';
+    const count=layer===0?22:16;
+    for(let i=0;i<count;i++){
+      const x=i*(W/(count-1));
+      const sz=layer===0?8+Math.sin(i*1.7)*3:5+Math.sin(i*2.3)*2;
+      const y0=VY-sz*(layer===0?.15:.05);
+      X.beginPath();X.arc(x,y0,sz,Math.PI,0);X.fill();
+    }
+  }
+  // Flags between trees
+  const avgD=(P.dist+CPU.dist)/2;
+  for(let i=0;i<8;i++){
+    const x=20+i*(W-40)/7;
+    const colors=['#D32F2F','#1565C0','#F9A825','#2E7D32'];
+    X.strokeStyle='#795548';X.lineWidth=1.5;
+    X.beginPath();X.moveTo(x,VY-2);X.lineTo(x,VY-16);X.stroke();
+    X.fillStyle=colors[i%4];
+    X.beginPath();X.moveTo(x,VY-16);X.lineTo(x+7,VY-13);X.lineTo(x,VY-10);X.fill();
+  }
+}
+
+// ═══ GRASS ═══
+function drawGrass(){
+  // Bright green like reference
+  const g=X.createLinearGradient(0,VY,0,TB+40);
+  g.addColorStop(0,'#5EC44A');g.addColorStop(.5,'#4DB83E');g.addColorStop(1,'#40A833');
+  X.fillStyle=g;X.fillRect(0,VY,W,H-VY);
+  
+  // Grass highlights
+  const avgD=(P.dist+CPU.dist)/2;
+  for(let i=0;i<30;i++){
+    const gx=((i*53+avgD*2)%W);
+    const gy=VY+5+((i*41)%(TB-VY+30));
+    X.fillStyle='rgba(120,220,80,.35)';
+    X.beginPath();X.arc(gx,gy,1.5+Math.sin(i)*.5,0,Math.PI*2);X.fill();
+  }
+  
+  // Colorful wildflowers (like reference)
+  const fColors=['#FF5252','#FFD740','#FF4081','#E040FB','#FF6E40','#7C4DFF','#40C4FF'];
+  for(let i=0;i<35;i++){
+    const fx=((i*67+avgD*1.3)%(W*.4));
+    const side=i%2===0?1:-1;
+    const fy=VY+8+((i*43)%(TB-VY+20));
+    const bx=side>0?W-fx-3:fx+3;
+    // Only draw on grass (not on track)
+    const tAtY=(fy-VY)/(TB-VY);
+    const tl=trackX(tAtY>1?1:tAtY<0?0:tAtY,0);
+    const tr=trackX(tAtY>1?1:tAtY<0?0:tAtY,1);
+    if(bx>tl-5&&bx<tr+5)continue;
+    X.fillStyle=fColors[i%7];
+    const sz=2+Math.sin(i*1.3)*.8;
+    X.beginPath();X.arc(bx,fy,sz,0,Math.PI*2);X.fill();
+    // White center
+    X.fillStyle='rgba(255,255,255,.6)';
+    X.beginPath();X.arc(bx,fy,sz*.4,0,Math.PI*2);X.fill();
+  }
+}
+
+// ═══ TRACK ═══
+function drawTrack(){
+  // Warm dirt track (like reference: sandy brown)
+  const tg=X.createLinearGradient(0,VY,0,TB);
+  tg.addColorStop(0,'#D4BE98');tg.addColorStop(.5,'#C8B088');tg.addColorStop(1,'#BCA478');
+  X.fillStyle=tg;
+  X.beginPath();
+  X.moveTo(W/2-VHW,VY);X.lineTo(TL0,TB);X.lineTo(TR0,TB);X.lineTo(W/2+VHW,VY);
+  X.closePath();X.fill();
+  
+  // Track texture: subtle lighter stripes scrolling
+  for(let i=0;i<18;i++){
+    const phase=((i*4.5-flowAcc*2.5)%81+81)%81;
+    const t=phase/81;if(t<.02||t>.98)continue;
+    const y=VY+(TB-VY)*t;
+    const lx=trackX(t,.01),rx=trackX(t,.99);
+    const h=Math.max(1.5,(TB-VY)/20*t);
+    X.fillStyle=i%2===0?'rgba(255,255,240,.2)':'rgba(180,160,120,.12)';
+    X.fillRect(lx,y,rx-lx,h);
+  }
+  
+  // White lane markings (like reference - crisp white lines)
+  // Side lines
+  X.strokeStyle='rgba(255,255,255,.7)';X.lineWidth=2;
+  X.beginPath();X.moveTo(W/2-VHW,VY);X.lineTo(TL0,TB);X.stroke();
+  X.beginPath();X.moveTo(W/2+VHW,VY);X.lineTo(TR0,TB);X.stroke();
+  
+  // Center dashed line
+  X.strokeStyle='rgba(255,255,255,.6)';X.lineWidth=2.5;
+  X.setLineDash([10,15]);X.lineDashOffset=-(flowAcc*3);
+  X.beginPath();X.moveTo(W/2,VY);X.lineTo(W/2,TB);X.stroke();
+  X.setLineDash([]);
+  
+  // Start line (near bottom)
+  const startRel=0-((P.dist+CPU.dist)/2);
+  if(startRel>-5&&startRel<40){
+    const t2=1-Math.max(0,startRel)/40;
+    if(t2>.05&&t2<.95){
+      const sy=VY+(TB-VY)*t2;
+      const sl=trackX(t2,.05),sr=trackX(t2,.95);
+      X.strokeStyle=`rgba(255,255,255,${.5+.3*t2})`;X.lineWidth=3*t2;
+      X.beginPath();X.moveTo(sl,sy);X.lineTo(sr,sy);X.stroke();
+    }
+  }
+  
+  // Distance markers
+  const avgD=(P.dist+CPU.dist)/2;
+  for(let m=10;m<=TRACK_M;m+=10){
+    const rel=m-avgD;if(rel<1||rel>40)continue;
+    const t=1-rel/40;
+    const y=VY+(TB-VY)*t;
+    X.fillStyle=`rgba(255,255,255,${.2+.4*t})`;
+    X.font=`bold ${6+8*t}px sans-serif`;X.textAlign='center';
+    X.fillText(`${m}m`,W/2,y-2);
+  }
+  
+  // Finish arch
+  const fRel=TRACK_M-avgD;
+  if(fRel>0&&fRel<40){
+    const t=1-fRel/40;
+    const fy=VY+(TB-VY)*t;
+    const fl=trackX(t,.02),fr=trackX(t,.98);
+    const ah=25*t;
+    // Poles
+    X.fillStyle='#795548';
+    X.fillRect(fl,fy-ah,3*t,ah);X.fillRect(fr-3*t,fy-ah,3*t,ah);
+    // Arch bar
+    X.fillStyle='#A1887F';X.fillRect(fl,fy-ah,fr-fl,4*t);
+    if(t>.15){
+      X.fillStyle='#fff';X.font=`bold ${5+9*t}px sans-serif`;X.textAlign='center';
+      X.fillText('FINISH',W/2,fy-ah+3.5*t);
+    }
+    // Checker
+    const segs=12,sw=(fr-fl)/segs;
+    for(let s=0;s<segs;s++){
+      X.fillStyle=s%2?'#fff':'#333';
+      X.fillRect(fl+s*sw,fy-2*t,sw,4*t);
+    }
+  }
+}
+
+// ═══ DUCK ═══
+function drawDuck(p){
+  const avgD=(P.dist+CPU.dist)/2;
+  const relD=p.dist-avgD;
+  const screenY=DUCK_Y+p.by-(relD*3.5);
+  const lane=p.isCpu?.72:.28;
+  const tV=Math.min(1,Math.max(0,(TB-screenY)/(TB-VY)));
+  const screenX=trackX(tV,lane);
+  const bs=DUCK_SZ;
+  const dirShift=Math.sin(p.dirA)*bs*.25;
+  const dirView=.35+.65*Math.cos(Math.abs(p.dirA));
+  
+  X.save();
+  X.translate(screenX+dirShift,screenY);
+  X.rotate(p.tilt);
+  X.scale(p.scX,p.scY);
+  
+  // ═══ SHADOW ═══
+  X.fillStyle='rgba(0,0,0,.12)';
+  X.beginPath();X.ellipse(0,bs*.44,bs*.38,bs*.06,0,0,Math.PI*2);X.fill();
+  
+  // ═══ LEGS (behind body = drawn first, but we want BACK leg behind, FRONT leg in front) ═══
+  // Determine which leg is "back" (showing sole) vs "front"
+  const leftBack=p.leftLegA>p.rightLegA;
+  
+  // Draw back leg first (behind body)
+  if(leftBack){
+    drawLeg(p,-bs*.15*dirView,bs*.22,bs,p.leftLegA,p.isCpu,dirView);
+  }else{
+    drawLeg(p,bs*.15*dirView,bs*.22,bs,p.rightLegA,p.isCpu,dirView);
+  }
+  
+  // ═══ BODY ═══
+  if(sprites.body&&!p.isCpu){
+    const bw=bs*1.05*dirView,bh=bs*.95;
+    X.drawImage(sprites.body,-bw/2,-bh/2+bs*.08,bw,bh);
+  }else{
+    const col=p.isCpu?'#2C2C2C':'#F5F5F0';
+    const dk=p.isCpu?'#1A1A1A':'#E0DDD5';
+    const bg=X.createRadialGradient(0,bs*.02,bs*.08,0,bs*.05,bs*.43);
+    bg.addColorStop(0,col);bg.addColorStop(1,dk);
+    X.fillStyle=bg;
+    X.beginPath();X.ellipse(0,bs*.05,bs*.42*dirView,bs*.4,0,0,Math.PI*2);X.fill();
+    // Wing hint
+    X.fillStyle=dk;
+    X.beginPath();X.ellipse(-bs*.36*dirView,bs*.02,bs*.08,bs*.18,.1,0,Math.PI*2);X.fill();
+    X.beginPath();X.ellipse(bs*.36*dirView,bs*.02,bs*.08,bs*.18,-.1,0,Math.PI*2);X.fill();
+  }
+  
+  // ═══ FRONT LEG (in front of body) ═══
+  if(leftBack){
+    drawLeg(p,bs*.15*dirView,bs*.22,bs,p.rightLegA,p.isCpu,dirView);
+  }else{
+    drawLeg(p,-bs*.15*dirView,bs*.22,bs,p.leftLegA,p.isCpu,dirView);
+  }
+  
+  // ═══ TAIL ═══
+  X.save();X.rotate(-p.tLag*.5);
+  const tailY=-bs*.33-p.lean*bs*.07;
+  X.fillStyle=p.isCpu?'#3A3A3A':'#FFFDE7';
+  X.beginPath();
+  X.moveTo(-bs*.04,tailY);
+  X.quadraticCurveTo(0,tailY-bs*.2,bs*.05,tailY-bs*.13);
+  X.quadraticCurveTo(bs*.02,tailY-bs*.05,bs*.03,tailY);
+  X.closePath();X.fill();
+  X.restore();
+  
+  // ═══ HEAD ═══
+  X.save();
+  const hx=p.hLag*bs*.14;
+  const hy=-bs*.47-p.lean*bs*.05;
+  const hr=bs*.19*(1-p.lean*.1);
+  X.translate(hx,0);
+  if(sprites.head&&!p.isCpu){
+    const hw=hr*2.8,hh=hr*2.8;
+    X.drawImage(sprites.head,-hw/2,hy-hh/2,hw,hh);
+  }else{
+    X.fillStyle=p.isCpu?'#2C2C2C':'#F5F5F0';
+    X.beginPath();X.arc(0,hy,hr,0,Math.PI*2);X.fill();
+    // Tuft
+    X.fillStyle=p.isCpu?'#1A1A1A':'#E0DDD5';
+    X.beginPath();
+    X.moveTo(-2,hy-hr);X.quadraticCurveTo(1,hy-hr-10,4,hy-hr-3);
+    X.quadraticCurveTo(2,hy-hr+1,0,hy-hr);X.fill();
+  }
+  X.restore();
+  
+  // ═══ NECK BAND ═══
+  X.fillStyle=p.isCpu?'#FF8F00':'#D32F2F';
+  X.fillRect(-bs*.12,-bs*.25,bs*.24,bs*.05);
+  X.fillStyle='#fff';X.font=`bold ${bs*.035}px sans-serif`;X.textAlign='center';
+  X.fillText(p.isCpu?'D':'A',0,-bs*.225);
+  
+  // ═══ LABEL ═══
+  X.fillStyle='rgba(255,255,255,.85)';
+  X.font=`bold ${bs*.13}px sans-serif`;X.textAlign='center';
+  X.fillText(p.isCpu?'두리':'아리',0,-bs*.68);
+  
+  X.restore();
+}
+
+// ═══ DRAW LEG ═══
+function drawLeg(p,lx,ly,bs,angle,isCpu,dirView){
+  X.save();
+  X.translate(lx,ly); // hip joint position
+  X.rotate(angle);     // swing around hip
+  
+  const legLen=bs*.35;
+  const footW=bs*.16;
+  const footH=bs*.08;
+  
+  if(sprites.leg&&!isCpu){
+    // Use sprite: top = hip, bottom = foot
+    const sw=bs*.22*dirView,sh=bs*.42;
+    // Scale based on angle: back leg appears bigger (closer), front leg smaller
+    const depthScale=1+angle*.15;
+    X.scale(depthScale,depthScale);
+    X.drawImage(sprites.leg,-sw/2,0,sw,sh);
+    X.scale(1/depthScale,1/depthScale);
+  }else{
+    // Code-drawn leg
+    const legCol='#E8600A';
+    const footCol='#E8600A';
+    
+    // Leg bone
+    X.strokeStyle=legCol;X.lineWidth=bs*.055;X.lineCap='round';
+    X.beginPath();X.moveTo(0,0);X.lineTo(0,legLen);X.stroke();
+    
+    // Foot (webbed)
+    X.fillStyle=footCol;
+    X.beginPath();
+    X.ellipse(0,legLen+footH*.3,footW,footH,0,0,Math.PI);
+    X.fill();
+    
+    // Web lines
+    X.strokeStyle='#C04808';X.lineWidth=1;
+    X.beginPath();
+    X.moveTo(-footW*.6,legLen+footH*.3);X.lineTo(0,legLen+footH*1.2);
+    X.moveTo(0,legLen+footH*.3);X.lineTo(0,legLen+footH*1.2);
+    X.moveTo(footW*.6,legLen+footH*.3);X.lineTo(0,legLen+footH*1.2);
+    X.stroke();
+    
+    // Sole highlight when leg is back (showing sole)
+    if(angle>0.2){
+      const soleAlpha=Math.min(1,(angle-.2)*2);
+      X.fillStyle=`rgba(255,200,100,${soleAlpha*.3})`;
+      X.beginPath();
+      X.ellipse(0,legLen+footH*.5,footW*.8,footH*.7,0,0,Math.PI*2);
+      X.fill();
+    }
+  }
+  X.restore();
+}
+
+// ═══ HUD ═══
+function drawHUD(){
+  X.fillStyle='rgba(0,0,0,.5)';X.fillRect(0,0,W,42);
+  const rem=Math.max(0,TIME_LIMIT-raceT);
+  X.fillStyle='#FFD700';X.font='bold 12px sans-serif';X.textAlign='left';
+  X.fillText(`아리 ${P.dist.toFixed(1)}m`,10,16);
+  X.fillStyle='rgba(255,255,255,.4)';X.font='10px sans-serif';
+  X.fillText(`${P.taps} tap`,10,28);
+  X.fillStyle='#aaa';X.font='bold 12px sans-serif';X.textAlign='right';
+  X.fillText(`두리 ${CPU.dist.toFixed(1)}m`,W-10,16);
+  if(state==='racing'||state==='ending'||state==='result'){
+    const fl=rem<=3?Math.sin(raceT*12)*.5+.5:0;
+    X.fillStyle=rem<=3?`rgba(255,${80+fl*100},${80+fl*100},.95)`:'rgba(255,255,255,.9)';
+    X.font='bold 20px sans-serif';X.textAlign='center';
+    X.fillText(rem.toFixed(1),W/2,20);
+    X.fillStyle='rgba(255,255,255,.3)';X.font='9px sans-serif';
+    X.fillText(`${TIME_LIMIT}s 한도`,W/2,32);
+  }
+  const bx=10,bw=W-20,by2=37,bh=3;
+  X.fillStyle='rgba(255,255,255,.15)';X.beginPath();X.roundRect(bx,by2,bw,bh,1.5);X.fill();
+  X.fillStyle='#FFD700';X.beginPath();X.roundRect(bx,by2,bw*Math.min(1,P.dist/TRACK_M),bh,1.5);X.fill();
+  X.fillStyle='#888';X.beginPath();X.arc(bx+bw*Math.min(1,CPU.dist/TRACK_M),by2+bh/2,2.5,0,Math.PI*2);X.fill();
+}
+
+// ═══ PADS (duck foot shape) ═══
+function drawPads(){
+  if(state!=='racing')return;
+  const cy=H*.87,r=W*.19;
+  const lx=W/2-W*.03-r*.6, rx=W/2+W*.03+r*.6;
+  drawFootPad(lx,cy,r,'왼발');
+  drawFootPad(rx,cy,r,'오른발');
+}
+function drawFootPad(cx,cy,r,label){
+  X.save();X.translate(cx,cy);
+  const g=X.createRadialGradient(0,-r*.1,r*.08,0,0,r*1.1);
+  g.addColorStop(0,'#FFB74D');g.addColorStop(.6,'#FF9800');g.addColorStop(1,'#E65100');
+  X.fillStyle=g;
+  X.beginPath();
+  X.arc(0,-r*.15,r*.5,Math.PI,0);
+  X.quadraticCurveTo(r*.8,r*.15,r*.85,r*.5);
+  X.quadraticCurveTo(r*.4,r*.65,0,r*.55);
+  X.quadraticCurveTo(-r*.4,r*.65,-r*.85,r*.5);
+  X.quadraticCurveTo(-r*.8,r*.15,-r*.5,-r*.15);
+  X.closePath();X.fill();
+  X.strokeStyle='#BF360C';X.lineWidth=2;X.stroke();
+  // Webs
+  X.strokeStyle='rgba(191,54,12,.35)';X.lineWidth=1.5;
+  X.beginPath();X.moveTo(-r*.12,-r*.05);X.quadraticCurveTo(-r*.35,r*.2,-r*.55,r*.4);X.stroke();
+  X.beginPath();X.moveTo(0,-r*.05);X.lineTo(0,r*.45);X.stroke();
+  X.beginPath();X.moveTo(r*.12,-r*.05);X.quadraticCurveTo(r*.35,r*.2,r*.55,r*.4);X.stroke();
+  // Highlight
+  X.fillStyle='rgba(255,255,255,.2)';
+  X.beginPath();X.ellipse(0,-r*.2,r*.3,r*.15,0,Math.PI,0);X.fill();
+  // Label
+  X.fillStyle='#fff';X.font='bold 15px sans-serif';X.textAlign='center';X.textBaseline='middle';
+  X.shadowColor='rgba(0,0,0,.3)';X.shadowBlur=3;
+  X.fillText(label,0,r*.12);X.shadowBlur=0;X.textBaseline='alphabetic';
+  // Sparkle
+  const sa=.25+Math.sin(Date.now()/400)*.2;
+  X.strokeStyle=`rgba(255,255,255,${sa})`;X.lineWidth=2;
+  X.beginPath();X.moveTo(-r*.65,-r*.25);X.lineTo(-r*.75,-r*.4);X.stroke();
+  X.beginPath();X.moveTo(-r*.75,-r*.25);X.lineTo(-r*.65,-r*.4);X.stroke();
+  X.beginPath();X.moveTo(r*.65,-r*.25);X.lineTo(r*.75,-r*.4);X.stroke();
+  X.beginPath();X.moveTo(r*.75,-r*.25);X.lineTo(r*.65,-r*.4);X.stroke();
+  X.restore();
+}
+
+// ═══ COUNTDOWN ═══
+function drawCD(){
+  X.fillStyle='rgba(0,0,0,.35)';X.fillRect(0,0,W,H);
+  const txt=cdVal>0?''+cdVal:'GO!';
+  const shk=cdVal<=0?Math.sin(cdT*40)*4*(1-cdT*2):0;
+  X.save();X.translate(shk,0);
+  X.fillStyle='rgba(0,0,0,.25)';
+  X.font=`bold ${cdVal>0?80:60}px sans-serif`;X.textAlign='center';X.textBaseline='middle';
+  X.fillText(txt,W/2+2,H*.36+2);
+  X.fillStyle=cdVal>0?'#fff':'#FFD700';
+  X.fillText(txt,W/2,H*.36);
+  X.textBaseline='alphabetic';X.restore();
+}
+
+// ═══ READY ═══
+function drawReady(){
+  X.fillStyle='rgba(0,0,0,.4)';X.fillRect(0,0,W,H);
+  X.fillStyle='#FFD700';X.font='bold 32px sans-serif';X.textAlign='center';
+  X.fillText('🦆 달려오리',W/2,H*.30);
+  X.fillStyle='#ddd';X.font='12px sans-serif';
+  X.fillText(`결승 ${TRACK_M}m · 제한시간 ${TIME_LIMIT}초`,W/2,H*.37);
+  X.fillText('왼발 / 오른발 번갈아 탭!',W/2,H*.41);
+  X.fillStyle='#aaa';X.font='11px sans-serif';
+  X.fillText('같은 발 연속 = 방향 틀어짐!',W/2,H*.45);
+  X.fillText('PC: ← →',W/2,H*.49);
+  const p=.85+Math.sin(Date.now()/350)*.15;
+  X.globalAlpha=p;X.fillStyle='#FFB300';
+  X.beginPath();X.roundRect(W/2-80,H*.53,160,48,24);X.fill();
+  X.fillStyle='#333';X.font='bold 20px sans-serif';X.fillText('START 🏁',W/2,H*.53+31);
+  X.globalAlpha=1;
+}
+
+// ═══ RESULT ═══
+function drawResult(){
+  X.fillStyle='rgba(0,0,0,.5)';X.fillRect(0,0,W,H);
+  const w=winner==='YOU';
+  X.fillStyle=w?'#FFD700':'#FF6B6B';X.font='bold 30px sans-serif';X.textAlign='center';
+  X.fillText(w?'🏆 승리! 🏆':'😢 패배...',W/2,H*.33);
+  X.fillStyle='#fff';X.font='15px sans-serif';
+  X.fillText(`${raceT.toFixed(1)}초 · ${P.taps} taps`,W/2,H*.40);
+  X.fillText(`아리 ${P.dist.toFixed(1)}m vs 두리 ${CPU.dist.toFixed(1)}m`,W/2,H*.45);
+  X.fillStyle='rgba(255,255,255,.5)';X.font='12px sans-serif';
+  X.fillText('탭하면 다시 시작',W/2,H*.52);
+}
+
+// ═══ LOOP ═══
+let lt=0;
+function loop(t){
+  const dt=Math.min((t-lt)/1000,.05);lt=t;
+  X.save();X.scale(sc,sc);update(dt);draw();X.restore();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
