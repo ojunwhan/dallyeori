@@ -174,7 +174,7 @@ const DIST_FP=4;
 function fmtDist(m){return (+m).toFixed(DIST_FP);}
 
 // ═══ CAMERA ═══
-const VY=H*0.48,TB=H*0.76,VHW=W*0.06;
+const VY=H*0.48,TB=H*1.05,VHW=W*0.06;
 const TL0=W*0.03,TR0=W*0.97;
 const DUCK_Y=H*0.62,DUCK_SZ=W*0.24;
 
