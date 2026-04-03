@@ -166,6 +166,45 @@ export function mountQrMatchHost(root, api) {
   sock.on('matchFound', onFound);
   sock.on('qrMatchExpired', onExpired);
 
+  /** 소켓 연결 대기 중 취소·타임아웃 시 정리 */
+  let pendingConnectCleanup = null;
+
+  function waitForSocketConnected() {
+    return new Promise((resolve, reject) => {
+      if (disposed) {
+        reject(new Error('disposed'));
+        return;
+      }
+      if (sock.connected) {
+        resolve();
+        return;
+      }
+      status.textContent = '서버 연결 중…';
+      const to = setTimeout(() => {
+        sock.off('connect', onConnect);
+        pendingConnectCleanup = null;
+        reject(new Error('SOCKET_CONNECT_TIMEOUT'));
+      }, 20_000);
+      function onConnect() {
+        clearTimeout(to);
+        sock.off('connect', onConnect);
+        pendingConnectCleanup = null;
+        if (disposed) {
+          reject(new Error('disposed'));
+          return;
+        }
+        resolve();
+      }
+      pendingConnectCleanup = () => {
+        clearTimeout(to);
+        sock.off('connect', onConnect);
+        pendingConnectCleanup = null;
+        reject(new Error('disposed'));
+      };
+      sock.once('connect', onConnect);
+    });
+  }
+
   /* ── 버튼 핸들러 ── */
   btnCopy.addEventListener('click', async () => {
     if (!qrUrl) return;
@@ -197,17 +236,26 @@ export function mountQrMatchHost(root, api) {
 
   btnCancel.addEventListener('click', () => {
     if (disposed) return;
-    stopTimer();
     disposed = true;
+    try {
+      pendingConnectCleanup?.();
+    } catch {
+      /* ignore */
+    }
+    pendingConnectCleanup = null;
+    stopTimer();
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
     sock.emit('qrMatchCancel');
     api.navigate('lobby');
   });
 
-  /* ── API 호출 + QR 생성 ── */
+  /* ── 소켓 연결 확인 → 하트 차감 → API → QR ── */
   (async () => {
     try {
+      await waitForSocketConnected();
+      if (disposed) return;
+
       const terrain = api.state.terrain || 'normal';
       const charged = spend(api.state, 1, 'qr_match_host', { terrain });
       if (!charged) {
@@ -246,8 +294,13 @@ export function mountQrMatchHost(root, api) {
       startTimer();
     } catch (e) {
       console.error('[qrMatchHost]', e);
-      earn(api.state, 1, 'qr_refund', { reason: 'create_failed' });
-      showAppToast('QR 방을 만들지 못했어요. 하트는 돌려드렸어요.');
+      if (e instanceof Error && e.message === 'disposed') return;
+      if (e instanceof Error && e.message === 'SOCKET_CONNECT_TIMEOUT') {
+        showAppToast('게임 서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.');
+      } else {
+        earn(api.state, 1, 'qr_refund', { reason: 'create_failed' });
+        showAppToast('QR 방을 만들지 못했어요. 하트는 돌려드렸어요.');
+      }
       disposed = true;
       sock.off('matchFound', onFound);
       sock.off('qrMatchExpired', onExpired);
