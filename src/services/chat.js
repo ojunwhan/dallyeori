@@ -176,16 +176,14 @@ export function sendMessage(uid, targetId, text, opts) {
 
   // ── 소켓 전송 시도 ──
   const sock = getGameSocket();
-  const socketSent =
-    sock?.connected &&
-    (() => {
-      sock.emit('sendChat', {
-        toUid: targetId,
-        text: msg.text,
-        translatedText: msg.translatedText,
-      });
-      return true;
-    })();
+  const socketSent = !!(sock && sock.connected);
+  if (socketSent) {
+    sock.emit('sendChat', {
+      toUid: targetId,
+      text: msg.text,
+      translatedText: msg.translatedText,
+    });
+  }
 
   // ── 소켓으로 보냈으면 AUTO_REPLY 스킵 ──
   if (!socketSent) {
@@ -224,15 +222,15 @@ let _chatBoundSocket = null;
 export function setupChatSocketListener() {
   const sock = getGameSocket();
   if (!sock || !sock.connected) return;
-  if (_chatBoundSocket === sock) return;
+  if (_chatBoundSocket === sock && _chatHandler) return;
 
-  // 이전 소켓에서 리스너 제거
+  // 이전 소켓 리스너 정리
   if (_chatBoundSocket && _chatHandler) {
     _chatBoundSocket.off('receiveChat', _chatHandler);
   }
 
   _chatHandler = (msg) => {
-    console.log('[chat] receiveChat received:', msg);
+    console.log('[chat] receiveChat fired:', msg);
     if (!msg || !msg.fromId || !msg.toId || !msg.text) return;
     const myUid = msg.toId;
     const peerId = msg.fromId;
@@ -247,7 +245,7 @@ export function setupChatSocketListener() {
 
   _chatBoundSocket = sock;
   sock.on('receiveChat', _chatHandler);
-  console.log('[chat] receiveChat listener attached to socket', sock.id);
+  console.log('[chat] listener ATTACHED, socket.id:', sock.id, 'connected:', sock.connected);
 }
 
 /**
