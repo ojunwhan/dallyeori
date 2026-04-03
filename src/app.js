@@ -133,6 +133,8 @@ function navigate(screen, payload) {
     appRoot.innerHTML = '';
     setCanvasRaceMode(false);
 
+    setupChatSocketListener();
+
     switch (screen) {
       case 'splash':
         mountSplash(appRoot, api);

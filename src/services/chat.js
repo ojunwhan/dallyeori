@@ -3,7 +3,7 @@
  */
 
 import { getMockUser } from './mockUsers.js';
-import { getGameSocket } from './socket.js';
+import { getGameSocket, ensureSocket } from './socket.js';
 import { showAppToast } from './toast.js';
 
 const MAX_MSG = 100;
@@ -222,7 +222,11 @@ let chatListenerSocket = null;
 let chatReceiveHandler = null;
 
 export function setupChatSocketListener() {
-  const sock = getGameSocket();
+  let sock = getGameSocket();
+  if (!sock) {
+    ensureSocket();
+    sock = getGameSocket();
+  }
   if (!sock) return;
   if (chatListenerSocket === sock) return;
   if (chatListenerSocket && chatReceiveHandler) {
