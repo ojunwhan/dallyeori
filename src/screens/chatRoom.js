@@ -8,6 +8,7 @@ import {
   isBlocked,
   markConversationRead,
   sendMessage,
+  setupChatSocketListener,
   unblockUser,
 } from '../services/chat.js';
 import { showAppToast } from '../services/toast.js';
@@ -40,6 +41,8 @@ export function mountChatRoom(root, api) {
     root.appendChild(wrap);
     return;
   }
+
+  setupChatSocketListener();
 
   const peer = getMockUser(peerId);
   const peerNick = peer?.nickname ?? peerId;

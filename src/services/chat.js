@@ -3,6 +3,7 @@
  */
 
 import { getMockUser } from './mockUsers.js';
+import { getGameSocket } from './socket.js';
 
 const MAX_MSG = 100;
 
@@ -172,30 +173,67 @@ export function sendMessage(uid, targetId, text, opts) {
   bumpMeta(uid, targetId, t, false);
   bumpMeta(targetId, uid, tr || t, true);
 
-  const timerKey = `${uid}::${targetId}`;
-  const old = replyTimers.get(timerKey);
-  if (old) clearTimeout(old);
-  const delay = randomInt(1000, 3000);
-  const tid = window.setTimeout(() => {
-    replyTimers.delete(timerKey);
-    const replyText = AUTO_REPLIES[randomInt(0, AUTO_REPLIES.length - 1)];
-    const reply = /** @type {ChatMessage} */ ({
-      id: newMsgId(),
-      fromId: targetId,
-      toId: uid,
-      text: replyText,
-      ts: Date.now(),
-    });
-    const arr2 = readConv(uid, targetId);
-    arr2.push(reply);
-    writeConv(uid, targetId, arr2);
-    bumpMeta(uid, targetId, replyText, true);
-    bumpMeta(targetId, uid, replyText, false);
-    window.dispatchEvent(new CustomEvent('dallyeori-chat-update', { detail: { peerId: targetId } }));
-  }, delay);
-  replyTimers.set(timerKey, tid);
+  // ── 소켓 전송 시도 ──
+  const sock = getGameSocket();
+  const socketSent =
+    sock?.connected &&
+    (() => {
+      sock.emit('sendChat', {
+        toUid: targetId,
+        text: msg.text,
+        translatedText: msg.translatedText,
+      });
+      return true;
+    })();
+
+  // ── 소켓으로 보냈으면 AUTO_REPLY 스킵 ──
+  if (!socketSent) {
+    const timerKey = `${uid}::${targetId}`;
+    const old = replyTimers.get(timerKey);
+    if (old) clearTimeout(old);
+    const delay = randomInt(1000, 3000);
+    const tid = window.setTimeout(() => {
+      replyTimers.delete(timerKey);
+      const replyText = AUTO_REPLIES[randomInt(0, AUTO_REPLIES.length - 1)];
+      const reply = /** @type {ChatMessage} */ ({
+        id: newMsgId(),
+        fromId: targetId,
+        toId: uid,
+        text: replyText,
+        ts: Date.now(),
+      });
+      const arr2 = readConv(uid, targetId);
+      arr2.push(reply);
+      writeConv(uid, targetId, arr2);
+      bumpMeta(uid, targetId, replyText, true);
+      bumpMeta(targetId, uid, replyText, false);
+      window.dispatchEvent(new CustomEvent('dallyeori-chat-update', { detail: { peerId: targetId } }));
+    }, delay);
+    replyTimers.set(timerKey, tid);
+  }
 
   return { ok: true };
+}
+
+let chatListenerAttached = false;
+
+export function setupChatSocketListener() {
+  if (chatListenerAttached) return;
+  const sock = getGameSocket();
+  if (!sock) return;
+  chatListenerAttached = true;
+
+  sock.on('receiveChat', (msg) => {
+    if (!msg || !msg.fromId || !msg.toId || !msg.text) return;
+    const myUid = msg.toId;
+    const peerId = msg.fromId;
+    const arr = readConv(myUid, peerId);
+    if (arr.some((m) => m.id === msg.id)) return;
+    arr.push(msg);
+    writeConv(myUid, peerId, arr);
+    bumpMeta(myUid, peerId, msg.translatedText || msg.text, true);
+    window.dispatchEvent(new CustomEvent('dallyeori-chat-update', { detail: { peerId } }));
+  });
 }
 
 /**
