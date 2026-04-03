@@ -202,7 +202,16 @@ export function createLobbyBottomMenu(api) {
     b.textContent = it.label;
     b.addEventListener('click', it.onClick);
     wrap.appendChild(b);
-    if (it.badge > 0) {
+    if (it.label === '메시지' && uid) {
+      const c = getTotalUnreadCount(uid);
+      const badge = document.createElement('span');
+      badge.className = 'lobby-nav-badge lobby-nav-msg-badge';
+      badge.setAttribute('data-uid', uid);
+      badge.title = '읽지 않은 메시지';
+      badge.hidden = c <= 0;
+      badge.textContent = c > 0 ? (c > 99 ? '99+' : String(c)) : '';
+      wrap.appendChild(badge);
+    } else if (it.badge > 0) {
       const badge = document.createElement('span');
       badge.className = 'lobby-nav-badge';
       badge.textContent = it.badge > 99 ? '99+' : String(it.badge);
@@ -212,6 +221,23 @@ export function createLobbyBottomMenu(api) {
     nav.appendChild(wrap);
   }
   return nav;
+}
+
+let lobbyChatUpdateListenerBound = false;
+
+function syncLobbyMessageBadgeFromEvent() {
+  const el = document.querySelector('.lobby-screen .lobby-nav-msg-badge');
+  if (!el) return;
+  const u = el.getAttribute('data-uid');
+  if (!u) return;
+  const c = getTotalUnreadCount(u);
+  if (c <= 0) {
+    el.hidden = true;
+    el.textContent = '';
+  } else {
+    el.hidden = false;
+    el.textContent = c > 99 ? '99+' : String(c);
+  }
 }
 
 /**
@@ -239,4 +265,9 @@ export function mountLobby(root, api) {
   wrap.appendChild(bottom);
 
   root.appendChild(wrap);
+
+  if (!lobbyChatUpdateListenerBound) {
+    lobbyChatUpdateListenerBound = true;
+    window.addEventListener('dallyeori-chat-update', syncLobbyMessageBadgeFromEvent);
+  }
 }
