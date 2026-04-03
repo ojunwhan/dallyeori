@@ -338,7 +338,8 @@ function boot() {
     appState.user = u;
     console.log('[dallyeori] app.js boot → JWT 세션 복원');
     navigateAfterAuth(api);
-    ensureSocket();
+    const bootSock = ensureSocket();
+    console.log('[app] boot ensureSocket result:', !!bootSock, 'connected:', bootSock?.connected);
   } else {
     console.log('[dallyeori] app.js boot → splash');
     navigate('splash');

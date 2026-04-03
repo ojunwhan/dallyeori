@@ -39,14 +39,20 @@ function openGameSocket(opts) {
   return url ? io(url, opts) : io(opts);
 }
 
+/** @param {unknown} msg */
+function receiveChatRelayHandler(msg) {
+  window.dispatchEvent(new CustomEvent('dallyeori-receiveChat', { detail: msg }));
+}
+
 /**
  * 채팅 수신 → window 커스텀 이벤트 (chat.js가 구독, 소켓 인스턴스와 분리)
+ * 동일 소켓에 중복 등록되지 않도록 off 후 on
  * @param {import('socket.io-client').Socket} sock
  */
 function attachReceiveChatRelay(sock) {
-  sock.on('receiveChat', (msg) => {
-    window.dispatchEvent(new CustomEvent('dallyeori-receiveChat', { detail: msg }));
-  });
+  sock.off('receiveChat', receiveChatRelayHandler);
+  sock.on('receiveChat', receiveChatRelayHandler);
+  console.log('[socket] receiveChat relay attached');
 }
 
 /**
@@ -133,16 +139,21 @@ export function endGuestQrFlow() {
 }
 
 export function ensureSocket() {
+  console.log('[socket] ensureSocket called, token:', !!getToken(), 'existing:', !!gameSocket, 'connected:', gameSocket?.connected);
   const token = getToken();
   if (!token) {
     showAppToast('로그인이 필요해요.');
     return null;
   }
   if (gameSocket?.connected && lastSocketToken === token) {
+    console.log('[socket] reusing existing socket, connected:', gameSocket?.connected);
+    attachReceiveChatRelay(gameSocket);
     return gameSocket;
   }
   // 연결 중이어도 같은 토큰이면 기존 인스턴스 유지 (매칭 직전에 끊었다가 다시 만들면 서버 매칭 불가)
   if (gameSocket && lastSocketToken === token) {
+    console.log('[socket] reusing existing socket, connected:', gameSocket?.connected);
+    attachReceiveChatRelay(gameSocket);
     return gameSocket;
   }
   if (gameSocket) {
@@ -158,6 +169,7 @@ export function ensureSocket() {
     reconnectionDelay: 800,
     transports: ['websocket', 'polling'],
   });
+  console.log('[socket] new socket created');
   gameSocket.on('connect_error', () => {
     if (!reconnectToastShown) {
       reconnectToastShown = true;
