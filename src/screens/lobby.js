@@ -274,4 +274,17 @@ export function mountLobby(root, api) {
     lobbyChatUpdateListenerBound = true;
     window.addEventListener('dallyeori-chat-update', syncLobbyMessageBadgeFromEvent);
   }
+
+  const badgeInterval = setInterval(() => {
+    const el = document.querySelector('.lobby-nav-msg-badge');
+    if (!el) {
+      clearInterval(badgeInterval);
+      return;
+    }
+    const uid = api.state.user?.uid;
+    if (!uid) return;
+    const count = getTotalUnreadCount(uid);
+    el.textContent = count > 99 ? '99+' : String(count);
+    el.hidden = count === 0;
+  }, 1000);
 }

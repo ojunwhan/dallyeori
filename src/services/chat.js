@@ -73,6 +73,7 @@ if (typeof window !== 'undefined' && !receiveChatWindowBound) {
   receiveChatWindowBound = true;
   window.addEventListener('dallyeori-receiveChat', (ev) => {
     const msg = /** @type {CustomEvent} */ (ev).detail;
+    console.log('[chat] window receiveChat handler fired:', msg);
     if (!msg || !msg.fromId || !msg.toId || !msg.text) return;
     const myUid = msg.toId;
     const peerId = msg.fromId;
