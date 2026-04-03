@@ -1,5 +1,5 @@
 /**
- * QR 대전 호스트 — 방 생성, QR 표시, 상대 입장 시 경주로 이동
+ * QR 대전 호스트 — 방 생성, QR 표시, 링크 복사/공유, 남은 시간, 상대 입장 시 경주
  */
 
 import QRCode from 'qrcode';
@@ -7,6 +7,8 @@ import { createQrMatchRoom } from '../services/qrMatchApi.js';
 import { ensureSocket, getGameSocket } from '../services/socket.js';
 import { earn, spend } from '../services/hearts.js';
 import { showAppToast } from '../services/toast.js';
+
+const QR_TIMEOUT_SEC = 180; // 서버 QR_PENDING_MS 와 동기화 (3분)
 
 /**
  * @param {HTMLElement} root
@@ -16,14 +18,16 @@ export function mountQrMatchHost(root, api) {
   const wrap = document.createElement('div');
   wrap.className = 'app-screen qr-match-screen';
 
+  /* ── 타이틀 ── */
   const title = document.createElement('div');
-  title.className = 'app-screen-title';
-  title.textContent = 'QR 대전';
+  title.className = 'app-title qr-match-title';
+  title.textContent = 'QR / 링크 대전';
 
   const hint = document.createElement('p');
   hint.className = 'app-muted qr-match-hint';
-  hint.textContent = '상대가 QR을 스캔하면 바로 경주가 시작돼요.';
+  hint.textContent = 'QR을 보여주거나, 링크를 보내세요. 상대가 열면 바로 경주!';
 
+  /* ── QR 이미지 ── */
   const qrWrap = document.createElement('div');
   qrWrap.className = 'qr-match-qr-wrap';
 
@@ -31,37 +35,93 @@ export function mountQrMatchHost(root, api) {
   img.className = 'qr-match-img';
   img.alt = 'QR 코드';
 
+  qrWrap.appendChild(img);
+
+  /* ── 남은 시간 ── */
+  const timerEl = document.createElement('div');
+  timerEl.className = 'qr-match-timer app-muted';
+
+  /* ── 상태 텍스트 ── */
   const status = document.createElement('p');
   status.className = 'qr-match-status';
   status.textContent = '준비 중…';
 
-  const cancel = document.createElement('button');
-  cancel.type = 'button';
-  cancel.className = 'app-btn';
-  cancel.textContent = '취소';
+  /* ── 링크 복사 버튼 ── */
+  const btnCopy = document.createElement('button');
+  btnCopy.type = 'button';
+  btnCopy.className = 'app-btn app-btn--primary qr-match-copy-btn';
+  btnCopy.textContent = '링크 복사';
+  btnCopy.disabled = true;
 
+  /* ── 공유 버튼 (Web Share API) ── */
+  const btnShare = document.createElement('button');
+  btnShare.type = 'button';
+  btnShare.className = 'app-btn qr-match-share-btn';
+  btnShare.textContent = '카톡 · 메시지로 공유';
+  btnShare.disabled = true;
+  if (!navigator.share) btnShare.hidden = true;
+
+  /* ── 취소 ── */
+  const btnCancel = document.createElement('button');
+  btnCancel.type = 'button';
+  btnCancel.className = 'app-btn qr-match-cancel-btn';
+  btnCancel.textContent = '취소';
+
+  /* ── 소켓 확인 ── */
   let disposed = false;
   const s = ensureSocket();
   if (!s) {
     status.textContent = '로그인이 필요해요.';
-    wrap.appendChild(title);
-    wrap.appendChild(status);
+    wrap.append(title, status);
     root.appendChild(wrap);
     return;
   }
-
   const sock = getGameSocket();
   if (!sock) {
     status.textContent = '소켓을 연결할 수 없어요.';
-    wrap.appendChild(title);
-    wrap.appendChild(status);
+    wrap.append(title, status);
     root.appendChild(wrap);
     return;
   }
 
-  /** @param {object} data */
+  /* ── 타이머 ── */
+  let remainSec = QR_TIMEOUT_SEC;
+  let timerInterval = null;
+
+  function updateTimer() {
+    const m = Math.floor(remainSec / 60);
+    const sec = remainSec % 60;
+    timerEl.textContent = `남은 시간  ${m}:${String(sec).padStart(2, '0')}`;
+    if (remainSec <= 30) timerEl.classList.add('qr-match-timer--warn');
+    else timerEl.classList.remove('qr-match-timer--warn');
+  }
+
+  function startTimer() {
+    updateTimer();
+    timerInterval = setInterval(() => {
+      remainSec -= 1;
+      if (remainSec <= 0) {
+        remainSec = 0;
+        if (timerInterval) clearInterval(timerInterval);
+      }
+      updateTimer();
+    }, 1000);
+  }
+
+  function stopTimer() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+  }
+
+  /* ── QR URL 저장 ── */
+  let qrUrl = '';
+
+  /* ── 소켓 이벤트 ── */
   const onFound = (data) => {
     if (disposed) return;
+    stopTimer();
     const opp = data.opponent || {};
     const mp = globalThis.__dallyeoriMatchProfile || {};
     const myDuck = data.myDuckId || mp.duckId || 'bori';
@@ -95,7 +155,8 @@ export function mountQrMatchHost(root, api) {
 
   const onExpired = () => {
     if (disposed) return;
-    showAppToast('대기 시간이 지났어요.');
+    stopTimer();
+    showAppToast('대기 시간이 지났어요. 다시 시도해 주세요.');
     disposed = true;
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
@@ -105,7 +166,38 @@ export function mountQrMatchHost(root, api) {
   sock.on('matchFound', onFound);
   sock.on('qrMatchExpired', onExpired);
 
-  cancel.addEventListener('click', () => {
+  /* ── 버튼 핸들러 ── */
+  btnCopy.addEventListener('click', async () => {
+    if (!qrUrl) return;
+    try {
+      await navigator.clipboard.writeText(qrUrl);
+      showAppToast('링크가 복사됐어요!');
+      btnCopy.textContent = '복사 완료 ✓';
+      setTimeout(() => {
+        btnCopy.textContent = '링크 복사';
+      }, 2000);
+    } catch {
+      prompt('이 링크를 복사하세요:', qrUrl);
+    }
+  });
+
+  btnShare.addEventListener('click', async () => {
+    if (!qrUrl) return;
+    try {
+      await navigator.share({
+        title: '달려오리 — 같이 경주하자!',
+        text: '지금 바로 오리 경주 한 판?',
+        url: qrUrl,
+      });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      showAppToast('공유에 실패했어요.');
+    }
+  });
+
+  btnCancel.addEventListener('click', () => {
+    if (disposed) return;
+    stopTimer();
     disposed = true;
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
@@ -113,6 +205,7 @@ export function mountQrMatchHost(root, api) {
     api.navigate('lobby');
   });
 
+  /* ── API 호출 + QR 생성 ── */
   (async () => {
     try {
       const terrain = api.state.terrain || 'normal';
@@ -125,6 +218,7 @@ export function mountQrMatchHost(root, api) {
         api.navigate('lobby');
         return;
       }
+
       const j = await createQrMatchRoom({
         terrain,
         nickname: api.state.nickname,
@@ -135,9 +229,21 @@ export function mountQrMatchHost(root, api) {
         draws: api.state.draws,
       });
       if (disposed) return;
-      const dataUrl = await QRCode.toDataURL(j.qrUrl, { margin: 2, width: 240 });
+
+      qrUrl = j.qrUrl;
+
+      const dataUrl = await QRCode.toDataURL(qrUrl, {
+        margin: 2,
+        width: 240,
+        color: { dark: '#ffffffFF', light: '#000000FF' },
+      });
       img.src = dataUrl;
+
+      btnCopy.disabled = false;
+      btnShare.disabled = false;
+
       status.textContent = '상대를 기다리는 중…';
+      startTimer();
     } catch (e) {
       console.error('[qrMatchHost]', e);
       earn(api.state, 1, 'qr_refund', { reason: 'create_failed' });
@@ -149,11 +255,14 @@ export function mountQrMatchHost(root, api) {
     }
   })();
 
-  qrWrap.appendChild(img);
+  /* ── DOM 조립 ── */
   wrap.appendChild(title);
   wrap.appendChild(hint);
   wrap.appendChild(qrWrap);
+  wrap.appendChild(timerEl);
   wrap.appendChild(status);
-  wrap.appendChild(cancel);
+  wrap.appendChild(btnCopy);
+  if (!btnShare.hidden) wrap.appendChild(btnShare);
+  wrap.appendChild(btnCancel);
   root.appendChild(wrap);
 }

@@ -388,20 +388,27 @@
   padding: 16px;
   max-width: 420px;
   margin: 0 auto;
+  text-align: center;
+}
+
+.qr-match-title {
+  text-align: center;
 }
 
 .qr-match-hint {
-  margin: 8px 0 12px;
+  margin: 4px 0 16px;
   text-align: center;
+  line-height: 1.4;
 }
 
 .qr-match-qr-wrap {
   display: flex;
   justify-content: center;
-  padding: 12px;
-  background: #111;
+  padding: 16px;
+  background: #000;
+  border: 1px solid #333;
   border-radius: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .qr-match-img {
@@ -411,15 +418,46 @@
   image-rendering: pixelated;
 }
 
+.qr-match-timer {
+  text-align: center;
+  margin: 6px 0 4px;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.3s;
+}
+
+.qr-match-timer--warn {
+  color: #f44;
+  font-weight: 600;
+}
+
 .qr-match-status {
   text-align: center;
-  margin: 8px 0 16px;
+  margin: 4px 0 16px;
   font-size: 0.9rem;
+}
+
+.qr-match-copy-btn {
+  margin-bottom: 8px;
+}
+
+.qr-match-share-btn {
+  margin-bottom: 8px;
+}
+
+.qr-match-cancel-btn {
+  margin-top: 4px;
+  border-color: #444;
+  color: #999;
 }
 
 .guest-qr-wait-screen {
   padding: 24px 16px;
   text-align: center;
+}
+
+.guest-qr-wait-screen .app-muted {
+  margin-top: 12px;
 }
 
 .result-qr-guest-tip {
