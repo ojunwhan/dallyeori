@@ -3,7 +3,7 @@
  */
 
 import { getMockUser } from './mockUsers.js';
-import { getGameSocket } from './socket.js';
+import { getGameSocket, ensureSocket } from './socket.js';
 import { showAppToast } from './toast.js';
 
 const MAX_MSG = 100;
@@ -66,6 +66,24 @@ function bumpMeta(uid, peerId, preview, /** @type {boolean} */ isIncoming) {
     unread: isIncoming ? prev.unread + 1 : prev.unread,
   };
   writeMeta(uid, meta);
+}
+
+let receiveChatWindowBound = false;
+if (typeof window !== 'undefined' && !receiveChatWindowBound) {
+  receiveChatWindowBound = true;
+  window.addEventListener('dallyeori-receiveChat', (ev) => {
+    const msg = /** @type {CustomEvent} */ (ev).detail;
+    if (!msg || !msg.fromId || !msg.toId || !msg.text) return;
+    const myUid = msg.toId;
+    const peerId = msg.fromId;
+    const arr = readConv(myUid, peerId);
+    if (arr.some((m) => m.id === msg.id)) return;
+    arr.push(msg);
+    writeConv(myUid, peerId, arr);
+    bumpMeta(myUid, peerId, msg.translatedText || msg.text, true);
+    window.dispatchEvent(new CustomEvent('dallyeori-chat-update', { detail: { peerId } }));
+    showAppToast('💬 새 메시지가 왔어요');
+  });
 }
 
 /**
@@ -175,7 +193,11 @@ export function sendMessage(uid, targetId, text, opts) {
   bumpMeta(targetId, uid, tr || t, true);
 
   // ── 소켓 전송 시도 ──
-  const sock = getGameSocket();
+  let sock = getGameSocket();
+  if (!sock || !sock.connected) {
+    ensureSocket();
+    sock = getGameSocket();
+  }
   const socketSent = !!(sock && sock.connected);
   if (socketSent) {
     sock.emit('sendChat', {
@@ -185,8 +207,8 @@ export function sendMessage(uid, targetId, text, opts) {
     });
   }
 
-  // ── 소켓으로 보냈으면 AUTO_REPLY 스킵 ──
-  if (!socketSent) {
+  // 완전 오프라인(소켓 인스턴스 없음)일 때만 모킹 자동응답
+  if (!socketSent && !sock) {
     const timerKey = `${uid}::${targetId}`;
     const old = replyTimers.get(timerKey);
     if (old) clearTimeout(old);
@@ -214,39 +236,8 @@ export function sendMessage(uid, targetId, text, opts) {
   return { ok: true };
 }
 
-/** @type {((msg: object) => void) | null} */
-let _chatHandler = null;
-/** @type {import('socket.io-client').Socket | null} */
-let _chatBoundSocket = null;
-
-export function setupChatSocketListener() {
-  const sock = getGameSocket();
-  if (!sock || !sock.connected) return;
-  if (_chatBoundSocket === sock && _chatHandler) return;
-
-  // 이전 소켓 리스너 정리
-  if (_chatBoundSocket && _chatHandler) {
-    _chatBoundSocket.off('receiveChat', _chatHandler);
-  }
-
-  _chatHandler = (msg) => {
-    console.log('[chat] receiveChat fired:', msg);
-    if (!msg || !msg.fromId || !msg.toId || !msg.text) return;
-    const myUid = msg.toId;
-    const peerId = msg.fromId;
-    const arr = readConv(myUid, peerId);
-    if (arr.some((m) => m.id === msg.id)) return;
-    arr.push(msg);
-    writeConv(myUid, peerId, arr);
-    bumpMeta(myUid, peerId, msg.translatedText || msg.text, true);
-    window.dispatchEvent(new CustomEvent('dallyeori-chat-update', { detail: { peerId } }));
-    showAppToast('💬 새 메시지가 왔어요');
-  };
-
-  _chatBoundSocket = sock;
-  sock.on('receiveChat', _chatHandler);
-  console.log('[chat] listener ATTACHED, socket.id:', sock.id, 'connected:', sock.connected);
-}
+/** socket.js 가 receiveChat → window 로 중계; 호환용 noop */
+export function setupChatSocketListener() {}
 
 /**
  * @param {string | undefined | null} uid

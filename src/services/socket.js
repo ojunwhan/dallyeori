@@ -40,6 +40,16 @@ function openGameSocket(opts) {
 }
 
 /**
+ * 채팅 수신 → window 커스텀 이벤트 (chat.js가 구독, 소켓 인스턴스와 분리)
+ * @param {import('socket.io-client').Socket} sock
+ */
+function attachReceiveChatRelay(sock) {
+  sock.on('receiveChat', (msg) => {
+    window.dispatchEvent(new CustomEvent('dallyeori-receiveChat', { detail: msg }));
+  });
+}
+
+/**
  * @returns {import('socket.io-client').Socket | null}
  */
 export function getGameSocket() {
@@ -109,6 +119,7 @@ export function connectQrGuestSocket(token) {
   gameSocket.on('connect', () => {
     reconnectToastShown = false;
   });
+  attachReceiveChatRelay(gameSocket);
   return gameSocket;
 }
 
@@ -159,8 +170,8 @@ export function ensureSocket() {
       const u = socketUrl();
       console.log('[dallyeori/socket] connected →', u || window.location.origin);
     }
-    import('./chat.js').then((m) => m.setupChatSocketListener());
   });
+  attachReceiveChatRelay(gameSocket);
   return gameSocket;
 }
 

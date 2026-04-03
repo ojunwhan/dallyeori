@@ -26,7 +26,7 @@ import { mountRanking } from './screens/ranking.js';
 import { mountRaceHistory } from './screens/raceHistory.js';
 import { mountRaceV3Game } from './raceV3Inline.js';
 import { saveRaceResult } from './services/raceHistory.js';
-import { setupChatSocketListener } from './services/chat.js';
+import './services/chat.js';
 import { DUCKS_NINE } from './constants.js';
 
 function duckDisplayNameById(id) {
@@ -132,8 +132,6 @@ function navigate(screen, payload) {
     appRoot.classList.remove('app-root--pass-through', 'app-root--race-hidden');
     appRoot.innerHTML = '';
     setCanvasRaceMode(false);
-
-    setupChatSocketListener();
 
     switch (screen) {
       case 'splash':
@@ -340,9 +338,6 @@ function boot() {
     appState.user = u;
     console.log('[dallyeori] app.js boot → JWT 세션 복원');
     navigateAfterAuth(api);
-    // 채팅 수신 리스너 (로그인 유저만)
-    setTimeout(() => setupChatSocketListener(), 3000);
-    setTimeout(() => setupChatSocketListener(), 6000);
   } else {
     console.log('[dallyeori] app.js boot → splash');
     navigate('splash');
