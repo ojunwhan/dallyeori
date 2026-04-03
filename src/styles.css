@@ -1001,35 +1001,49 @@
 
 .chat-input-row {
   display: flex;
-  flex-direction: row;
-  gap: 8px;
   align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
   background: #111;
-  padding: 8px;
   border-top: 1px solid #333;
 }
 
-.chat-voice-btn {
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  border: 1px solid #555;
-  background: #1a1a1a;
-  font-size: 1.2rem;
-  cursor: pointer;
+.chat-input-row .app-btn--primary {
+  width: auto;
 }
 
 .chat-input {
   flex: 1;
+  min-width: 0;
   margin: 0;
+  width: auto;
+  max-width: 100%;
+  padding: 10px 12px;
   border: 1px solid #555;
+  border-radius: 4px;
   background: #1a1a1a;
   color: #fff;
+  font: inherit;
+  font-size: 1rem;
 }
 
 .chat-input::placeholder {
   color: #888;
+}
+
+.chat-voice-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ——— 매칭 Phase 2-2 ——— */
