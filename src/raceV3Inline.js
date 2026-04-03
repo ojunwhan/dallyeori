@@ -747,11 +747,10 @@ function drawSky(){
   X.fillStyle=g;X.fillRect(0,0,W,VY+5);
   
   // Big fluffy clouds
-  const t=raceT||0;
   X.fillStyle='#fff';
   [[50,VY*.18,30,1],[170,VY*.28,24,.9],[280,VY*.15,22,.85],[100,VY*.4,18,.8]].forEach(([cx,cy,r,a])=>{
     X.globalAlpha=a;
-    const x=((cx+t*2)%(W+100))-50;
+    const x=((cx+flowAcc*0.3)%(W+100))-50;
     X.beginPath();
     X.arc(x,cy,r,0,Math.PI*2);
     X.arc(x+r*.9,cy-r*.2,r*.75,0,Math.PI*2);
@@ -767,16 +766,15 @@ function drawSky(){
     X.fillStyle=layer===0?'#2B7A25':'#3D9635';
     const count=layer===0?22:16;
     for(let i=0;i<count;i++){
-      const x=i*(W/(count-1));
+      const x=((i*(W/(count-1))+flowAcc*(layer===0?0.5:0.8))%W);
       const sz=layer===0?8+Math.sin(i*1.7)*3:5+Math.sin(i*2.3)*2;
       const y0=VY-sz*(layer===0?.15:.05);
       X.beginPath();X.arc(x,y0,sz,Math.PI,0);X.fill();
     }
   }
   // Flags between trees
-  const avgD=(P.dist+CPU.dist)/2;
   for(let i=0;i<8;i++){
-    const x=20+i*(W-40)/7;
+    const x=((20+i*(W-40)/7+flowAcc*0.6)%W);
     const colors=['#D32F2F','#1565C0','#F9A825','#2E7D32'];
     X.strokeStyle='#795548';X.lineWidth=1.5;
     X.beginPath();X.moveTo(x,VY-2);X.lineTo(x,VY-16);X.stroke();
@@ -793,10 +791,10 @@ function drawGrass(){
   X.fillStyle=g;X.fillRect(0,VY,W,H-VY);
   
   // Grass highlights
-  const avgD=(P.dist+CPU.dist)/2;
   for(let i=0;i<30;i++){
-    const gx=((i*53+avgD*2)%W);
     const gy=VY+5+((i*41)%(TB-VY+30));
+    const depthG=(gy-VY)/Math.max(1e-6,TB-VY);
+    const gx=((i*53+flowAcc*2+flowAcc*depthG*1.5)%W);
     X.fillStyle='rgba(120,220,80,.35)';
     X.beginPath();X.arc(gx,gy,1.5+Math.sin(i)*.5,0,Math.PI*2);X.fill();
   }
@@ -804,9 +802,10 @@ function drawGrass(){
   // Colorful wildflowers (like reference)
   const fColors=['#FF5252','#FFD740','#FF4081','#E040FB','#FF6E40','#7C4DFF','#40C4FF'];
   for(let i=0;i<35;i++){
-    const fx=((i*67+avgD*1.3)%(W*.4));
-    const side=i%2===0?1:-1;
     const fy=VY+8+((i*43)%(TB-VY+20));
+    const depthF=(fy-VY)/Math.max(1e-6,TB-VY);
+    const fx=((i*67+flowAcc*2+flowAcc*depthF*1.2)%(W*.4));
+    const side=i%2===0?1:-1;
     const bx=side>0?W-fx-3:fx+3;
     // Only draw on grass (not on track)
     const tAtY=(fy-VY)/(TB-VY);
@@ -819,6 +818,24 @@ function drawGrass(){
     // White center
     X.fillStyle='rgba(255,255,255,.6)';
     X.beginPath();X.arc(bx,fy,sz*.4,0,Math.PI*2);X.fill();
+  }
+
+  // ── 트랙 양옆 말뚝 (속도감 핵심) ──
+  if(raceTerrainKey==='normal'||!raceTerrainKey){
+    for(let i=0;i<12;i++){
+      const phase=((i*8-flowAcc*1.8)%96+96)%96;
+      const t=phase/96;
+      if(t<0.03||t>0.97) continue;
+      const y=VY+(TB-VY)*t;
+      const scale=0.3+0.7*t;
+      const postH=Math.max(4,18*scale);
+      const postW=Math.max(1.5,3*scale);
+      const lx=trackX(t,0)-postW*2;
+      X.fillStyle=`rgba(140,100,60,${0.3+0.6*t})`;
+      X.fillRect(lx-postW/2,y-postH,postW,postH);
+      const rx=trackX(t,1)+postW*2;
+      X.fillRect(rx-postW/2,y-postH,postW,postH);
+    }
   }
 }
 
@@ -857,7 +874,7 @@ function drawTrack(){
     const h=Math.max(1.5,(TB-VY)/20*t);
     X.fillStyle=isIce
       ?(i%2===0?'rgba(255,255,255,.28)':'rgba(180,230,255,.12)')
-      :(i%2===0?'rgba(255,255,240,.2)':'rgba(180,160,120,.12)');
+      :(i%2===0?'rgba(210,185,145,.45)':'rgba(180,155,110,.25)');
     X.fillRect(lx,y,rx-lx,h);
   }
   
@@ -895,6 +912,33 @@ function drawTrack(){
     X.fillStyle=`rgba(255,255,255,${.2+.4*t})`;
     X.font=`bold ${6+8*t}px sans-serif`;X.textAlign='center';
     X.fillText(`${m}m`,W/2,y-2);
+  }
+
+  // ── 스피드 라인 (빠를 때만) ──
+  const avgV=(P.v+CPU.v)/2;
+  if(avgV>2){
+    const intensity=Math.min(1,(avgV-2)/6);
+    X.strokeStyle=`rgba(255,255,255,${intensity*0.15})`;
+    X.lineWidth=1;
+    for(let i=0;i<8;i++){
+      const sy=VY+(TB-VY)*(0.1+Math.random()*0.8);
+      const side=i%2===0?-1:1;
+      const sx=W/2+side*(W/2+10);
+      const ex=W/2+side*VHW;
+      X.beginPath();X.moveTo(sx,sy);X.lineTo(ex,VY+(sy-VY)*0.3);X.stroke();
+    }
+  }
+
+  // ── 먼지 (트랙 바닥 근처) ──
+  if(avgV>1.5&&(raceTerrainKey==='normal'||!raceTerrainKey)){
+    const dustCount=Math.min(10,Math.floor(avgV*2));
+    for(let i=0;i<dustCount;i++){
+      const dx=TL0+Math.random()*(TR0-TL0);
+      const dy=TB-Math.random()*30;
+      const r=1+Math.random()*2.5;
+      X.fillStyle=`rgba(200,180,140,${0.1+Math.random()*0.15})`;
+      X.beginPath();X.arc(dx,dy,r,0,Math.PI*2);X.fill();
+    }
   }
 }
 
