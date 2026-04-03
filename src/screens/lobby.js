@@ -199,10 +199,10 @@ export function createLobbyBottomMenu(api) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'lobby-bottom-menu__btn';
-    b.textContent = it.label;
     b.addEventListener('click', it.onClick);
-    wrap.appendChild(b);
     if (it.label === '메시지' && uid) {
+      b.textContent = '';
+      b.appendChild(document.createTextNode('메시지'));
       const c = getTotalUnreadCount(uid);
       const badge = document.createElement('span');
       badge.className = 'lobby-nav-badge lobby-nav-msg-badge';
@@ -210,8 +210,12 @@ export function createLobbyBottomMenu(api) {
       badge.title = '읽지 않은 메시지';
       badge.hidden = c <= 0;
       badge.textContent = c > 0 ? (c > 99 ? '99+' : String(c)) : '';
-      wrap.appendChild(badge);
-    } else if (it.badge > 0) {
+      b.appendChild(badge);
+    } else {
+      b.textContent = it.label;
+    }
+    wrap.appendChild(b);
+    if (it.label !== '메시지' && it.badge > 0) {
       const badge = document.createElement('span');
       badge.className = 'lobby-nav-badge';
       badge.textContent = it.badge > 99 ? '99+' : String(it.badge);
