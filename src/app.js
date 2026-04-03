@@ -341,7 +341,8 @@ function boot() {
     console.log('[dallyeori] app.js boot → JWT 세션 복원');
     navigateAfterAuth(api);
     // 채팅 수신 리스너 (로그인 유저만)
-    setTimeout(() => setupChatSocketListener(), 1500);
+    setTimeout(() => setupChatSocketListener(), 3000);
+    setTimeout(() => setupChatSocketListener(), 6000);
   } else {
     console.log('[dallyeori] app.js boot → splash');
     navigate('splash');

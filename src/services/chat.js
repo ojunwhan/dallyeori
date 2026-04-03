@@ -227,7 +227,12 @@ export function setupChatSocketListener() {
     ensureSocket();
     sock = getGameSocket();
   }
+  console.log('[chat] setupChatSocketListener called, sock:', !!sock, 'connected:', sock?.connected);
   if (!sock) return;
+  if (!sock.connected) {
+    sock.once('connect', () => setupChatSocketListener());
+    return;
+  }
   if (chatListenerSocket === sock) return;
   if (chatListenerSocket && chatReceiveHandler) {
     chatListenerSocket.off('receiveChat', chatReceiveHandler);
@@ -235,6 +240,7 @@ export function setupChatSocketListener() {
   chatListenerSocket = sock;
 
   chatReceiveHandler = (msg) => {
+    console.log('[chat] receiveChat received:', msg);
     if (!msg || !msg.fromId || !msg.toId || !msg.text) return;
     const myUid = msg.toId;
     const peerId = msg.fromId;
