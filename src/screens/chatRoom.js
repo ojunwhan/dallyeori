@@ -13,8 +13,6 @@ import {
 } from '../services/chat.js';
 import { showAppToast } from '../services/toast.js';
 import { getMockUser } from '../services/mockUsers.js';
-import { translateMessage } from '../services/monoTranslate.js';
-import { patchUserRecord } from '../services/db.js';
 
 /**
  * @param {HTMLElement} root
@@ -46,11 +44,6 @@ export function mountChatRoom(root, api) {
 
   const peer = getMockUser(peerId);
   const peerNick = peer?.nickname ?? peerId;
-  const myLang = api.state.language || 'ko';
-  const peerLang = peer?.language || 'ko';
-
-  let translateOn = false;
-  const showOriginalByMsgId = new Map();
 
   markConversationRead(uid, peerId);
 
@@ -74,20 +67,6 @@ export function mountChatRoom(root, api) {
   const tools = document.createElement('div');
   tools.className = 'chat-header-tools';
 
-  const btnTrans = document.createElement('button');
-  btnTrans.type = 'button';
-  btnTrans.className = 'app-btn app-btn--inline chat-tool-btn';
-  function syncTransBtn() {
-    btnTrans.textContent = translateOn ? 'MONO 번역 ON' : 'MONO 번역 OFF';
-    btnTrans.setAttribute('aria-pressed', translateOn ? 'true' : 'false');
-  }
-  syncTransBtn();
-  btnTrans.addEventListener('click', () => {
-    translateOn = !translateOn;
-    syncTransBtn();
-    showAppToast(translateOn ? '번역 켜짐 — 전송 시 상대 언어로 번역돼요.' : '번역 꺼짐');
-  });
-
   const btnBlock = document.createElement('button');
   btnBlock.type = 'button';
   btnBlock.className = 'app-btn app-btn--inline chat-tool-btn';
@@ -105,44 +84,12 @@ export function mountChatRoom(root, api) {
     syncBlockUi();
   });
 
-  tools.appendChild(btnTrans);
   tools.appendChild(btnBlock);
 
   headRow.appendChild(av);
   headRow.appendChild(names);
   headRow.appendChild(tools);
   header.appendChild(headRow);
-
-  const toneRow = document.createElement('div');
-  toneRow.className = 'chat-tone-row app-muted';
-  toneRow.textContent = '번역 톤: ';
-  const toneCasual = document.createElement('button');
-  toneCasual.type = 'button';
-  toneCasual.className = 'chat-tone-chip';
-  toneCasual.textContent = '친구처럼(반말)';
-  const toneFormal = document.createElement('button');
-  toneFormal.type = 'button';
-  toneFormal.className = 'chat-tone-chip';
-  toneFormal.textContent = '정중하게(존댓말)';
-
-  function syncToneChips() {
-    const formal = api.state.translateTone === 'formal';
-    toneFormal.classList.toggle('is-active', formal);
-    toneCasual.classList.toggle('is-active', !formal);
-  }
-  syncToneChips();
-
-  function persistTone(tone) {
-    api.state.translateTone = tone;
-    const u = api.state.user?.uid;
-    if (u) patchUserRecord(u, { translateTone: tone });
-    syncToneChips();
-  }
-  toneCasual.addEventListener('click', () => persistTone('casual'));
-  toneFormal.addEventListener('click', () => persistTone('formal'));
-  toneRow.appendChild(toneCasual);
-  toneRow.appendChild(toneFormal);
-  header.appendChild(toneRow);
 
   const scroll = document.createElement('div');
   scroll.className = 'chat-scroll';
@@ -209,49 +156,8 @@ export function mountChatRoom(root, api) {
       row.className = 'chat-msg-row ' + (m.fromId === uid ? 'chat-msg--mine' : 'chat-msg--theirs');
       const bubble = document.createElement('div');
       bubble.className = 'chat-bubble';
-
-      const orig = m.originalText != null ? m.originalText : m.text;
-      const tr = m.translatedText;
-
-      if (m.fromId === uid) {
-        bubble.textContent = orig;
-        if (tr) {
-          const sub = document.createElement('div');
-          sub.className = 'chat-bubble-sub';
-          sub.textContent = `→ 번역(상대): ${tr}`;
-          bubble.appendChild(sub);
-        }
-      } else {
-        const showOrig = showOriginalByMsgId.get(m.id) === true;
-        if (tr) {
-          if (showOrig) {
-            bubble.textContent = orig;
-          } else {
-            bubble.textContent = tr;
-            const sub = document.createElement('div');
-            sub.className = 'chat-bubble-sub';
-            sub.textContent = `원문: ${orig}`;
-            bubble.appendChild(sub);
-          }
-          const toggle = document.createElement('button');
-          toggle.type = 'button';
-          toggle.className = 'chat-msg-toggle';
-          toggle.textContent = showOrig ? '번역 보기' : '원문 보기';
-          toggle.addEventListener('click', () => {
-            showOriginalByMsgId.set(m.id, !showOrig);
-            renderMsgs();
-          });
-          row.appendChild(bubble);
-          row.appendChild(toggle);
-          const meta = document.createElement('div');
-          meta.className = 'chat-msg-meta';
-          meta.textContent = new Date(m.ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-          row.appendChild(meta);
-          scroll.appendChild(row);
-          continue;
-        }
-        bubble.textContent = orig;
-      }
+      const text = m.originalText != null ? m.originalText : m.text;
+      bubble.textContent = text;
 
       const meta = document.createElement('div');
       meta.className = 'chat-msg-meta';
@@ -263,23 +169,14 @@ export function mountChatRoom(root, api) {
     scrollBottom();
   }
 
-  async function trySend() {
+  function trySend() {
     const t = inp.value.trim();
     if (!t) return;
     if (inp.disabled) return;
     btnSend.disabled = true;
     inp.disabled = true;
     try {
-      let translated;
-      if (translateOn && myLang !== peerLang) {
-        try {
-          translated = await translateMessage(t, myLang, peerLang, api.state.translateTone || 'casual');
-        } catch (err) {
-          showAppToast(err instanceof Error ? err.message : '번역에 실패했어요.');
-          return;
-        }
-      }
-      const r = sendMessage(uid, peerId, t, translated ? { translatedText: translated } : undefined);
+      const r = sendMessage(uid, peerId, t);
       if (!r.ok) {
         showAppToast(r.error === 'blocked' ? '차단 상태에서는 보낼 수 없어요.' : '전송 실패');
         return;
@@ -293,10 +190,10 @@ export function mountChatRoom(root, api) {
   }
 
   btnSend.addEventListener('click', () => {
-    void trySend();
+    trySend();
   });
   inp.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') void trySend();
+    if (e.key === 'Enter') trySend();
   });
 
   syncBlockUi();
