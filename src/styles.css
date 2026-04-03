@@ -1004,6 +1004,9 @@
   flex-direction: row;
   gap: 8px;
   align-items: center;
+  background: #111;
+  padding: 8px;
+  border-top: 1px solid #333;
 }
 
 .chat-voice-btn {
@@ -1020,6 +1023,13 @@
 .chat-input {
   flex: 1;
   margin: 0;
+  border: 1px solid #555;
+  background: #1a1a1a;
+  color: #fff;
+}
+
+.chat-input::placeholder {
+  color: #888;
 }
 
 /* ——— 매칭 Phase 2-2 ——— */
