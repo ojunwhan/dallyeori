@@ -72,12 +72,6 @@ function receiveChatRelayHandler(msg) {
   }
 }
 
-/** peerTap 수신 디버그 (raceV3Inline과 별도로 동일 소켓에 부착) */
-function peerTapDebugHandler(data) {
-  console.log('[socket] peerTap received', data);
-  alert('peerTap received: ' + (data && data.foot));
-}
-
 /**
  * 채팅 수신 → window 커스텀 이벤트 (chat.js가 구독, 소켓 인스턴스와 분리)
  * 동일 소켓에 중복 등록되지 않도록 off 후 on
@@ -87,9 +81,6 @@ function attachReceiveChatRelay(sock) {
   sock.off('receiveChat', receiveChatRelayHandler);
   sock.on('receiveChat', receiveChatRelayHandler);
   console.log('[socket] receiveChat relay attached');
-  sock.off('peerTap', peerTapDebugHandler);
-  sock.on('peerTap', peerTapDebugHandler);
-  console.log('[socket] peerTap listener registered');
 }
 
 /**

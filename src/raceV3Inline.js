@@ -1367,6 +1367,7 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     if(slot===myServerSlot)return;
     if(foot!=='left'&&foot!=='right')return;
     applyPeerTapVisual(foot);
+    console.log('[raceV3] peerTap applied', foot, 'forcedMovingTimer=', CPU.forcedMovingTimer);
   };
   sock.on('preRaceCountdown',onPre);
   sock.on('raceGo',onGo);
