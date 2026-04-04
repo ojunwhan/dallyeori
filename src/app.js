@@ -122,6 +122,22 @@ function buildHistoryState(screen, payload) {
   return { v: HISTORY_V, screen, payload: payload ?? null };
 }
 
+/** 뒤로가기 시 이전 히스토리 대신 로비로 (매칭·설정·상점 등) */
+const POP_BACK_TO_LOBBY = new Set([
+  'matching',
+  'rematchWait',
+  'terrainSelect',
+  'profile',
+  'friends',
+  'messages',
+  'shop',
+  'heartShop',
+  'ranking',
+  'raceHistory',
+  'duckSelect',
+  'qrMatchHost',
+]);
+
 const api = {
   state: appState,
   navigate,
@@ -245,6 +261,24 @@ window.addEventListener('popstate', (e) => {
     }
     return;
   }
+  if (appState.screen === 'result') {
+    navigate('lobby', undefined, { skipHistory: true });
+    try {
+      history.replaceState(buildHistoryState('lobby', null), '', '');
+    } catch (err) {
+      console.warn('[nav] popstate result→lobby', err);
+    }
+    return;
+  }
+  if (POP_BACK_TO_LOBBY.has(appState.screen)) {
+    navigate('lobby', undefined, { skipHistory: true });
+    try {
+      history.replaceState(buildHistoryState('lobby', null), '', '');
+    } catch (err) {
+      console.warn('[nav] popstate →lobby', appState.screen, err);
+    }
+    return;
+  }
   if (appState.screen === 'lobby') {
     if (!window.confirm('게임을 종료하시겠습니까?')) {
       try {
@@ -300,7 +334,7 @@ function onRaceFinishPayload(d) {
   // 경주 종료 연출 시간 확보 (2초)
   setTimeout(() => {
     removeRaceMount();
-    navigate('result', normalized);
+    navigate('result', normalized, { replaceHistory: true });
   }, 2000);
 }
 
