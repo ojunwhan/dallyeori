@@ -310,6 +310,7 @@ export function mountResult(root, api) {
         api.navigate('chatRoom', { peerId: peerIdStr });
       });
       document.body.appendChild(pop);
+      globalThis.__dallyeoriSuppressResultPopstateUntil = Date.now() + 500;
       globalThis.__dallyeoriResultPopupHideT = window.setTimeout(() => {
         pop.classList.add('result-chat-popup--out');
         const done = () => {
@@ -331,7 +332,6 @@ export function mountResult(root, api) {
       console.log('[result] __onChatRegistered', { uidStr, peerIdStr });
       dispose = () => {
         globalThis.__onChatReceived = null;
-        removeResultChatPopup();
       };
     } else {
       console.warn('[result] __onChatReceived not set (uid/peer)', {

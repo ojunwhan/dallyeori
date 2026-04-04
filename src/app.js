@@ -265,6 +265,8 @@ function navigate(screen, payload, navOpts = {}) {
         console.warn('[nav] pushState', e);
       }
     }
+
+    globalThis.__dallyeoriResultActive = screen === 'result';
   } catch (err) {
     console.error('[dallyeori] navigate failed:', screen, err);
   }
@@ -272,11 +274,44 @@ function navigate(screen, payload, navOpts = {}) {
 
 window.addEventListener('popstate', (e) => {
   const st = e.state;
+  const ev = /** @type {PopStateEvent} */ (e);
   console.log('[nav] popstate', {
     appScreen: appState.screen,
     historyState: st,
     length: history.length,
+    isTrusted: ev.isTrusted,
+    resultActive: globalThis.__dallyeoriResultActive,
   });
+
+  if (appState.screen === 'result') {
+    const until = Number(globalThis.__dallyeoriSuppressResultPopstateUntil) || 0;
+    if (Date.now() < until) {
+      console.log('[nav] popstate on result ignored (suppress window after chat popup)');
+      try {
+        history.pushState(
+          buildHistoryState('result', appState.lastRaceResult ?? null),
+          '',
+          '',
+        );
+      } catch (err) {
+        console.warn('[nav] popstate suppress restore', err);
+      }
+      return;
+    }
+    if (!ev.isTrusted) {
+      console.log('[nav] popstate on result ignored (not trusted)');
+      try {
+        history.pushState(
+          buildHistoryState('result', appState.lastRaceResult ?? null),
+          '',
+          '',
+        );
+      } catch (err) {
+        console.warn('[nav] popstate untrusted restore', err);
+      }
+      return;
+    }
+  }
 
   if (appState.screen === 'result' || appState.screen === 'race') {
     console.log('[nav] popstate: result|race → lobby (forced)');

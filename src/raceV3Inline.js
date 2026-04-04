@@ -318,15 +318,18 @@ function applyPeerTapVisual(foot){
   const f=foot==='left'?'L':'R';
   CPU.lastFoot=f;
   CPU.wcTgt+=Math.PI;
+  const legHi=0.63;
+  const legLo=-0.27;
   if(f==='L'){
-    CPU.leftLegTarget=0.7;
-    CPU.rightLegTarget=-0.3;
+    CPU.leftLegTarget=legHi;
+    CPU.rightLegTarget=legLo;
   }else{
-    CPU.rightLegTarget=0.7;
-    CPU.leftLegTarget=-0.3;
+    CPU.rightLegTarget=legHi;
+    CPU.leftLegTarget=legLo;
   }
   playSlap();
-  CPU.bodySwTgt=f==='L'?0.68:-0.68;
+  const bodySw=0.68*0.7;
+  CPU.bodySwTgt=f==='L'?bodySw:-bodySw;
   CPU.forcedMovingTimer=0.3;
 }
 function tap(foot){
@@ -717,11 +720,11 @@ function updAnim(p,dt){
       Math.abs(p.leftLegA-p.leftLegTarget)>0.08||
       Math.abs(p.rightLegA-p.rightLegTarget)>0.08;
     if(!striding){
-      let settle=Math.min(1,dt*16);
+      let settle=Math.min(1,dt*16*0.85);
       if(isServerRaceConnected()&&p===CPU){
         const legAmp=Math.abs(p.leftLegTarget)+Math.abs(p.rightLegTarget);
         if(legAmp>0.35||Math.abs(p.bodySwTgt)>0.35){
-          settle*=0.22;
+          settle*=0.22*0.85;
         }
       }
       p.leftLegTarget*=1-settle;
