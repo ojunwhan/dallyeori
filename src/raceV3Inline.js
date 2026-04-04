@@ -152,8 +152,6 @@ const TIME_LIMIT=13;
 const CD_STEP_SEC=1,CD_START_VAL=2;
 /** true면 [input]/[physics] 로그 (프로덕션은 false) */
 const DEBUG_RACE_TAP=false;
-/** true면 peerTap 수신 시마다 콘솔 (확인 후 false 로) */
-const DEBUG_PEER_TAP_RX=true;
 const PH=RACE_ENGINE_PHYSICS;
 /** dirA·스핀 상한 (rad, ≈±90°) */
 const DIR_A_LIMIT=1.57;
@@ -1368,7 +1366,6 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     if(slot!==0&&slot!==1)return;
     if(slot===myServerSlot)return;
     if(foot!=='left'&&foot!=='right')return;
-    if(DEBUG_PEER_TAP_RX)console.log('[peerTap] received', foot);
     applyPeerTapVisual(foot);
   };
   sock.on('preRaceCountdown',onPre);

@@ -164,6 +164,7 @@ function navigate(screen, payload, navOpts = {}) {
     clearMatchingTimer();
     removeRaceMount();
     appState.screen = screen;
+    globalThis.__dallyeoriAppScreen = screen;
     appRoot.classList.remove('app-root--pass-through', 'app-root--race-hidden');
     appRoot.innerHTML = '';
     setCanvasRaceMode(false);

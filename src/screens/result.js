@@ -9,7 +9,7 @@ import { canSendLikeToday, isMutualLike, sendLike } from '../services/likes.js';
 import { MOCK_USERS } from '../services/mockUsers.js';
 import { decodeJWT, getToken } from '../services/auth.js';
 import { recordRaceOutcome } from '../services/profileViewModel.js';
-import { endGuestQrFlow, getGameSocket } from '../services/socket.js';
+import { endGuestQrFlow } from '../services/socket.js';
 import { showAppToast } from '../services/toast.js';
 
 /** @param {string | null | undefined} id */
@@ -266,48 +266,10 @@ export function mountResult(root, api) {
       window.alert(r.ok ? '호감을 보냈어요!' : '보낼 수 없어요.');
     });
 
-    const msgWrap = document.createElement('div');
-    msgWrap.className = 'result-msg-btn-wrap';
-
     const btnMsg = document.createElement('button');
     btnMsg.type = 'button';
     btnMsg.className = 'app-btn result-btn-secondary';
     btnMsg.textContent = '메시지 보내기';
-
-    const msgBadge = document.createElement('span');
-    msgBadge.className = 'result-msg-badge';
-    msgBadge.setAttribute('aria-hidden', 'true');
-    msgBadge.hidden = true;
-
-    const msgPreview = document.createElement('p');
-    msgPreview.className = 'result-msg-preview app-muted';
-    msgPreview.hidden = true;
-
-    let unreadMsgCount = 0;
-
-    function triggerMsgBtnShake() {
-      msgWrap.classList.remove('result-msg-btn-wrap--shake');
-      void msgWrap.offsetWidth;
-      msgWrap.classList.add('result-msg-btn-wrap--shake');
-      window.clearTimeout(/** @type {any} */ (msgWrap)._shakeT);
-      msgWrap._shakeT = window.setTimeout(() => {
-        msgWrap.classList.remove('result-msg-btn-wrap--shake');
-      }, 600);
-    }
-
-    function applyMsgNotifyUI() {
-      if (unreadMsgCount <= 0) {
-        msgBadge.hidden = true;
-        msgBadge.textContent = '';
-        btnMsg.textContent = '메시지 보내기';
-        msgPreview.textContent = '';
-        msgPreview.hidden = true;
-        return;
-      }
-      msgBadge.hidden = false;
-      msgBadge.textContent = unreadMsgCount > 99 ? '99+' : String(unreadMsgCount);
-      btnMsg.textContent = `메시지 보내기 (${unreadMsgCount})`;
-    }
 
     const uidStr = uid ? String(uid) : jwtUidRaw;
     const peerIdStr = peerId ? String(peerId) : '';
@@ -316,71 +278,61 @@ export function mountResult(root, api) {
       if (!msg || typeof msg !== 'object') return false;
       if (!msg.fromId || !msg.toId) return false;
       const textOk = typeof msg.text === 'string' && msg.text.length > 0;
-      if (!textOk) {
-        console.log('[result] receiveChat skip: no text', msg);
-        return false;
-      }
+      if (!textOk) return false;
       const fromOk = String(msg.fromId) === peerIdStr;
       const toOk = String(msg.toId) === uidStr || (jwtUidRaw && String(msg.toId) === jwtUidRaw);
-      if (!fromOk || !toOk) {
-        console.log('[result] receiveChat peer/uid mismatch', {
-          fromId: msg.fromId,
-          toId: msg.toId,
-          expectFrom: peerIdStr,
-          expectTo: uidStr,
-          jwtUid: jwtUidRaw || null,
-        });
-        return false;
-      }
-      return true;
+      return fromOk && toOk;
     }
 
-    function applyIncomingChatNotify(msg) {
+    function removeResultChatPopup() {
+      const el = document.getElementById('dallyeori-result-chat-popup');
+      if (el) el.remove();
+      window.clearTimeout(/** @type {any} */ (globalThis).__dallyeoriResultPopupHideT);
+      globalThis.__dallyeoriResultPopupHideT = 0;
+    }
+
+    function showResultChatPopup(msg) {
       const raw = (msg.translatedText || msg.text || '').trim();
-      const short = raw.length > 52 ? `${raw.slice(0, 49)}…` : raw;
-      unreadMsgCount += 1;
-      console.log('[result] notify applied, unread=', unreadMsgCount);
-      applyMsgNotifyUI();
-      if (short) {
-        const nick = (opp?.nickname || '상대').slice(0, 16);
-        msgPreview.textContent = `${nick}: ${short}`;
-        msgPreview.hidden = false;
-      }
-      triggerMsgBtnShake();
-      const toastNick = (opp?.nickname || '상대').slice(0, 12);
-      showAppToast(short ? `${toastNick}: ${short}` : `${toastNick}: 새 메시지`);
+      const nick = (opp?.nickname || '상대').slice(0, 24);
+      const line =
+        raw.length > 140 ? `${raw.slice(0, 137)}…` : raw;
+      console.log('[result] chat popup', { nick, len: raw.length });
+      removeResultChatPopup();
+      const pop = document.createElement('div');
+      pop.id = 'dallyeori-result-chat-popup';
+      pop.className = 'result-chat-popup';
+      pop.setAttribute('role', 'button');
+      pop.tabIndex = 0;
+      pop.textContent = `${nick}: ${line}`;
+      pop.addEventListener('click', () => {
+        if (!peerIdStr) return;
+        removeResultChatPopup();
+        api.navigate('chatRoom', { peerId: peerIdStr });
+      });
+      document.body.appendChild(pop);
+      globalThis.__dallyeoriResultPopupHideT = window.setTimeout(() => {
+        pop.classList.add('result-chat-popup--out');
+        const done = () => {
+          pop.removeEventListener('animationend', done);
+          pop.remove();
+        };
+        pop.addEventListener('animationend', done, { once: true });
+      }, 3000);
     }
-
-    const onReceiveChatWindow = (ev) => {
-      const msg = /** @type {CustomEvent} */ (ev).detail;
-      console.log('[result] dallyeori-receiveChat event', msg);
-      if (!isChatFromRaceOpponent(msg)) return;
-      applyIncomingChatNotify(msg);
-    };
-
-    const onReceiveChatSocket = (msg) => {
-      console.log('[result] socket receiveChat', msg);
-      if (!isChatFromRaceOpponent(msg)) return;
-      applyIncomingChatNotify(msg);
-    };
 
     if (uidStr && peerIdStr) {
-      const sock = getGameSocket();
-      if (sock) {
-        sock.on('receiveChat', onReceiveChatSocket);
-        console.log('[result] receiveChat: socket listener', { uidStr, peerIdStr });
-      } else {
-        window.addEventListener('dallyeori-receiveChat', onReceiveChatWindow);
-        console.warn('[result] receiveChat: window fallback (no game socket)', { uidStr, peerIdStr });
-      }
+      globalThis.__onChatReceived = (msg) => {
+        console.log('[result] __onChatReceived', msg);
+        if (!isChatFromRaceOpponent(msg)) return;
+        showResultChatPopup(msg);
+      };
+      console.log('[result] __onChatRegistered', { uidStr, peerIdStr });
       dispose = () => {
-        window.removeEventListener('dallyeori-receiveChat', onReceiveChatWindow);
-        const s = getGameSocket();
-        if (s) s.off('receiveChat', onReceiveChatSocket);
-        window.clearTimeout(/** @type {any} */ (msgWrap)._shakeT);
+        globalThis.__onChatReceived = null;
+        removeResultChatPopup();
       };
     } else {
-      console.warn('[result] receiveChat listeners NOT registered', {
+      console.warn('[result] __onChatReceived not set (uid/peer)', {
         uidStr: uidStr || '(empty)',
         peerIdStr: peerIdStr || '(empty)',
       });
@@ -391,8 +343,6 @@ export function mountResult(root, api) {
         window.alert('상대 정보를 찾을 수 없어요.');
         return;
       }
-      unreadMsgCount = 0;
-      applyMsgNotifyUI();
       api.navigate('chatRoom', { peerId });
     });
 
@@ -409,14 +359,10 @@ export function mountResult(root, api) {
     btnLobby.textContent = '로비로';
     btnLobby.addEventListener('click', () => api.navigate('lobby'));
 
-    msgWrap.appendChild(btnMsg);
-    msgWrap.appendChild(msgBadge);
-
     actions.appendChild(btnRematch);
     actions.appendChild(btnFriend);
     actions.appendChild(btnLike);
-    actions.appendChild(msgWrap);
-    actions.appendChild(msgPreview);
+    actions.appendChild(btnMsg);
     actions.appendChild(btnLobby);
   }
 

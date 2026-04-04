@@ -57,8 +57,25 @@ function receiveChatRelayHandler(msg) {
     fromId: msg && msg.fromId,
     toId: msg && msg.toId,
     hasText: !!(msg && msg.text),
+    appScreen: globalThis.__dallyeoriAppScreen,
   });
   window.dispatchEvent(new CustomEvent('dallyeori-receiveChat', { detail: msg }));
+  if (
+    globalThis.__dallyeoriAppScreen === 'result' &&
+    typeof globalThis.__onChatReceived === 'function'
+  ) {
+    try {
+      globalThis.__onChatReceived(msg);
+    } catch (e) {
+      console.warn('[socket] __onChatReceived error', e);
+    }
+  }
+}
+
+/** peerTap 수신 디버그 (raceV3Inline과 별도로 동일 소켓에 부착) */
+function peerTapDebugHandler(data) {
+  console.log('[socket] peerTap received', data);
+  alert('peerTap received: ' + (data && data.foot));
 }
 
 /**
@@ -70,6 +87,9 @@ function attachReceiveChatRelay(sock) {
   sock.off('receiveChat', receiveChatRelayHandler);
   sock.on('receiveChat', receiveChatRelayHandler);
   console.log('[socket] receiveChat relay attached');
+  sock.off('peerTap', peerTapDebugHandler);
+  sock.on('peerTap', peerTapDebugHandler);
+  console.log('[socket] peerTap listener registered');
 }
 
 /**
