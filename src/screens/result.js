@@ -314,9 +314,11 @@ export function mountResult(root, api) {
         pop.classList.add('result-chat-popup--out');
         const done = () => {
           pop.removeEventListener('animationend', done);
-          pop.remove();
+          window.clearTimeout(fallbackRemove);
+          if (pop.parentNode) pop.remove();
         };
         pop.addEventListener('animationend', done, { once: true });
+        const fallbackRemove = window.setTimeout(done, 500);
       }, 3000);
     }
 
