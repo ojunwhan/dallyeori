@@ -754,10 +754,6 @@ function updAnim(p,dt){
   if(p.isCpu&&p.forcedMovingTimer>0){
     p.forcedMovingTimer=Math.max(0,p.forcedMovingTimer-dt);
     moving=1;
-    _cpuMovingLogCounter+=1;
-    if(_cpuMovingLogCounter%10===1){
-      console.log('[updAnim CPU] forcedMoving moving=1, timer left',p.forcedMovingTimer.toFixed(3),'effSpd',effSpdForAnim.toFixed(3));
-    }
   }
 
   p.bodySw+=(p.bodySwTgt-p.bodySw)*Math.min(1,34*dt);
