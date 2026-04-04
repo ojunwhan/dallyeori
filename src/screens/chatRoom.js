@@ -156,13 +156,36 @@ export function mountChatRoom(root, api) {
       row.className = 'chat-msg-row ' + (m.fromId === uid ? 'chat-msg--mine' : 'chat-msg--theirs');
       const bubble = document.createElement('div');
       bubble.className = 'chat-bubble';
-      const text = m.originalText != null ? m.originalText : m.text;
-      bubble.textContent = text;
+      const original = m.originalText != null ? m.originalText : m.text;
+
+      if (m.translatedText) {
+        let showingOriginal = false;
+        bubble.textContent = m.translatedText;
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'chat-bubble-toggle app-muted';
+        toggle.textContent = '(원문 보기)';
+        toggle.style.cssText =
+          'display:block;width:100%;margin-top:4px;padding:0;border:none;background:none;font:inherit;font-size:0.8rem;cursor:pointer;text-align:inherit;text-decoration:underline;touch-action:manipulation;';
+        toggle.addEventListener('click', (e) => {
+          e.preventDefault();
+          showingOriginal = !showingOriginal;
+          bubble.textContent = showingOriginal ? original : m.translatedText;
+          toggle.textContent = showingOriginal ? '(번역 보기)' : '(원문 보기)';
+        });
+        const wrap = document.createElement('div');
+        wrap.className = 'chat-msg-bubble-stack';
+        wrap.appendChild(bubble);
+        wrap.appendChild(toggle);
+        row.appendChild(wrap);
+      } else {
+        bubble.textContent = original;
+        row.appendChild(bubble);
+      }
 
       const meta = document.createElement('div');
       meta.className = 'chat-msg-meta';
       meta.textContent = new Date(m.ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-      row.appendChild(bubble);
       row.appendChild(meta);
       scroll.appendChild(row);
     }

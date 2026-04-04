@@ -3,7 +3,8 @@
  */
 
 import { io } from 'socket.io-client';
-import { getToken } from './auth.js';
+import { decodeJWT, getToken } from './auth.js';
+import { getUserRecord } from './db.js';
 import { DUCKS_NINE } from '../constants.js';
 import { getRandomMockUser } from './mockUsers.js';
 import { showAppToast } from './toast.js';
@@ -37,6 +38,17 @@ function socketUrl() {
 function openGameSocket(opts) {
   const url = socketUrl();
   return url ? io(url, opts) : io(opts);
+}
+
+/** @param {string | undefined | null} token */
+function resolveSocketLanguageForToken(token) {
+  if (!token) return 'ko';
+  const p = decodeJWT(token);
+  const uid = p && typeof p.uid === 'string' ? p.uid : null;
+  if (!uid) return 'ko';
+  const rec = getUserRecord(uid);
+  const lang = rec?.language;
+  return typeof lang === 'string' && lang.trim() ? lang.trim() : 'ko';
 }
 
 /** @param {unknown} msg */
@@ -78,7 +90,7 @@ export function connectQrGuestSocket(token) {
   }
   lastSocketToken = token;
   gameSocket = openGameSocket({
-    auth: { token },
+    auth: { token, language: resolveSocketLanguageForToken(token) },
     reconnection: true,
     reconnectionAttempts: 2,
     reconnectionDelay: 800,
@@ -163,7 +175,7 @@ export function ensureSocket() {
   }
   lastSocketToken = token;
   gameSocket = openGameSocket({
-    auth: { token },
+    auth: { token, language: resolveSocketLanguageForToken(token) },
     reconnection: true,
     reconnectionAttempts: 3,
     reconnectionDelay: 800,
