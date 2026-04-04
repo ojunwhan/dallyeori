@@ -4,7 +4,6 @@
 
 import { getMockUser } from './mockUsers.js';
 import { getGameSocket, ensureSocket } from './socket.js';
-import { showAppToast } from './toast.js';
 
 const MAX_MSG = 100;
 
@@ -83,7 +82,6 @@ if (typeof window !== 'undefined' && !receiveChatWindowBound) {
     writeConv(myUid, peerId, arr);
     bumpMeta(myUid, peerId, msg.translatedText || msg.text, true);
     window.dispatchEvent(new CustomEvent('dallyeori-chat-update', { detail: { peerId } }));
-    showAppToast('💬 새 메시지가 왔어요');
   });
 }
 
