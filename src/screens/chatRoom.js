@@ -148,6 +148,9 @@ export function mountChatRoom(root, api) {
     scroll.scrollTop = scroll.scrollHeight;
   }
 
+  const bubbleBaseStyle =
+    'min-width:48px;max-width:75%;word-break:keep-all;box-sizing:border-box;';
+
   function renderMsgs() {
     scroll.replaceChildren();
     const msgs = getConversation(uid, peerId);
@@ -156,6 +159,7 @@ export function mountChatRoom(root, api) {
       row.className = 'chat-msg-row ' + (m.fromId === uid ? 'chat-msg--mine' : 'chat-msg--theirs');
       const bubble = document.createElement('div');
       bubble.className = 'chat-bubble';
+      bubble.style.cssText = bubbleBaseStyle;
       const original = m.originalText != null ? m.originalText : m.text;
 
       if (m.translatedText) {
@@ -166,7 +170,7 @@ export function mountChatRoom(root, api) {
         toggle.className = 'chat-bubble-toggle app-muted';
         toggle.textContent = '(원문 보기)';
         toggle.style.cssText =
-          'display:block;width:100%;margin-top:4px;padding:0;border:none;background:none;font:inherit;font-size:0.8rem;cursor:pointer;text-align:inherit;text-decoration:underline;touch-action:manipulation;';
+          'display:block;width:100%;margin-top:4px;padding:0;border:none;background:none;font:inherit;font-size:11px;color:#888;cursor:pointer;text-align:inherit;touch-action:manipulation;';
         toggle.addEventListener('click', (e) => {
           e.preventDefault();
           showingOriginal = !showingOriginal;
