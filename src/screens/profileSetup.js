@@ -3,6 +3,7 @@
  */
 
 import { LANGUAGES } from '../data/languages.js';
+import { getToken, resolvePublicApiUrl } from '../services/auth.js';
 import { saveUserRecord, getUserRecord, ensureUserFromAuth } from '../services/db.js';
 
 function fillLanguageSelect(select, selectedCode) {
@@ -87,7 +88,7 @@ export function mountProfileSetup(root, api) {
   submit.className = 'app-btn app-btn--primary';
   submit.style.marginTop = '16px';
   submit.textContent = '시작하기';
-  submit.addEventListener('click', () => {
+  submit.addEventListener('click', async () => {
     if (!rec) {
       api.navigate('splash');
       return;
@@ -106,6 +107,17 @@ export function mountProfileSetup(root, api) {
     api.state.language = language;
     api.state.profilePhotoURL = next.profilePhotoURL;
     api.state.profileSetupComplete = true;
+    const t = getToken();
+    if (t) {
+      try {
+        await fetch(resolvePublicApiUrl('/api/auth/complete-profile'), {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${t}` },
+        });
+      } catch (e) {
+        console.warn('[profileSetup] complete-profile', e);
+      }
+    }
     api.navigate('lobby');
   });
 

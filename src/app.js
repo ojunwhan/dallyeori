@@ -115,6 +115,13 @@ function clearMatchingTimer() {
   }
 }
 
+/** 브라우저 히스토리와 앱 화면 동기화 */
+const HISTORY_V = 1;
+
+function buildHistoryState(screen, payload) {
+  return { v: HISTORY_V, screen, payload: payload ?? null };
+}
+
 const api = {
   state: appState,
   navigate,
@@ -123,8 +130,9 @@ const api = {
 /**
  * @param {string} screen
  * @param {object} [payload]
+ * @param {{ skipHistory?: boolean, replaceHistory?: boolean }} [navOpts]
  */
-function navigate(screen, payload) {
+function navigate(screen, payload, navOpts = {}) {
   try {
     clearMatchingTimer();
     removeRaceMount();
@@ -208,10 +216,62 @@ function navigate(screen, payload) {
       default:
         mountLobby(appRoot, api);
     }
+
+    if (navOpts.replaceHistory) {
+      try {
+        history.replaceState(buildHistoryState(screen, payload ?? null), '', '');
+      } catch (e) {
+        console.warn('[nav] replaceState', e);
+      }
+    } else if (!navOpts.skipHistory) {
+      try {
+        history.pushState(buildHistoryState(screen, payload ?? null), '', '');
+      } catch (e) {
+        console.warn('[nav] pushState', e);
+      }
+    }
   } catch (err) {
     console.error('[dallyeori] navigate failed:', screen, err);
   }
 }
+
+window.addEventListener('popstate', (e) => {
+  const st = e.state;
+  if (appState.screen === 'race' && raceV3Unmount != null) {
+    try {
+      history.pushState(buildHistoryState('race', null), '', '');
+    } catch (err) {
+      console.warn('[nav] popstate race trap', err);
+    }
+    return;
+  }
+  if (appState.screen === 'lobby') {
+    if (!window.confirm('게임을 종료하시겠습니까?')) {
+      try {
+        history.pushState(buildHistoryState('lobby', null), '', '');
+      } catch (err) {
+        console.warn('[nav] popstate lobby restore', err);
+      }
+      return;
+    }
+    if (st && st.v === HISTORY_V && st.screen) {
+      navigate(st.screen, st.payload ?? undefined, { skipHistory: true });
+    }
+    return;
+  }
+  if (st && st.v === HISTORY_V && st.screen) {
+    navigate(st.screen, st.payload ?? undefined, { skipHistory: true });
+  } else {
+    navigate('lobby', undefined, { skipHistory: true });
+  }
+});
+
+window.addEventListener('beforeunload', (e) => {
+  if (appState.screen === 'race' && raceV3Unmount != null) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 /**
  * @param {object} d
@@ -330,19 +390,19 @@ function boot() {
     };
     connectQrGuestSocket(qr.token);
     showAppToast('게스트로 연결 중이에요…');
-    navigate('guestQrWait');
+    navigate('guestQrWait', undefined, { replaceHistory: true });
     return;
   }
   const u = getCurrentUser();
   if (u) {
     appState.user = u;
     console.log('[dallyeori] app.js boot → JWT 세션 복원');
-    navigateAfterAuth(api);
+    navigateAfterAuth(api, { replaceHistory: true });
     const bootSock = ensureSocket();
     console.log('[app] boot ensureSocket result:', !!bootSock, 'connected:', bootSock?.connected);
   } else {
     console.log('[dallyeori] app.js boot → splash');
-    navigate('splash');
+    navigate('splash', undefined, { replaceHistory: true });
   }
 }
 
