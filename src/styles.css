@@ -1315,6 +1315,63 @@
   opacity: 0.92;
 }
 
+.result-msg-btn-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.result-msg-badge {
+  position: absolute;
+  top: -2px;
+  right: 10px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #d32f2f;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 20px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #000;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.result-msg-preview {
+  margin: -4px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+@keyframes result-msg-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-5px);
+  }
+  30% {
+    transform: translateX(5px);
+  }
+  45% {
+    transform: translateX(-4px);
+  }
+  60% {
+    transform: translateX(4px);
+  }
+  75% {
+    transform: translateX(-2px);
+  }
+}
+
+.result-msg-btn-wrap--shake {
+  animation: result-msg-shake 0.55s ease;
+}
+
 .rematch-wait-status {
   text-align: center;
   margin: 8px 0 4px;

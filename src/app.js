@@ -40,6 +40,9 @@ const RACE_FINISH_BC = 'dallyeori-race-finish';
 /** @type {(() => void) | null} */
 let raceV3Unmount = null;
 
+/** @type {(() => void) | null} */
+let screenUnmount = null;
+
 /** @type {{ screen: string, user: object | null, nickname: string, language: string, translateTone: 'casual'|'formal', profilePhotoURL: string, profileSetupComplete: boolean, wins: number, losses: number, draws: number, hearts: number, selectedDuckId: string | null, ownedDuckIds: string[], lastRaceResult: object | null, lastOpponent: object | null, terrain: string, navTab: string, qrGuestOneShot: boolean, _matchingTimer: ReturnType<typeof setTimeout> | null, _matchingUiTimer: ReturnType<typeof setTimeout> | null, _matchingCancel: (() => void) | null, _chatPeerId: string }} */
 export const appState = {
   screen: 'splash',
@@ -150,6 +153,14 @@ const api = {
  */
 function navigate(screen, payload, navOpts = {}) {
   try {
+    if (screenUnmount) {
+      try {
+        screenUnmount();
+      } catch (e) {
+        console.warn('[nav] screenUnmount', e);
+      }
+      screenUnmount = null;
+    }
     clearMatchingTimer();
     removeRaceMount();
     appState.screen = screen;
@@ -192,7 +203,8 @@ function navigate(screen, payload, navOpts = {}) {
         if (payload && typeof payload === 'object') {
           appState.lastRaceResult = payload;
         }
-        mountResult(appRoot, api);
+        screenUnmount = mountResult(appRoot, api);
+        if (typeof screenUnmount !== 'function') screenUnmount = null;
         break;
       case 'duckSelect':
         mountDuckSelect(appRoot, api);
@@ -235,6 +247,12 @@ function navigate(screen, payload, navOpts = {}) {
 
     if (navOpts.replaceHistory) {
       try {
+        console.log('[nav] replaceState', {
+          screen,
+          payload: payload ?? null,
+          length: history.length,
+          state: history.state,
+        });
         history.replaceState(buildHistoryState(screen, payload ?? null), '', '');
       } catch (e) {
         console.warn('[nav] replaceState', e);
@@ -253,20 +271,19 @@ function navigate(screen, payload, navOpts = {}) {
 
 window.addEventListener('popstate', (e) => {
   const st = e.state;
-  if (appState.screen === 'race' && raceV3Unmount != null) {
-    try {
-      history.pushState(buildHistoryState('race', null), '', '');
-    } catch (err) {
-      console.warn('[nav] popstate race trap', err);
-    }
-    return;
-  }
-  if (appState.screen === 'result') {
+  console.log('[nav] popstate', {
+    appScreen: appState.screen,
+    historyState: st,
+    length: history.length,
+  });
+
+  if (appState.screen === 'result' || appState.screen === 'race') {
+    console.log('[nav] popstate: result|race → lobby (forced)');
     navigate('lobby', undefined, { skipHistory: true });
     try {
       history.replaceState(buildHistoryState('lobby', null), '', '');
     } catch (err) {
-      console.warn('[nav] popstate result→lobby', err);
+      console.warn('[nav] popstate force lobby replaceState', err);
     }
     return;
   }
@@ -334,6 +351,7 @@ function onRaceFinishPayload(d) {
   // 경주 종료 연출 시간 확보 (2초)
   setTimeout(() => {
     removeRaceMount();
+    console.log('[race] onRaceFinish → navigate("result", replaceHistory:true)');
     navigate('result', normalized, { replaceHistory: true });
   }, 2000);
 }

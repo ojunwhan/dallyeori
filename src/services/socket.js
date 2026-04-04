@@ -53,6 +53,11 @@ function resolveSocketLanguageForToken(token) {
 
 /** @param {unknown} msg */
 function receiveChatRelayHandler(msg) {
+  console.log('[socket] receiveChat → dallyeori-receiveChat', {
+    fromId: msg && msg.fromId,
+    toId: msg && msg.toId,
+    hasText: !!(msg && msg.text),
+  });
   window.dispatchEvent(new CustomEvent('dallyeori-receiveChat', { detail: msg }));
 }
 

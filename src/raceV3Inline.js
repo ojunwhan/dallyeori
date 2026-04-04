@@ -152,6 +152,8 @@ const TIME_LIMIT=13;
 const CD_STEP_SEC=1,CD_START_VAL=2;
 /** true면 [input]/[physics] 로그 (프로덕션은 false) */
 const DEBUG_RACE_TAP=false;
+/** true면 peerTap 수신 시마다 콘솔 (확인 후 false 로) */
+const DEBUG_PEER_TAP_RX=true;
 const PH=RACE_ENGINE_PHYSICS;
 /** dirA·스핀 상한 (rad, ≈±90°) */
 const DIR_A_LIMIT=1.57;
@@ -239,7 +241,9 @@ function mk(cpu){return{
   dirA:0,
   // CPU
   tapT:0,tapI:.18,cpuM:.85+Math.random()*.3,
-  bodySw:0,bodySwTgt:0
+  bodySw:0,bodySwTgt:0,
+  /** 서버 peerTap 직후 풀 애니 (초) */
+  forcedMovingTimer:0
 }}
 let P=mk(false),CPU=mk(true);
 
@@ -303,6 +307,29 @@ function showFallOverlay(){
 // ═══ INPUT ═══
 function bumpPadGlow(foot){
   if(foot==='L')padGlowL=1;else padGlowR=1;
+}
+
+/**
+ * 서버 peerTap 전용 — 상대 오리(CPU) 시각만 (거리/속도 불변).
+ * 다리·몸통·wc 스텝 값은 로컬 tap()과 동일 (race 카운트다운 제외).
+ * @param {'left'|'right'} foot
+ */
+function applyPeerTapVisual(foot){
+  if(state!=='racing')return;
+  if(!isServerRaceConnected())return;
+  const f=foot==='left'?'L':'R';
+  CPU.lastFoot=f;
+  CPU.wcTgt+=Math.PI;
+  if(f==='L'){
+    CPU.leftLegTarget=0.7;
+    CPU.rightLegTarget=-0.3;
+  }else{
+    CPU.rightLegTarget=0.7;
+    CPU.leftLegTarget=-0.3;
+  }
+  playSlap();
+  CPU.bodySwTgt=f==='L'?0.68:-0.68;
+  CPU.forcedMovingTimer=0.3;
 }
 function tap(foot){
   if(state==='countdown'){
@@ -683,7 +710,6 @@ function updAnim(p,dt){
     p.wcTgt+=p.spd*18*dt;
   }
   const sin=Math.sin(p.wc),absSin=Math.abs(sin);
-  const moving=p.spd>0.08?1:p.spd/0.08;
 
   let striding=false;
   const strideAsHuman=isServerRaceConnected()||!p.isCpu;
@@ -693,10 +719,46 @@ function updAnim(p,dt){
       Math.abs(p.leftLegA-p.leftLegTarget)>0.08||
       Math.abs(p.rightLegA-p.rightLegTarget)>0.08;
     if(!striding){
-      const settle=Math.min(1,dt*16);
+      let settle=Math.min(1,dt*16);
+      if(isServerRaceConnected()&&p===CPU){
+        const legAmp=Math.abs(p.leftLegTarget)+Math.abs(p.rightLegTarget);
+        if(legAmp>0.35||Math.abs(p.bodySwTgt)>0.35){
+          settle*=0.22;
+        }
+      }
       p.leftLegTarget*=1-settle;
       p.rightLegTarget*=1-settle;
       p.bodySwTgt*=1-settle;
+    }
+  }
+
+  let effSpdForAnim=p.spd;
+  if(inRace&&isServerRaceConnected()&&p===CPU&&serverRaceSnap){
+    const pl=serverRaceSnap.players;
+    const opp=pl&&pl[1-myServerSlot];
+    if(opp){
+      const w=wireNum(opp.spd!=null?opp.spd:opp.v,p.spd);
+      effSpdForAnim=Math.max(p.spd,w);
+    }
+  }
+  let moving=effSpdForAnim>0.08?1:effSpdForAnim/0.08;
+  if(inRace&&isServerRaceConnected()&&p===CPU){
+    if(
+      striding||
+      Math.abs(p.bodySwTgt)>0.05||
+      Math.abs(p.leftLegTarget)>0.07||
+      Math.abs(p.rightLegTarget)>0.07
+    ){
+      moving=Math.max(moving,1);
+    }
+  }
+
+  if(p.isCpu&&p.forcedMovingTimer>0){
+    p.forcedMovingTimer=Math.max(0,p.forcedMovingTimer-dt);
+    moving=1;
+    _cpuMovingLogCounter+=1;
+    if(_cpuMovingLogCounter%10===1){
+      console.log('[updAnim CPU] forcedMoving moving=1, timer left',p.forcedMovingTimer.toFixed(3),'effSpd',effSpdForAnim.toFixed(3));
     }
   }
 
@@ -706,7 +768,8 @@ function updAnim(p,dt){
   p.by=-absSin*13*moving;
   const sq=0.12*moving;
   p.scX=1+(1-absSin)*sq;p.scY=1-(1-absSin)*sq;
-  const tgtLean=Math.min(p.spd/4,.3);
+  const leanSpd=isServerRaceConnected()&&p===CPU?effSpdForAnim:p.spd;
+  const tgtLean=Math.min(leanSpd/4,.3);
   p.lean+=(tgtLean-p.lean)*.08;
   p.scX*=(1+p.lean*.08);p.scY*=(1-p.lean*.1);
   p.hLag+=(p.tilt-p.hLag)*12*dt;
@@ -1268,7 +1331,7 @@ function loop(t){
 }
 rafId=requestAnimationFrame(loop);
 
-/** @type {{ sock: import('socket.io-client').Socket, onPre: (d: object) => void, onGo: () => void, onTick: (p: object) => void, onRace: (r: object) => void } | null} */
+/** @type {{ sock: import('socket.io-client').Socket, onPre: (d: object) => void, onGo: () => void, onTick: (p: object) => void, onRace: (r: object) => void, onPeerTap: (d: object) => void } | null} */
 let srvHandlers=null;
 if(serverRaceOpt&&serverRaceOpt.socket){
   const sock=serverRaceOpt.socket;
@@ -1298,11 +1361,22 @@ if(serverRaceOpt&&serverRaceOpt.socket){
       console.log('[race] raceTick received',p);
     }
   };
+  const onPeerTap=(d)=>{
+    if(!d||typeof d!=='object')return;
+    const slot=d.slot;
+    const foot=d.foot;
+    if(slot!==0&&slot!==1)return;
+    if(slot===myServerSlot)return;
+    if(foot!=='left'&&foot!=='right')return;
+    if(DEBUG_PEER_TAP_RX)console.log('[peerTap] received', foot);
+    applyPeerTapVisual(foot);
+  };
   sock.on('preRaceCountdown',onPre);
   sock.on('raceGo',onGo);
   sock.on('raceTick',onTick);
+  sock.on('peerTap',onPeerTap);
   sock.on('raceResult',onServerRaceResult);
-  srvHandlers={sock,onPre,onGo,onTick,onRace:onServerRaceResult};
+  srvHandlers={sock,onPre,onGo,onTick,onRace:onServerRaceResult,onPeerTap};
   console.log('[race] serverRace active', { roomId: serverRaceOpt.roomId, mySlot: serverRaceOpt.mySlot, socketConnected: sock.connected });
 }
 
@@ -1330,6 +1404,7 @@ if(EMBED_APP&&!serverRaceOpt){
       srvHandlers.sock.off('preRaceCountdown',srvHandlers.onPre);
       srvHandlers.sock.off('raceGo',srvHandlers.onGo);
       srvHandlers.sock.off('raceTick',srvHandlers.onTick);
+      srvHandlers.sock.off('peerTap',srvHandlers.onPeerTap);
       srvHandlers.sock.off('raceResult',srvHandlers.onRace);
       srvHandlers=null;
     }
