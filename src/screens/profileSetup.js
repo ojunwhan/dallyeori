@@ -2,7 +2,32 @@
  * 첫 로그인 프로필 설정 (모킹) — 닉네임·언어 확인 후 로비 진입
  */
 
+import { LANGUAGES } from '../data/languages.js';
 import { saveUserRecord, getUserRecord, ensureUserFromAuth } from '../services/db.js';
+
+function fillLanguageSelect(select, selectedCode) {
+  const t1 = LANGUAGES.filter((l) => l.tier === 1);
+  const t2 = LANGUAGES.filter((l) => l.tier === 2);
+  for (const lang of t1) {
+    const opt = document.createElement('option');
+    opt.value = lang.code;
+    opt.textContent = `${lang.flag} ${lang.nativeName}`;
+    select.appendChild(opt);
+  }
+  const sep = document.createElement('option');
+  sep.disabled = true;
+  sep.value = '';
+  sep.textContent = '──────';
+  select.appendChild(sep);
+  for (const lang of t2) {
+    const opt = document.createElement('option');
+    opt.value = lang.code;
+    opt.textContent = `${lang.flag} ${lang.nativeName}`;
+    select.appendChild(opt);
+  }
+  const code = LANGUAGES.some((l) => l.code === selectedCode) ? selectedCode : 'ko';
+  select.value = code;
+}
 
 /**
  * @param {HTMLElement} root
@@ -48,15 +73,7 @@ export function mountProfileSetup(root, api) {
 
   const langSelect = document.createElement('select');
   langSelect.className = 'app-input';
-  const optKo = document.createElement('option');
-  optKo.value = 'ko';
-  optKo.textContent = '한국어';
-  const optEn = document.createElement('option');
-  optEn.value = 'en';
-  optEn.textContent = 'English (준비 중)';
-  langSelect.appendChild(optKo);
-  langSelect.appendChild(optEn);
-  langSelect.value = rec?.language ?? 'ko';
+  fillLanguageSelect(langSelect, rec?.language ?? 'ko');
 
   const box = document.createElement('div');
   box.className = 'app-box';

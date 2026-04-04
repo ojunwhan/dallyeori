@@ -3,13 +3,37 @@
  */
 
 import { logout } from '../services/auth.js';
+import { LANGUAGES, getLanguageByCode } from '../data/languages.js';
 import {
   buildProfileViewModel,
   persistNickname,
   persistLanguage,
-  LANG_LABELS,
 } from '../services/profileViewModel.js';
 import { getOverallStats } from '../services/raceHistory.js';
+
+function fillLanguageSelect(select, selectedCode) {
+  const t1 = LANGUAGES.filter((l) => l.tier === 1);
+  const t2 = LANGUAGES.filter((l) => l.tier === 2);
+  for (const lang of t1) {
+    const opt = document.createElement('option');
+    opt.value = lang.code;
+    opt.textContent = `${lang.flag} ${lang.nativeName}`;
+    select.appendChild(opt);
+  }
+  const sep = document.createElement('option');
+  sep.disabled = true;
+  sep.value = '';
+  sep.textContent = '──────';
+  select.appendChild(sep);
+  for (const lang of t2) {
+    const opt = document.createElement('option');
+    opt.value = lang.code;
+    opt.textContent = `${lang.flag} ${lang.nativeName}`;
+    select.appendChild(opt);
+  }
+  const code = LANGUAGES.some((l) => l.code === selectedCode) ? selectedCode : 'ko';
+  select.value = code;
+}
 
 /**
  * @param {HTMLElement} root
@@ -216,13 +240,7 @@ function sectionLanguage(vm, api, editing, onCancelEdit, onStartEdit) {
 
     const sel = document.createElement('select');
     sel.className = 'app-input';
-    for (const code of Object.keys(LANG_LABELS)) {
-      const opt = document.createElement('option');
-      opt.value = code;
-      opt.textContent = LANG_LABELS[code];
-      sel.appendChild(opt);
-    }
-    sel.value = vm.languageCode in LANG_LABELS ? vm.languageCode : 'ko';
+    fillLanguageSelect(sel, vm.languageCode);
 
     const actions = document.createElement('div');
     actions.className = 'profile-inline-actions';
@@ -240,7 +258,12 @@ function sectionLanguage(vm, api, editing, onCancelEdit, onStartEdit) {
   } else {
     changeBtn.textContent = '변경';
     changeBtn.addEventListener('click', () => onStartEdit());
-    valueEl.innerHTML = `<span>${escapeHtml(vm.languageLabel)}</span> <span class="app-muted">(${escapeHtml(vm.languageCode)})</span>`;
+    const lang = getLanguageByCode(vm.languageCode);
+    if (lang) {
+      valueEl.innerHTML = `<span>${escapeHtml(`${lang.flag} ${lang.nativeName}`)}</span> <span class="app-muted">(${escapeHtml(lang.code)})</span>`;
+    } else {
+      valueEl.innerHTML = `<span>${escapeHtml(vm.languageCode)}</span>`;
+    }
   }
 
   row.appendChild(label);
