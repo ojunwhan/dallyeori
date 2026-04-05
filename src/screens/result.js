@@ -31,9 +31,8 @@ function resolveOpponentUserId(opp) {
   return MOCK_USERS.find((m) => m.nickname === opp.nickname)?.id ?? null;
 }
 
-/** 결과 화면 채팅 토스트/오버레이 제거 + popstate 연동용 */
+/** 결과 화면 채팅 오버레이 제거 + popstate 연동용 */
 export function closeResultScreenChatUi() {
-  document.getElementById('dallyeori-result-chat-popup')?.remove();
   const ov = document.getElementById('dallyeori-result-chat-overlay');
   if (ov && typeof ov._dispose === 'function') {
     try {
@@ -43,15 +42,12 @@ export function closeResultScreenChatUi() {
     }
   }
   ov?.remove();
-  window.clearTimeout(/** @type {any} */ (globalThis).__dallyeoriResultPopupHideT);
-  globalThis.__dallyeoriResultPopupHideT = 0;
   globalThis.__dallyeoriResultChatUiOpen = false;
 }
 
 function syncResultChatUiOpenFlag() {
-  globalThis.__dallyeoriResultChatUiOpen = !!(
-    document.getElementById('dallyeori-result-chat-popup') ||
-    document.getElementById('dallyeori-result-chat-overlay')
+  globalThis.__dallyeoriResultChatUiOpen = !!document.getElementById(
+    'dallyeori-result-chat-overlay',
   );
 }
 
@@ -62,8 +58,9 @@ function syncResultChatUiOpenFlag() {
  */
 function openResultChatComposeOverlay(uid, peerId, peerName) {
   if (!uid || !peerId) return;
-  let existing = document.getElementById('dallyeori-result-chat-overlay');
-  if (existing) {
+  const existing = document.getElementById('dallyeori-result-chat-overlay');
+  if (existing && typeof existing._refreshChat === 'function') {
+    existing._refreshChat();
     existing.querySelector('.result-chat-overlay-input')?.focus();
     return;
   }
@@ -99,6 +96,7 @@ function openResultChatComposeOverlay(uid, peerId, peerName) {
   blockedBanner.textContent = '차단한 유저입니다. 메시지를 보낼 수 없어요.';
 
   const scroll = document.createElement('div');
+  scroll.id = 'result-chat-messages';
   scroll.className = 'chat-scroll result-chat-overlay-scroll';
 
   const inputRow = document.createElement('div');
@@ -186,6 +184,11 @@ function openResultChatComposeOverlay(uid, peerId, peerName) {
     btnSend.disabled = blocked;
   }
 
+  function refreshChat() {
+    markConversationRead(uid, peerId);
+    renderMsgs();
+  }
+
   function tearDown() {
     window.removeEventListener('dallyeori-chat-update', onChatUpdate);
     if (backdrop.parentNode) backdrop.remove();
@@ -195,12 +198,13 @@ function openResultChatComposeOverlay(uid, peerId, peerName) {
   /** @param {CustomEvent} ev */
   function onChatUpdate(ev) {
     if (ev.detail?.peerId === peerId) {
-      markConversationRead(uid, peerId);
-      renderMsgs();
+      refreshChat();
     }
   }
 
   backdrop._dispose = tearDown;
+  /** 수신 시 동일 오버레이에서 목록만 갱신 (socket __onChatReceived 용) */
+  backdrop._refreshChat = refreshChat;
   window.addEventListener('dallyeori-chat-update', /** @type {any} */ (onChatUpdate));
 
   function trySend() {
@@ -498,54 +502,25 @@ export function mountResult(root, api) {
       return fromOk && toOk;
     }
 
-    function removeResultChatPopup() {
-      const el = document.getElementById('dallyeori-result-chat-popup');
-      if (el) el.remove();
-      window.clearTimeout(/** @type {any} */ (globalThis).__dallyeoriResultPopupHideT);
-      globalThis.__dallyeoriResultPopupHideT = 0;
-      syncResultChatUiOpenFlag();
-    }
-
-    function showResultChatPopup(msg) {
-      /** popstate 레이스 방지: DOM 붙이기 전부터 잠시 억제 */
-      globalThis.__dallyeoriSuppressResultPopstateUntil = Date.now() + 3000;
-      const raw = (msg.translatedText || msg.text || '').trim();
-      const nick = (opp?.nickname || '상대').slice(0, 24);
-      const line =
-        raw.length > 140 ? `${raw.slice(0, 137)}…` : raw;
-      console.log('[result] chat popup', { nick, len: raw.length });
-      removeResultChatPopup();
-      const pop = document.createElement('div');
-      pop.id = 'dallyeori-result-chat-popup';
-      pop.className = 'result-chat-popup';
-      pop.setAttribute('role', 'button');
-      pop.tabIndex = 0;
-      pop.textContent = `${nick}: ${line}`;
-      pop.addEventListener('click', () => {
-        if (!peerIdStr) return;
-        removeResultChatPopup();
-        api.navigate('chatRoom', { peerId: peerIdStr });
-      });
-      document.body.appendChild(pop);
-      syncResultChatUiOpenFlag();
-      globalThis.__dallyeoriResultPopupHideT = window.setTimeout(() => {
-        pop.classList.add('result-chat-popup--out');
-        const done = () => {
-          pop.removeEventListener('animationend', done);
-          window.clearTimeout(fallbackRemove);
-          if (pop.parentNode) pop.remove();
-          syncResultChatUiOpenFlag();
-        };
-        pop.addEventListener('animationend', done, { once: true });
-        const fallbackRemove = window.setTimeout(done, 500);
-      }, 3000);
-    }
+    /** receiveChat → socket.js → __onChatReceived (대화는 chat.js가 먼저 저장) */
+    const myUidForChat = uid ? String(uid) : jwtUidRaw;
 
     if (uidStr && peerIdStr) {
       globalThis.__onChatReceived = (msg) => {
         console.log('[result] __onChatReceived', msg);
         if (!isChatFromRaceOpponent(msg)) return;
-        showResultChatPopup(msg);
+        globalThis.__dallyeoriSuppressResultPopstateUntil = Date.now() + 3000;
+        const overlay = document.getElementById('dallyeori-result-chat-overlay');
+        if (overlay && typeof overlay._refreshChat === 'function') {
+          overlay._refreshChat();
+          overlay.querySelector('.result-chat-overlay-input')?.focus();
+          return;
+        }
+        if (!myUidForChat) {
+          console.warn('[result] chat receive: no uid for overlay');
+          return;
+        }
+        openResultChatComposeOverlay(myUidForChat, peerIdStr, opp?.nickname || '상대');
       };
       console.log('[result] __onChatRegistered', { uidStr, peerIdStr });
     } else {

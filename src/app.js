@@ -284,9 +284,7 @@ window.addEventListener('popstate', (e) => {
   });
 
   if (appState.screen === 'result') {
-    const hasResultChatUi =
-      !!document.getElementById('dallyeori-result-chat-popup') ||
-      !!document.getElementById('dallyeori-result-chat-overlay');
+    const hasResultChatUi = !!document.getElementById('dallyeori-result-chat-overlay');
     if (hasResultChatUi) {
       console.log('[nav] popstate on result: 닫기만 (채팅 UI), 로비 이동 안 함');
       closeResultScreenChatUi();
