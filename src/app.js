@@ -12,7 +12,7 @@ import { mountLobby } from './screens/lobby.js';
 import { mountTerrainSelect } from './screens/terrainSelect.js';
 import { mountMatching } from './screens/matching.js';
 import { mountRematchWait } from './screens/rematchWait.js';
-import { mountResult } from './screens/result.js';
+import { mountResult, closeResultScreenChatUi } from './screens/result.js';
 import { mountDuckSelect } from './screens/duckSelect.js';
 import { mountProfile } from './screens/profile.js';
 import { mountFriends } from './screens/friends.js';
@@ -284,6 +284,23 @@ window.addEventListener('popstate', (e) => {
   });
 
   if (appState.screen === 'result') {
+    const hasResultChatUi =
+      !!document.getElementById('dallyeori-result-chat-popup') ||
+      !!document.getElementById('dallyeori-result-chat-overlay');
+    if (hasResultChatUi) {
+      console.log('[nav] popstate on result: 닫기만 (채팅 UI), 로비 이동 안 함');
+      closeResultScreenChatUi();
+      try {
+        history.pushState(
+          buildHistoryState('result', appState.lastRaceResult ?? null),
+          '',
+          '',
+        );
+      } catch (err) {
+        console.warn('[nav] popstate chat-ui restore result', err);
+      }
+      return;
+    }
     const until = Number(globalThis.__dallyeoriSuppressResultPopstateUntil) || 0;
     if (Date.now() < until) {
       console.log('[nav] popstate on result ignored (suppress window after chat popup)');

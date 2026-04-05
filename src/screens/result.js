@@ -11,6 +11,12 @@ import { decodeJWT, getToken } from '../services/auth.js';
 import { recordRaceOutcome } from '../services/profileViewModel.js';
 import { endGuestQrFlow } from '../services/socket.js';
 import { showAppToast } from '../services/toast.js';
+import {
+  getConversation,
+  isBlocked,
+  markConversationRead,
+  sendMessage,
+} from '../services/chat.js';
 
 /** @param {string | null | undefined} id */
 function duckById(id) {
@@ -23,6 +29,214 @@ function resolveOpponentUserId(opp) {
   if (opp?.userId) return /** @type {string} */ (opp.userId);
   if (!opp?.nickname) return null;
   return MOCK_USERS.find((m) => m.nickname === opp.nickname)?.id ?? null;
+}
+
+/** 결과 화면 채팅 토스트/오버레이 제거 + popstate 연동용 */
+export function closeResultScreenChatUi() {
+  document.getElementById('dallyeori-result-chat-popup')?.remove();
+  const ov = document.getElementById('dallyeori-result-chat-overlay');
+  if (ov && typeof ov._dispose === 'function') {
+    try {
+      ov._dispose();
+    } catch {
+      /* ignore */
+    }
+  }
+  ov?.remove();
+  window.clearTimeout(/** @type {any} */ (globalThis).__dallyeoriResultPopupHideT);
+  globalThis.__dallyeoriResultPopupHideT = 0;
+  globalThis.__dallyeoriResultChatUiOpen = false;
+}
+
+function syncResultChatUiOpenFlag() {
+  globalThis.__dallyeoriResultChatUiOpen = !!(
+    document.getElementById('dallyeori-result-chat-popup') ||
+    document.getElementById('dallyeori-result-chat-overlay')
+  );
+}
+
+/**
+ * @param {string} uid
+ * @param {string} peerId
+ * @param {string} peerName
+ */
+function openResultChatComposeOverlay(uid, peerId, peerName) {
+  if (!uid || !peerId) return;
+  let existing = document.getElementById('dallyeori-result-chat-overlay');
+  if (existing) {
+    existing.querySelector('.result-chat-overlay-input')?.focus();
+    return;
+  }
+
+  markConversationRead(uid, peerId);
+
+  const backdrop = document.createElement('div');
+  backdrop.id = 'dallyeori-result-chat-overlay';
+  backdrop.className = 'result-chat-overlay';
+  backdrop.setAttribute('role', 'dialog');
+  backdrop.setAttribute('aria-modal', 'true');
+  backdrop.setAttribute('aria-label', '메시지');
+
+  const panel = document.createElement('div');
+  panel.className = 'result-chat-overlay-panel app-box';
+
+  const head = document.createElement('div');
+  head.className = 'result-chat-overlay-head';
+  const title = document.createElement('div');
+  title.className = 'result-chat-overlay-title';
+  title.textContent = peerName.slice(0, 32) || '상대';
+  const btnClose = document.createElement('button');
+  btnClose.type = 'button';
+  btnClose.className = 'result-chat-overlay-close';
+  btnClose.textContent = '✕';
+  btnClose.setAttribute('aria-label', '닫기');
+  head.appendChild(title);
+  head.appendChild(btnClose);
+
+  const blockedBanner = document.createElement('div');
+  blockedBanner.className = 'chat-blocked-banner';
+  blockedBanner.hidden = !isBlocked(uid, peerId);
+  blockedBanner.textContent = '차단한 유저입니다. 메시지를 보낼 수 없어요.';
+
+  const scroll = document.createElement('div');
+  scroll.className = 'chat-scroll result-chat-overlay-scroll';
+
+  const inputRow = document.createElement('div');
+  inputRow.className = 'chat-input-row';
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.className = 'app-input chat-input result-chat-overlay-input';
+  inp.placeholder = '메시지 입력';
+
+  const btnSend = document.createElement('button');
+  btnSend.type = 'button';
+  btnSend.className = 'app-btn app-btn--primary';
+  btnSend.textContent = '전송';
+
+  inputRow.appendChild(inp);
+  inputRow.appendChild(btnSend);
+
+  panel.appendChild(head);
+  panel.appendChild(blockedBanner);
+  panel.appendChild(scroll);
+  panel.appendChild(inputRow);
+  backdrop.appendChild(panel);
+  document.body.appendChild(backdrop);
+  syncResultChatUiOpenFlag();
+
+  const bubbleBaseStyle =
+    'min-width:48px;max-width:75%;word-break:keep-all;box-sizing:border-box;';
+
+  function scrollBottom() {
+    scroll.scrollTop = scroll.scrollHeight;
+  }
+
+  function renderMsgs() {
+    scroll.replaceChildren();
+    const msgs = getConversation(uid, peerId);
+    for (const m of msgs) {
+      const row = document.createElement('div');
+      row.className =
+        'chat-msg-row ' + (m.fromId === uid ? 'chat-msg--mine' : 'chat-msg--theirs');
+      const bubble = document.createElement('div');
+      bubble.className = 'chat-bubble';
+      bubble.style.cssText = bubbleBaseStyle;
+      const original = m.originalText != null ? m.originalText : m.text;
+      if (m.translatedText) {
+        let showingOriginal = false;
+        bubble.textContent = m.translatedText;
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'chat-bubble-toggle app-muted';
+        toggle.textContent = '(원문 보기)';
+        toggle.style.cssText =
+          'display:block;width:100%;margin-top:4px;padding:0;border:none;background:none;font:inherit;font-size:11px;color:#888;cursor:pointer;text-align:inherit;touch-action:manipulation;';
+        toggle.addEventListener('click', (e) => {
+          e.preventDefault();
+          showingOriginal = !showingOriginal;
+          bubble.textContent = showingOriginal ? original : m.translatedText;
+          toggle.textContent = showingOriginal ? '(번역 보기)' : '(원문 보기)';
+        });
+        const w = document.createElement('div');
+        w.className = 'chat-msg-bubble-stack';
+        w.appendChild(bubble);
+        w.appendChild(toggle);
+        row.appendChild(w);
+      } else {
+        bubble.textContent = original;
+        row.appendChild(bubble);
+      }
+      const meta = document.createElement('div');
+      meta.className = 'chat-msg-meta';
+      meta.textContent = new Date(m.ts).toLocaleTimeString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      row.appendChild(meta);
+      scroll.appendChild(row);
+    }
+    scrollBottom();
+  }
+
+  function syncBlockUi() {
+    const blocked = isBlocked(uid, peerId);
+    blockedBanner.hidden = !blocked;
+    inp.disabled = blocked;
+    btnSend.disabled = blocked;
+  }
+
+  function tearDown() {
+    window.removeEventListener('dallyeori-chat-update', onChatUpdate);
+    if (backdrop.parentNode) backdrop.remove();
+    syncResultChatUiOpenFlag();
+  }
+
+  /** @param {CustomEvent} ev */
+  function onChatUpdate(ev) {
+    if (ev.detail?.peerId === peerId) {
+      markConversationRead(uid, peerId);
+      renderMsgs();
+    }
+  }
+
+  backdrop._dispose = tearDown;
+  window.addEventListener('dallyeori-chat-update', /** @type {any} */ (onChatUpdate));
+
+  function trySend() {
+    const t = inp.value.trim();
+    if (!t || inp.disabled) return;
+    btnSend.disabled = true;
+    inp.disabled = true;
+    try {
+      const r = sendMessage(uid, peerId, t);
+      if (!r.ok) {
+        showAppToast(r.error === 'blocked' ? '차단 상태에서는 보낼 수 없어요.' : '전송 실패');
+        return;
+      }
+      inp.value = '';
+      renderMsgs();
+    } finally {
+      btnSend.disabled = false;
+      syncBlockUi();
+    }
+  }
+
+  btnClose.addEventListener('click', (e) => {
+    e.preventDefault();
+    tearDown();
+  });
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) tearDown();
+  });
+  btnSend.addEventListener('click', () => trySend());
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') trySend();
+  });
+
+  syncBlockUi();
+  renderMsgs();
+  inp.focus();
 }
 
 /** @param {HTMLElement} el */
@@ -289,9 +503,12 @@ export function mountResult(root, api) {
       if (el) el.remove();
       window.clearTimeout(/** @type {any} */ (globalThis).__dallyeoriResultPopupHideT);
       globalThis.__dallyeoriResultPopupHideT = 0;
+      syncResultChatUiOpenFlag();
     }
 
     function showResultChatPopup(msg) {
+      /** popstate 레이스 방지: DOM 붙이기 전부터 잠시 억제 */
+      globalThis.__dallyeoriSuppressResultPopstateUntil = Date.now() + 3000;
       const raw = (msg.translatedText || msg.text || '').trim();
       const nick = (opp?.nickname || '상대').slice(0, 24);
       const line =
@@ -310,13 +527,14 @@ export function mountResult(root, api) {
         api.navigate('chatRoom', { peerId: peerIdStr });
       });
       document.body.appendChild(pop);
-      globalThis.__dallyeoriSuppressResultPopstateUntil = Date.now() + 500;
+      syncResultChatUiOpenFlag();
       globalThis.__dallyeoriResultPopupHideT = window.setTimeout(() => {
         pop.classList.add('result-chat-popup--out');
         const done = () => {
           pop.removeEventListener('animationend', done);
           window.clearTimeout(fallbackRemove);
           if (pop.parentNode) pop.remove();
+          syncResultChatUiOpenFlag();
         };
         pop.addEventListener('animationend', done, { once: true });
         const fallbackRemove = window.setTimeout(done, 500);
@@ -330,9 +548,6 @@ export function mountResult(root, api) {
         showResultChatPopup(msg);
       };
       console.log('[result] __onChatRegistered', { uidStr, peerIdStr });
-      dispose = () => {
-        globalThis.__onChatReceived = null;
-      };
     } else {
       console.warn('[result] __onChatReceived not set (uid/peer)', {
         uidStr: uidStr || '(empty)',
@@ -340,12 +555,24 @@ export function mountResult(root, api) {
       });
     }
 
-    btnMsg.addEventListener('click', () => {
+    dispose = () => {
+      globalThis.__onChatReceived = null;
+      closeResultScreenChatUi();
+    };
+
+    btnMsg.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       if (!peerId) {
         window.alert('상대 정보를 찾을 수 없어요.');
         return;
       }
-      api.navigate('chatRoom', { peerId });
+      if (!uid) {
+        showAppToast('로그인이 필요해요.');
+        return;
+      }
+      /** history.pushState 없음 — 결과 화면 유지, sendChat 그대로 사용 */
+      openResultChatComposeOverlay(String(uid), peerIdStr, opp?.nickname || '상대');
     });
 
     if (!peerId) {
