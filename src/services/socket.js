@@ -258,12 +258,6 @@ function globalMatchFoundBridge(data) {
   if (typeof d.roomId !== 'string' || (d.slot !== 0 && d.slot !== 1)) return;
   const s = ensureSocket();
   if (!s) return;
-  console.log('[client] matchFound received', {
-    roomId: d.roomId,
-    slot: d.slot,
-    appScreen: globalThis.__dallyeoriAppScreen,
-    socketConnected: s.connected,
-  });
   const opp = d.opponent && typeof d.opponent === 'object' ? d.opponent : {};
   const mp = globalThis.__dallyeoriMatchProfile || {};
   globalThis.__dallyeoriPendingRace = {
