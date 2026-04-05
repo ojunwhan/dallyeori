@@ -66,6 +66,12 @@ export function mountProfileSetup(root, api) {
   nickInput.className = 'app-input';
   nickInput.value = rec?.nickname ?? api.state.user?.displayName ?? '';
   nickInput.autocomplete = 'nickname';
+  nickInput.maxLength = 12;
+
+  const nickError = document.createElement('p');
+  nickError.className = 'profile-nick-error';
+  nickError.setAttribute('role', 'alert');
+  nickError.hidden = true;
 
   const langLabel = document.createElement('label');
   langLabel.className = 'app-muted';
