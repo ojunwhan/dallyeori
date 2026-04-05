@@ -2,6 +2,7 @@
  * 첫 로그인 프로필 설정 (모킹) — 닉네임·언어 확인 후 로비 진입
  */
 
+import { createLanguagePicker } from '../components/languagePicker.js';
 import { LANGUAGES } from '../data/languages.js';
 import { getToken, resolvePublicApiUrl } from '../services/auth.js';
 import { saveUserRecord, getUserRecord, ensureUserFromAuth } from '../services/db.js';
@@ -80,9 +81,10 @@ export function mountProfileSetup(root, api) {
   langLabel.style.display = 'block';
   langLabel.style.marginTop = '12px';
 
-  const langSelect = document.createElement('select');
-  langSelect.className = 'app-input';
-  fillLanguageSelect(langSelect, rec?.language ?? 'ko');
+  let selectedLang = rec?.language ?? 'ko';
+  const langPickerEl = createLanguagePicker(selectedLang, (code) => {
+    selectedLang = code;
+  });
 
   const box = document.createElement('div');
   box.className = 'app-box';
@@ -90,7 +92,7 @@ export function mountProfileSetup(root, api) {
   box.appendChild(nickInput);
   box.appendChild(nickError);
   box.appendChild(langLabel);
-  box.appendChild(langSelect);
+  box.appendChild(langPickerEl);
 
   const submit = document.createElement('button');
   submit.type = 'button';
@@ -111,7 +113,7 @@ export function mountProfileSetup(root, api) {
       nickError.hidden = false;
       return;
     }
-    const language = langSelect.value || 'ko';
+    const language = selectedLang || 'ko';
     const selectedDuckId = rec.selectedDuckId || 'bori';
     const photoURL = api.state.user?.photoURL || rec.profilePhotoURL || '';
     const body = { nickname: nv.nickname, photoURL, language, selectedDuckId };

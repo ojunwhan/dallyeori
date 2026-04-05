@@ -3,6 +3,7 @@
  */
 
 import { logout } from '../services/auth.js';
+import { createLanguagePicker } from '../components/languagePicker.js';
 import { LANGUAGES, getLanguageByCode } from '../data/languages.js';
 import {
   buildProfileViewModel,
@@ -275,9 +276,10 @@ function sectionLanguage(vm, api, editing, onCancelEdit, onStartEdit) {
     changeBtn.textContent = '취소';
     changeBtn.addEventListener('click', () => onCancelEdit());
 
-    const sel = document.createElement('select');
-    sel.className = 'app-input';
-    fillLanguageSelect(sel, vm.languageCode);
+    let pickedLang = vm.languageCode;
+    const langPickerEl = createLanguagePicker(vm.languageCode, (code) => {
+      pickedLang = code;
+    });
 
     const actions = document.createElement('div');
     actions.className = 'profile-inline-actions';
@@ -286,11 +288,11 @@ function sectionLanguage(vm, api, editing, onCancelEdit, onStartEdit) {
     apply.className = 'app-btn app-btn--primary';
     apply.textContent = '적용';
     apply.addEventListener('click', () => {
-      persistLanguage(api.state, sel.value);
+      persistLanguage(api.state, pickedLang);
       onCancelEdit();
     });
     actions.appendChild(apply);
-    valueEl.appendChild(sel);
+    valueEl.appendChild(langPickerEl);
     valueEl.appendChild(actions);
   } else {
     changeBtn.textContent = '변경';
