@@ -241,7 +241,9 @@ function mk(cpu){return{
   tapT:0,tapI:.18,cpuM:.85+Math.random()*.3,
   bodySw:0,bodySwTgt:0,
   /** 서버 peerTap 직후 풀 애니 (초) */
-  forcedMovingTimer:0
+  forcedMovingTimer:0,
+  /** 서버 raceTick 기준 목표 거리 (상대 오리 보간용) */
+  serverTargetDist:0
 }}
 let P=mk(false),CPU=mk(true);
 
@@ -506,23 +508,27 @@ function blendServerDucks(dt){
   const me=pl[myServerSlot];
   const opp=pl[1-myServerSlot];
   if(!me||!opp)return;
-  const bm=0.3;
-  P.dist=lerp(P.dist,wireNum(me.dist,P.dist),bm);
-  P.v=lerp(P.v,wireNum(me.v,P.v),bm);
-  P.spd=lerp(P.spd,wireNum(me.spd!=null?me.spd:me.v,P.spd),bm);
-  P.lateral=lerp(P.lateral,wireNum(me.lateral,P.lateral),bm);
-  P.dirA=lerp(P.dirA,wireNum(me.dirA,P.dirA),bm);
-  P.spinAngle=lerp(P.spinAngle,wireNum(me.spinAngle,P.spinAngle),bm);
+  /** 내 오리: dist는 서버 권위 70% (로컬 updDuck 예측 30% 잔류) */
+  const bmDist=0.7;
+  const bmVel=0.48;
+  P.dist=lerp(P.dist,wireNum(me.dist,P.dist),bmDist);
+  P.v=lerp(P.v,wireNum(me.v,P.v),bmVel);
+  P.spd=lerp(P.spd,wireNum(me.spd!=null?me.spd:me.v,P.spd),bmVel);
+  P.lateral=lerp(P.lateral,wireNum(me.lateral,P.lateral),bmVel);
+  P.dirA=lerp(P.dirA,wireNum(me.dirA,P.dirA),bmVel);
+  P.spinAngle=lerp(P.spinAngle,wireNum(me.spinAngle,P.spinAngle),bmVel);
   P.stumble=me.isStumbling?1:0;
   if(me.isFallen&&!fallPaused){playerFallAnim=1;showFallOverlay();}
-  const srvOppDist=wireNum(opp.dist,CPU.dist);
-  const srvOppV=wireNum(opp.v,CPU.v);
-  CPU.dist=srvOppDist;
-  CPU.v=srvOppV;
-  CPU.spd=wireNum(opp.spd!=null?opp.spd:opp.v,CPU.spd);
-  CPU.lateral=wireNum(opp.lateral,CPU.lateral);
-  CPU.dirA=wireNum(opp.dirA,CPU.dirA);
-  CPU.spinAngle=wireNum(opp.spinAngle,CPU.spinAngle);
+  /** 상대 오리: 거리는 목표만 갱신 후 dt 기반 부드럽게 추종 (~0.2/프레임@60Hz) */
+  CPU.serverTargetDist=wireNum(opp.dist,CPU.serverTargetDist);
+  const oppDistAlpha=Math.min(1,12*dt);
+  CPU.dist=lerp(CPU.dist,CPU.serverTargetDist,oppDistAlpha);
+  const bmOpp=Math.min(1,9*dt);
+  CPU.v=lerp(CPU.v,wireNum(opp.v,CPU.v),bmOpp);
+  CPU.spd=lerp(CPU.spd,wireNum(opp.spd!=null?opp.spd:opp.v,CPU.spd),bmOpp);
+  CPU.lateral=lerp(CPU.lateral,wireNum(opp.lateral,CPU.lateral),bmOpp);
+  CPU.dirA=lerp(CPU.dirA,wireNum(opp.dirA,CPU.dirA),bmOpp);
+  CPU.spinAngle=lerp(CPU.spinAngle,wireNum(opp.spinAngle,CPU.spinAngle),bmOpp);
   CPU.stumble=opp.isStumbling?1:0;
   CPU.lastTapRaceT=raceT;
   _blendLogCounter+=1;
