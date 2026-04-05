@@ -19,6 +19,7 @@ import {
   searchUsers,
   sendRequest,
 } from '../services/friends.js';
+import { emitFriendRequestSent } from '../services/socket.js';
 import {
   canSendHeartToday,
   isMutualHeart,
@@ -323,6 +324,7 @@ export function mountFriends(root, api) {
         btn.textContent = '요청';
         btn.addEventListener('click', () => {
           const r = sendRequest(uid, u.id);
+          if (r.ok && r.requestId) emitFriendRequestSent(u.id, r.requestId);
           if (r.ok) window.alert('친구 요청을 보냈어요.');
           else if (r.message) window.alert(r.message);
           else if (r.error === 'pending_out') window.alert('이미 요청 중이에요.');

@@ -1,10 +1,8 @@
 /**
- * 재대전 요청 대기 — 모킹 수락/거절(services/socket.js)
+ * 재대전 요청 대기 — 상대 수락 시 서버 matchFound 로 경주 진입
  */
 
-import { startMockRematchRequest } from '../services/socket.js';
-
-const REJECT_TO_LOBBY_MS = 2000;
+const CANCEL_MS = 120_000;
 
 /**
  * @param {HTMLElement} root
@@ -26,7 +24,7 @@ export function mountRematchWait(root, api) {
 
   const status = document.createElement('p');
   status.className = 'rematch-wait-status';
-  status.textContent = '상대에게 재대전 요청 중…';
+  status.textContent = '상대의 수락을 기다리는 중이에요…';
 
   const loading = document.createElement('div');
   loading.className = 'matching-loading';
@@ -55,31 +53,9 @@ export function mountRematchWait(root, api) {
   wrap.appendChild(cancel);
   root.appendChild(wrap);
 
-  const { promise, cancel: abortWait } = startMockRematchRequest();
-  api.state._matchingCancel = abortWait;
-
-  promise.then(({ accepted }) => {
+  const tid = window.setTimeout(() => {
     if (api.state.screen !== 'rematchWait') return;
-    api.state._matchingCancel = null;
-
-    if (accepted) {
-      try {
-        api.navigate('race', { opponentName: oppNick });
-      } catch (e) {
-        console.error('[rematchWait] → race', e);
-      }
-      return;
-    }
-
-    loading.hidden = true;
-    cancel.hidden = true;
-    status.textContent = '상대가 거절했습니다.';
-    status.classList.add('rematch-wait-status--reject');
-
-    api.state._matchingTimer = window.setTimeout(() => {
-      api.state._matchingTimer = null;
-      if (api.state.screen !== 'rematchWait') return;
-      api.navigate('lobby');
-    }, REJECT_TO_LOBBY_MS);
-  });
+    api.navigate('lobby');
+  }, CANCEL_MS);
+  api.state._matchingTimer = tid;
 }

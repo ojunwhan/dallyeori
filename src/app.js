@@ -6,7 +6,13 @@
 import { mountSplash, navigateAfterAuth } from './screens/splash.js';
 import { mountProfileSetup } from './screens/profileSetup.js';
 import { consumeOAuthReturn, consumeQrGuestParams, decodeJWT, getCurrentUser } from './services/auth.js';
-import { connectQrGuestSocket, emitRaceJoin, ensureSocket, sendTap } from './services/socket.js';
+import {
+  connectQrGuestSocket,
+  emitRaceJoin,
+  ensureSocket,
+  sendTap,
+  setServerMatchFoundNavigate,
+} from './services/socket.js';
 import { showAppToast } from './services/toast.js';
 import { mountLobby } from './screens/lobby.js';
 import { mountTerrainSelect } from './screens/terrainSelect.js';
@@ -145,6 +151,26 @@ const api = {
   state: appState,
   navigate,
 };
+
+setServerMatchFoundNavigate((data) => {
+  const opp = data.opponent && typeof data.opponent === 'object' ? data.opponent : {};
+  const uid = opp.userId != null ? String(opp.userId) : '';
+  appState.lastOpponent = {
+    userId: uid || undefined,
+    nickname: typeof opp.nickname === 'string' ? opp.nickname : '상대',
+    profilePhotoURL: typeof opp.profilePhotoURL === 'string' ? opp.profilePhotoURL : '',
+    duckId: typeof opp.duckId === 'string' ? opp.duckId : 'bori',
+    duckName: typeof opp.duckName === 'string' ? opp.duckName : '',
+    duckColor: typeof opp.duckColor === 'string' ? opp.duckColor : '',
+    wins: Number(opp.wins) || 0,
+    losses: Number(opp.losses) || 0,
+    draws: Number(opp.draws) || 0,
+  };
+  if (data.terrain) appState.terrain = data.terrain;
+  const scr = appState.screen;
+  if (scr === 'matching' || scr === 'race') return;
+  navigate('race', { opponentName: appState.lastOpponent.nickname });
+});
 
 /**
  * @param {string} screen

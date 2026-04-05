@@ -7,7 +7,12 @@ import { decodeJWT, getToken } from './auth.js';
 import { getUserRecord } from './db.js';
 import { DUCKS_NINE } from '../constants.js';
 import { getRandomMockUser } from './mockUsers.js';
-import { showAppToast, showHeartReceiveToast } from './toast.js';
+import { applyIncomingFriendRequest } from './friends.js';
+import {
+  showAppToast,
+  showFriendRequestToast,
+  showHeartReceiveToast,
+} from './toast.js';
 
 /** @type {import('socket.io-client').Socket | null} */
 let gameSocket = null;
@@ -103,6 +108,147 @@ function attachReceiveHeartRelay(sock) {
   sock.on('receiveHeart', receiveHeartRelayHandler);
 }
 
+function getJwtUid() {
+  const t = getToken();
+  if (!t) return '';
+  const p = decodeJWT(t);
+  return p && typeof p.uid === 'string' ? p.uid : '';
+}
+
+/** @param {unknown} data */
+function receiveFriendRequestRelayHandler(data) {
+  const o = data && typeof data === 'object' ? /** @type {Record<string, unknown>} */ (data) : {};
+  const senderUid = typeof o.senderUid === 'string' ? o.senderUid : '';
+  const requestId = typeof o.requestId === 'string' ? o.requestId : '';
+  const senderName =
+    typeof o.senderName === 'string' && o.senderName.trim()
+      ? o.senderName.trim()
+      : senderUid;
+  const myUid = getJwtUid();
+  if (!myUid || !senderUid || !requestId) return;
+  showFriendRequestToast(senderName);
+  applyIncomingFriendRequest(myUid, { senderUid, requestId });
+}
+
+function removeRematchInviteOverlay() {
+  document.getElementById('dallyeori-rematch-invite')?.remove();
+}
+
+/** @param {unknown} data */
+function receiveRematchRelayHandler(data) {
+  const o = data && typeof data === 'object' ? /** @type {Record<string, unknown>} */ (data) : {};
+  const senderUid = typeof o.senderUid === 'string' ? o.senderUid : '';
+  const senderName =
+    typeof o.senderName === 'string' && o.senderName.trim()
+      ? o.senderName.trim()
+      : senderUid;
+  if (!senderUid) return;
+
+  if (globalThis.__dallyeoriAppScreen === 'result') {
+    removeRematchInviteOverlay();
+    const backdrop = document.createElement('div');
+    backdrop.id = 'dallyeori-rematch-invite';
+    backdrop.className = 'rematch-invite-overlay';
+    backdrop.setAttribute('role', 'dialog');
+    backdrop.setAttribute('aria-modal', 'true');
+    backdrop.setAttribute('aria-label', '재대전');
+
+    const panel = document.createElement('div');
+    panel.className = 'rematch-invite-panel app-box';
+
+    const msg = document.createElement('p');
+    msg.className = 'rematch-invite-msg';
+    msg.textContent = `🏁 ${senderName}님이 한판 더 하자고 해요!`;
+
+    const row = document.createElement('div');
+    row.className = 'rematch-invite-btns';
+
+    const btnAcc = document.createElement('button');
+    btnAcc.type = 'button';
+    btnAcc.className = 'app-btn app-btn--primary';
+    btnAcc.textContent = '수락';
+    btnAcc.addEventListener('click', () => {
+      removeRematchInviteOverlay();
+      const terrain = globalThis.__dallyeoriTerrain || 'normal';
+      getGameSocket()?.emit('acceptRematch', { peerUid: senderUid, terrain });
+    });
+
+    const btnNo = document.createElement('button');
+    btnNo.type = 'button';
+    btnNo.className = 'app-btn';
+    btnNo.textContent = '거절';
+    btnNo.addEventListener('click', () => removeRematchInviteOverlay());
+
+    row.appendChild(btnAcc);
+    row.appendChild(btnNo);
+    panel.appendChild(msg);
+    panel.appendChild(row);
+    backdrop.appendChild(panel);
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) removeRematchInviteOverlay();
+    });
+    document.body.appendChild(backdrop);
+  } else {
+    showAppToast(`🏁 ${senderName}님이 한판 더 하자고 해요.`);
+  }
+}
+
+/**
+ * @param {import('socket.io-client').Socket} sock
+ */
+function attachReceiveFriendRematchRelay(sock) {
+  sock.off('receiveFriendRequest', receiveFriendRequestRelayHandler);
+  sock.on('receiveFriendRequest', receiveFriendRequestRelayHandler);
+  sock.off('receiveRematch', receiveRematchRelayHandler);
+  sock.on('receiveRematch', receiveRematchRelayHandler);
+}
+
+/** @type {((data: object) => void) | null} */
+let _onServerMatchFoundNavigate = null;
+
+/**
+ * 매칭 화면 외(결과·재대전 대기 등)에서 서버 matchFound 시 경주로 진입
+ * @param {(data: object) => void} cb
+ */
+export function setServerMatchFoundNavigate(cb) {
+  _onServerMatchFoundNavigate = cb;
+}
+
+/** @param {unknown} data */
+function globalMatchFoundBridge(data) {
+  if (!data || typeof data !== 'object') return;
+  const d = /** @type {Record<string, unknown>} */ (data);
+  if (typeof d.roomId !== 'string' || (d.slot !== 0 && d.slot !== 1)) return;
+  const s = gameSocket;
+  if (!s) return;
+  const opp = d.opponent && typeof d.opponent === 'object' ? d.opponent : {};
+  const mp = globalThis.__dallyeoriMatchProfile || {};
+  globalThis.__dallyeoriPendingRace = {
+    socket: s,
+    roomId: d.roomId,
+    slot: d.slot,
+    terrain: d.terrain,
+    myDuckId: d.myDuckId || mp.duckId || 'bori',
+    oppDuckId: typeof opp.duckId === 'string' ? opp.duckId : 'bori',
+    oppDuckName: typeof opp.duckName === 'string' ? opp.duckName : '',
+  };
+  if (typeof _onServerMatchFoundNavigate === 'function') {
+    try {
+      _onServerMatchFoundNavigate(/** @type {object} */ (data));
+    } catch (e) {
+      console.warn('[socket] matchFound navigate', e);
+    }
+  }
+}
+
+/**
+ * @param {import('socket.io-client').Socket} sock
+ */
+function attachGlobalMatchFoundBridge(sock) {
+  sock.off('matchFound', globalMatchFoundBridge);
+  sock.on('matchFound', globalMatchFoundBridge);
+}
+
 /**
  * @returns {import('socket.io-client').Socket | null}
  */
@@ -175,6 +321,8 @@ export function connectQrGuestSocket(token) {
   });
   attachReceiveChatRelay(gameSocket);
   attachReceiveHeartRelay(gameSocket);
+  attachReceiveFriendRematchRelay(gameSocket);
+  attachGlobalMatchFoundBridge(gameSocket);
   return gameSocket;
 }
 
@@ -198,6 +346,8 @@ export function ensureSocket() {
     console.log('[socket] reusing existing socket, connected:', gameSocket?.connected);
     attachReceiveChatRelay(gameSocket);
     attachReceiveHeartRelay(gameSocket);
+    attachReceiveFriendRematchRelay(gameSocket);
+    attachGlobalMatchFoundBridge(gameSocket);
     return gameSocket;
   }
   // 연결 중이어도 같은 토큰이면 기존 인스턴스 유지 (매칭 직전에 끊었다가 다시 만들면 서버 매칭 불가)
@@ -205,6 +355,8 @@ export function ensureSocket() {
     console.log('[socket] reusing existing socket, connected:', gameSocket?.connected);
     attachReceiveChatRelay(gameSocket);
     attachReceiveHeartRelay(gameSocket);
+    attachReceiveFriendRematchRelay(gameSocket);
+    attachGlobalMatchFoundBridge(gameSocket);
     return gameSocket;
   }
   if (gameSocket) {
@@ -236,7 +388,36 @@ export function ensureSocket() {
   });
   attachReceiveChatRelay(gameSocket);
   attachReceiveHeartRelay(gameSocket);
+  attachReceiveFriendRematchRelay(gameSocket);
+  attachGlobalMatchFoundBridge(gameSocket);
   return gameSocket;
+}
+
+/**
+ * @param {string} targetUid
+ * @param {string} requestId
+ */
+export function emitFriendRequestSent(targetUid, requestId) {
+  const s = getGameSocket();
+  if (!s?.connected || !targetUid || !requestId) return;
+  s.emit('sendFriendRequest', { targetUid, requestId });
+}
+
+/** @param {string} targetUid */
+export function emitSendRematch(targetUid) {
+  const s = getGameSocket();
+  if (!s?.connected || !targetUid) return;
+  s.emit('sendRematch', { targetUid });
+}
+
+/**
+ * @param {string} peerUid 한판 더를 보낸 사람
+ * @param {string} [terrain]
+ */
+export function emitAcceptRematch(peerUid, terrain) {
+  const s = getGameSocket();
+  if (!s?.connected || !peerUid) return;
+  s.emit('acceptRematch', { peerUid, terrain: terrain || 'normal' });
 }
 
 /**

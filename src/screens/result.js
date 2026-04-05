@@ -9,7 +9,7 @@ import { canSendHeartToday, isMutualHeart, sendHeart } from '../services/likes.j
 import { MOCK_USERS } from '../services/mockUsers.js';
 import { decodeJWT, getToken } from '../services/auth.js';
 import { recordRaceOutcome } from '../services/profileViewModel.js';
-import { endGuestQrFlow } from '../services/socket.js';
+import { emitFriendRequestSent, emitSendRematch, endGuestQrFlow } from '../services/socket.js';
 import { showAppToast } from '../services/toast.js';
 import {
   getConversation,
@@ -422,20 +422,21 @@ export function mountResult(root, api) {
     actions.appendChild(tip);
     actions.appendChild(btnInstall);
   } else {
+    const peerId = resolveOpponentUserId(opp);
+
     const btnRematch = document.createElement('button');
     btnRematch.type = 'button';
     btnRematch.className = 'app-btn app-btn--primary result-btn-rematch';
     btnRematch.textContent = '한판 더';
     if (last && opp?.nickname) {
       btnRematch.addEventListener('click', () => {
+        if (peerId) emitSendRematch(peerId);
         api.navigate('rematchWait');
       });
     } else {
       btnRematch.disabled = true;
       btnRematch.title = '재대전할 상대 정보가 없습니다.';
     }
-
-    const peerId = resolveOpponentUserId(opp);
     const uid = api.state.user?.uid;
 
     const btnFriend = document.createElement('button');
@@ -456,6 +457,7 @@ export function mountResult(root, api) {
         return;
       }
       const r = sendRequest(uid, peerId);
+      if (r.ok && r.requestId) emitFriendRequestSent(peerId, r.requestId);
       if (r.ok) window.alert('친구 요청을 보냈어요.');
       else if (r.error === 'pending_out') window.alert('이미 요청 중이에요.');
       else if (r.error === 'pending_in') window.alert('상대가 먼저 요청했어요. 친구 탭에서 수락해 주세요.');

@@ -261,6 +261,33 @@ export function sendRequest(myUid, targetId) {
 }
 
 /**
+ * 소켓으로 받은 친구 요청을 로컬 social 저장소에 반영 (보낸 쪽 requestId와 동일해야 함)
+ * @param {string} myUid
+ * @param {{ senderUid: string, requestId: string }} detail
+ */
+export function applyIncomingFriendRequest(myUid, detail) {
+  const senderUid = detail && typeof detail.senderUid === 'string' ? detail.senderUid : '';
+  const requestId = detail && typeof detail.requestId === 'string' ? detail.requestId : '';
+  if (!myUid || !senderUid || !requestId || myUid === senderUid) return;
+  if (isFriend(myUid, senderUid)) return;
+  const social = readSocial();
+  if (social.requests.some((r) => r.id === requestId)) return;
+  const pend = social.requests.filter((r) => r.status === 'pending');
+  if (pend.some((r) => r.fromUid === senderUid && r.toUid === myUid)) return;
+  if (pend.some((r) => r.fromUid === myUid && r.toUid === senderUid)) return;
+  social.requests.push({
+    id: requestId,
+    fromUid: senderUid,
+    toUid: myUid,
+    status: 'pending',
+    createdAt: Date.now(),
+  });
+  writeSocial(social);
+  scheduleMockAutoReject(requestId, senderUid, myUid);
+  window.dispatchEvent(new Event('dallyeori-friends-updated'));
+}
+
+/**
  * @param {string} myUid
  * @param {string} requestId
  */

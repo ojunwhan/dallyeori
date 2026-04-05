@@ -595,6 +595,68 @@
   transform: translateX(-50%) translateY(0);
 }
 
+/* 친구 요청 수신 토스트 */
+.friend-req-recv-toast {
+  position: fixed;
+  top: max(20px, env(safe-area-inset-top, 20px));
+  left: 50%;
+  transform: translateX(-50%) translateY(-12px);
+  z-index: 100002;
+  max-width: min(92vw, 380px);
+  padding: 12px 18px;
+  border-radius: 10px;
+  background: rgba(24, 42, 32, 0.95);
+  border: 1px solid #3a8;
+  color: #9ec;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.35;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.friend-req-recv-toast.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* 재대전 초대 (결과 화면) */
+.rematch-invite-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.75);
+  box-sizing: border-box;
+}
+
+.rematch-invite-panel {
+  width: 100%;
+  max-width: 340px;
+}
+
+.rematch-invite-msg {
+  margin: 0 0 16px;
+  font-size: 1rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.rematch-invite-btns {
+  display: flex;
+  gap: 10px;
+}
+
+.rematch-invite-btns .app-btn {
+  flex: 1;
+}
+
 @keyframes heart-burst-anim {
   0% {
     transform: scale(1);
