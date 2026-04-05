@@ -39,6 +39,17 @@ export function mountProfileSetup(root, api) {
   const wrap = document.createElement('div');
   wrap.className = 'app-screen';
 
+  const uid = api.state.user?.uid;
+  if (!uid) {
+    api.navigate('splash');
+    return;
+  }
+
+  const nickError = document.createElement('p');
+  nickError.className = 'profile-nick-error';
+  nickError.setAttribute('role', 'alert');
+  nickError.hidden = true;
+
   const title = document.createElement('h1');
   title.className = 'app-title';
   title.textContent = '프로필 설정';
@@ -47,11 +58,6 @@ export function mountProfileSetup(root, api) {
   sub.className = 'app-muted';
   sub.textContent = '첫 방문이에요. 닉네임과 언어를 확인해 주세요.';
 
-  const uid = api.state.user?.uid;
-  if (!uid) {
-    api.navigate('splash');
-    return;
-  }
   let rec = getUserRecord(uid);
   if (!rec) rec = ensureUserFromAuth(api.state.user);
 
@@ -67,11 +73,6 @@ export function mountProfileSetup(root, api) {
   nickInput.value = rec?.nickname ?? api.state.user?.displayName ?? '';
   nickInput.autocomplete = 'nickname';
   nickInput.maxLength = 12;
-
-  const nickError = document.createElement('p');
-  nickError.className = 'profile-nick-error';
-  nickError.setAttribute('role', 'alert');
-  nickError.hidden = true;
 
   const langLabel = document.createElement('label');
   langLabel.className = 'app-muted';
