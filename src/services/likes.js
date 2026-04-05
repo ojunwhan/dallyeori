@@ -90,6 +90,25 @@ export function sendHeart(fromUid, targetId) {
 }
 
 /**
+ * 서버 heartError(noHearts) 시 오늘 보낸 기록 롤백 (이 기기 로컬)
+ * @param {string} fromUid
+ * @param {string} targetId
+ */
+export function revertTodayHeartSend(fromUid, targetId) {
+  if (!fromUid || !targetId) return;
+  const today = dayKey(Date.now());
+  const sent = readSent(fromUid).filter(
+    (x) => !(x.targetId === targetId && x.day === today),
+  );
+  writeSent(fromUid, sent);
+  const cutoff = Date.now() - 60_000;
+  const recv = readRecv(targetId).filter(
+    (x) => !(x.fromId === fromUid && x.ts >= cutoff),
+  );
+  writeRecv(targetId, recv);
+}
+
+/**
  * @param {string} uid
  */
 export function getHeartsReceived(uid) {

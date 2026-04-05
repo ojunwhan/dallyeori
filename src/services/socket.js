@@ -13,6 +13,7 @@ import {
   showFriendRequestToast,
   showHeartReceiveToast,
 } from './toast.js';
+import { revertTodayHeartSend } from './likes.js';
 
 /** @type {import('socket.io-client').Socket | null} */
 let gameSocket = null;
@@ -106,6 +107,42 @@ function receiveHeartRelayHandler(data) {
 function attachReceiveHeartRelay(sock) {
   sock.off('receiveHeart', receiveHeartRelayHandler);
   sock.on('receiveHeart', receiveHeartRelayHandler);
+}
+
+/** @param {unknown} d */
+function heartBalanceSocketHandler(d) {
+  const o = d && typeof d === 'object' ? /** @type {Record<string, unknown>} */ (d) : {};
+  const b = o.balance;
+  if (typeof b !== 'number' || !Number.isFinite(b)) return;
+  window.dispatchEvent(new CustomEvent('dallyeori-heart-balance', { detail: { balance: b } }));
+}
+
+/** @param {unknown} d */
+function heartErrorSocketHandler(d) {
+  const o = d && typeof d === 'object' ? /** @type {Record<string, unknown>} */ (d) : {};
+  if (o.reason === 'noHearts' && typeof o.targetUid === 'string') {
+    const uid = getJwtUid();
+    if (uid) revertTodayHeartSend(uid, o.targetUid);
+  }
+  showAppToast('하트가 부족해요.');
+  window.dispatchEvent(new CustomEvent('dallyeori-heart-error', { detail: d }));
+}
+
+/** @param {unknown} d */
+function matchErrorSocketHandler(d) {
+  window.dispatchEvent(new CustomEvent('dallyeori-match-error', { detail: d }));
+}
+
+/**
+ * @param {import('socket.io-client').Socket} sock
+ */
+function attachHeartEconomyRelay(sock) {
+  sock.off('heartBalance', heartBalanceSocketHandler);
+  sock.on('heartBalance', heartBalanceSocketHandler);
+  sock.off('heartError', heartErrorSocketHandler);
+  sock.on('heartError', heartErrorSocketHandler);
+  sock.off('matchError', matchErrorSocketHandler);
+  sock.on('matchError', matchErrorSocketHandler);
 }
 
 function getJwtUid() {
@@ -343,8 +380,14 @@ export function connectQrGuestSocket(token) {
   };
 
   gameSocket.on('matchFound', onFound);
-  gameSocket.on('qrJoinFailed', () => {
-    showAppToast('입장에 실패했어요. QR을 다시 스캔해 주세요.');
+  gameSocket.on('qrJoinFailed', (p) => {
+    const reason =
+      p && typeof p === 'object' && 'reason' in p ? String(p.reason) : '';
+    if (reason === 'host_no_hearts') {
+      showAppToast('호스트의 하트가 부족해 입장할 수 없어요.');
+    } else {
+      showAppToast('입장에 실패했어요. QR을 다시 스캔해 주세요.');
+    }
     guestQrFlowActive = false;
   });
   gameSocket.on('connect_error', () => {
@@ -358,6 +401,7 @@ export function connectQrGuestSocket(token) {
   });
   attachReceiveChatRelay(gameSocket);
   attachReceiveHeartRelay(gameSocket);
+  attachHeartEconomyRelay(gameSocket);
   attachReceiveFriendRematchRelay(gameSocket);
   attachGlobalMatchFoundBridge(gameSocket);
   return gameSocket;
@@ -383,6 +427,7 @@ export function ensureSocket() {
     console.log('[socket] reusing existing socket, connected:', gameSocket?.connected);
     attachReceiveChatRelay(gameSocket);
     attachReceiveHeartRelay(gameSocket);
+    attachHeartEconomyRelay(gameSocket);
     attachReceiveFriendRematchRelay(gameSocket);
     attachGlobalMatchFoundBridge(gameSocket);
     return gameSocket;
@@ -392,6 +437,7 @@ export function ensureSocket() {
     console.log('[socket] reusing existing socket, connected:', gameSocket?.connected);
     attachReceiveChatRelay(gameSocket);
     attachReceiveHeartRelay(gameSocket);
+    attachHeartEconomyRelay(gameSocket);
     attachReceiveFriendRematchRelay(gameSocket);
     attachGlobalMatchFoundBridge(gameSocket);
     return gameSocket;
@@ -426,6 +472,7 @@ export function ensureSocket() {
   });
   attachReceiveChatRelay(gameSocket);
   attachReceiveHeartRelay(gameSocket);
+  attachHeartEconomyRelay(gameSocket);
   attachReceiveFriendRematchRelay(gameSocket);
   attachGlobalMatchFoundBridge(gameSocket);
   return gameSocket;

@@ -4,7 +4,7 @@
 
 import { DUCKS_NINE } from '../constants.js';
 import { sendRequest, isFriend } from '../services/friends.js';
-import { rewardForRace } from '../services/hearts.js';
+import { rewardForRace, syncHeartBalanceFromServer } from '../services/hearts.js';
 import { canSendHeartToday, isMutualHeart, sendHeart } from '../services/likes.js';
 import { MOCK_USERS } from '../services/mockUsers.js';
 import { decodeJWT, getToken } from '../services/auth.js';
@@ -386,10 +386,21 @@ export function mountResult(root, api) {
     if (res === 'win' || res === 'lose' || res === 'draw') {
       if (!isQrGuest) {
         recordRaceOutcome(api.state, res);
-        const n = rewardForRace(api.state, res === 'win');
+        const uid = api.state.user?.uid;
+        const lr = api.state.lastRaceResult;
+        const serverBal =
+          uid && lr && lr.hearts && typeof lr.hearts === 'object'
+            ? lr.hearts[uid]
+            : undefined;
         heartRewardEl = document.createElement('div');
         heartRewardEl.className = 'result-heart-reward';
-        heartRewardEl.textContent = `+${n}♥`;
+        if (typeof serverBal === 'number' && Number.isFinite(serverBal)) {
+          syncHeartBalanceFromServer(api.state, serverBal);
+          heartRewardEl.textContent = `보유 ♥ ${serverBal}`;
+        } else {
+          const n = rewardForRace(api.state, res === 'win');
+          heartRewardEl.textContent = `+${n}♥`;
+        }
       }
     }
   } else {

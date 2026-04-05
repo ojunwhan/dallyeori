@@ -459,7 +459,8 @@ function postRaceFinishToParent(){if(raceFinishPosted)return;
     time: serverFinishPayload.time,
     myDistance: serverFinishPayload.myDistance,
     oppDistance: serverFinishPayload.oppDistance,
-    taps: serverFinishPayload.taps
+    taps: serverFinishPayload.taps,
+    ...(serverFinishPayload.hearts&&typeof serverFinishPayload.hearts==='object'?{hearts:serverFinishPayload.hearts}:{})
   }:{
     type:'raceFinish',
     result,
@@ -485,6 +486,7 @@ function onServerRaceResult(r){
     myDistance: r.distances[ms],
     oppDistance: r.distances[1-ms],
     taps: r.taps[ms],
+    ...(r.hearts&&typeof r.hearts==='object'?{hearts:r.hearts}:{}),
   };
   if(r.winnerSlot===-1)winner='DRAW';
   else winner=r.winnerSlot===ms?'YOU':'CPU';
@@ -1374,7 +1376,9 @@ if(serverRaceOpt&&serverRaceOpt.socket){
   sock.on('raceTick',onTick);
   sock.on('peerTap',onPeerTap);
   sock.on('raceResult',onServerRaceResult);
-  srvHandlers={sock,onCountdown,onRaceStart,onTick,onRace:onServerRaceResult,onPeerTap};
+  const onRaceAborted=(p)=>{if(typeof onFinish==='function'){try{onFinish({type:'raceAborted',...(p&&typeof p==='object'?/** @type {object} */(p):{})});}catch(e){console.error(e);}}};
+  sock.on('raceAborted',onRaceAborted);
+  srvHandlers={sock,onCountdown,onRaceStart,onTick,onRace:onServerRaceResult,onPeerTap,onRaceAborted};
   console.log('[race] serverRace active', { roomId: serverRaceOpt.roomId, mySlot: serverRaceOpt.mySlot, socketConnected: sock.connected });
 }
 
@@ -1405,6 +1409,7 @@ if(EMBED_APP&&!serverRaceOpt){
       srvHandlers.sock.off('raceTick',srvHandlers.onTick);
       srvHandlers.sock.off('peerTap',srvHandlers.onPeerTap);
       srvHandlers.sock.off('raceResult',srvHandlers.onRace);
+      srvHandlers.sock.off('raceAborted',srvHandlers.onRaceAborted);
       srvHandlers=null;
     }
     cancelAnimationFrame(rafId);

@@ -3,7 +3,7 @@
  */
 
 import { DUCKS_NINE } from '../constants.js';
-import { startMockRandomMatch } from '../services/socket.js';
+import { ensureSocket, startMockRandomMatch } from '../services/socket.js';
 
 const RACE_DELAY_MS = 1000;
 
@@ -201,7 +201,30 @@ export function mountMatching(root, api) {
   wrap.appendChild(backLobby);
   root.appendChild(wrap);
 
+  const onMatchErr = (ev) => {
+    const data = ev.detail;
+    if (api.state.screen !== 'matching') return;
+    if (data && data.reason === 'noHearts') {
+      window.removeEventListener('dallyeori-match-error', onMatchErr);
+      api.state._matchingMatchErrCleanup = null;
+      window.alert(
+        '하트가 부족합니다! 광고를 보거나 친구에게 하트를 요청하세요',
+      );
+      api.navigate('lobby');
+    }
+  };
+  window.addEventListener('dallyeori-match-error', onMatchErr);
+  api.state._matchingMatchErrCleanup = () => {
+    window.removeEventListener('dallyeori-match-error', onMatchErr);
+  };
+
   btnRandom.addEventListener('click', () => {
+    if (!ensureSocket()) {
+      menuLayer.hidden = false;
+      waitLayer.hidden = true;
+      backLobby.hidden = false;
+      return;
+    }
     menuLayer.hidden = true;
     waitLayer.hidden = false;
     backLobby.hidden = true;

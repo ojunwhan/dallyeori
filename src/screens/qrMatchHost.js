@@ -5,7 +5,7 @@
 import QRCode from 'qrcode';
 import { createQrMatchRoom } from '../services/qrMatchApi.js';
 import { ensureSocket, getGameSocket } from '../services/socket.js';
-import { earn, spend } from '../services/hearts.js';
+import { getBalance } from '../services/hearts.js';
 import { showAppToast } from '../services/toast.js';
 
 const QR_TIMEOUT_SEC = 180; // 서버 QR_PENDING_MS 와 동기화 (3분)
@@ -150,6 +150,7 @@ export function mountQrMatchHost(root, api) {
     disposed = true;
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
+    window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
     api.navigate('race');
   };
 
@@ -160,11 +161,35 @@ export function mountQrMatchHost(root, api) {
     disposed = true;
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
+    window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
     api.navigate('lobby');
   };
 
   sock.on('matchFound', onFound);
   sock.on('qrMatchExpired', onExpired);
+
+  const onMatchErrorHost = (ev) => {
+    const d = ev.detail;
+    if (disposed) return;
+    if (!d || d.reason !== 'noHearts') return;
+    disposed = true;
+    stopTimer();
+    try {
+      pendingConnectCleanup?.();
+    } catch {
+      /* ignore */
+    }
+    pendingConnectCleanup = null;
+    sock.off('matchFound', onFound);
+    sock.off('qrMatchExpired', onExpired);
+    window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
+    sock.emit('qrMatchCancel');
+    window.alert(
+      '하트가 부족합니다! 광고를 보거나 친구에게 하트를 요청하세요',
+    );
+    api.navigate('lobby');
+  };
+  window.addEventListener('dallyeori-match-error', onMatchErrorHost);
 
   /** 소켓 연결 대기 중 취소·타임아웃 시 정리 */
   let pendingConnectCleanup = null;
@@ -246,6 +271,7 @@ export function mountQrMatchHost(root, api) {
     stopTimer();
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
+    window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
     sock.emit('qrMatchCancel');
     api.navigate('lobby');
   });
@@ -257,12 +283,12 @@ export function mountQrMatchHost(root, api) {
       if (disposed) return;
 
       const terrain = api.state.terrain || 'normal';
-      const charged = spend(api.state, 1, 'qr_match_host', { terrain });
-      if (!charged) {
+      if (getBalance(api.state) < 1) {
         showAppToast('하트가 부족해요.');
         disposed = true;
         sock.off('matchFound', onFound);
         sock.off('qrMatchExpired', onExpired);
+        window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
         api.navigate('lobby');
         return;
       }
@@ -298,12 +324,12 @@ export function mountQrMatchHost(root, api) {
       if (e instanceof Error && e.message === 'SOCKET_CONNECT_TIMEOUT') {
         showAppToast('게임 서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.');
       } else {
-        earn(api.state, 1, 'qr_refund', { reason: 'create_failed' });
-        showAppToast('QR 방을 만들지 못했어요. 하트는 돌려드렸어요.');
+        showAppToast('QR 방을 만들지 못했어요. 잠시 후 다시 시도해 주세요.');
       }
       disposed = true;
       sock.off('matchFound', onFound);
       sock.off('qrMatchExpired', onExpired);
+      window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
       api.navigate('lobby');
     }
   })();

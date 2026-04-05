@@ -1,5 +1,5 @@
 /**
- * 하트 통화 — appState + UserRecord 동기화, 거래 내역 localStorage(최대 200건)
+ * 하트 통화 — 서버 권위 잔액 + 로컬 거래 내역(표시용, IAP/광고 등)
  */
 
 import { patchUserRecord } from './db.js';
@@ -105,6 +105,19 @@ export function getBalance(state) {
   return typeof state?.hearts === 'number' && Number.isFinite(state.hearts) ? state.hearts : 0;
 }
 
+/**
+ * 서버 소켓 heartBalance / raceResult.hearts / API 동기화
+ * @param {object} state
+ * @param {unknown} balance
+ */
+export function syncHeartBalanceFromServer(state, balance) {
+  const n = Math.floor(Number(balance));
+  if (!Number.isFinite(n) || n < 0) return;
+  state.hearts = n;
+  const uid = state?.user?.uid;
+  if (uid) patchUserRecord(uid, { hearts: n });
+}
+
 /** @deprecated 호환용 */
 export function getHearts(state) {
   return getBalance(state);
@@ -177,6 +190,7 @@ export function giftToFriend(state, friendId, amount) {
 }
 
 /**
+ * 로컬 전용 경주 보상(모킹 경주 등). 서버 경주는 raceResult.hearts 로 동기화.
  * @param {object} state
  * @param {boolean} won
  * @returns {number} 이번에 지급된 양

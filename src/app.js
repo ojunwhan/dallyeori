@@ -34,6 +34,7 @@ import { mountRaceV3Game } from './raceV3Inline.js';
 import { saveRaceResult } from './services/raceHistory.js';
 import './services/chat.js';
 import { DUCKS_NINE } from './constants.js';
+import { syncHeartBalanceFromServer } from './services/hearts.js';
 
 function duckDisplayNameById(id) {
   const sid = id && String(id);
@@ -72,8 +73,17 @@ export const appState = {
   _matchingTimer: null,
   _matchingUiTimer: null,
   _matchingCancel: null,
+  _matchingMatchErrCleanup: null,
   _chatPeerId: '',
 };
+
+window.addEventListener('dallyeori-heart-balance', (ev) => {
+  const b = ev.detail?.balance;
+  if (typeof b !== 'number' || !Number.isFinite(b)) return;
+  syncHeartBalanceFromServer(appState, b);
+  const el = document.querySelector('.lobby-screen .lobby-profile-hearts');
+  if (el) el.textContent = `♥ ${b}`;
+});
 
 const appRoot = document.getElementById('app-root');
 const gameRoot = document.getElementById('game-root');
@@ -121,6 +131,14 @@ function clearMatchingTimer() {
   if (appState._matchingUiTimer != null) {
     clearTimeout(appState._matchingUiTimer);
     appState._matchingUiTimer = null;
+  }
+  if (typeof appState._matchingMatchErrCleanup === 'function') {
+    try {
+      appState._matchingMatchErrCleanup();
+    } catch {
+      /* ignore */
+    }
+    appState._matchingMatchErrCleanup = null;
   }
 }
 
@@ -406,7 +424,15 @@ window.addEventListener('beforeunload', (e) => {
  * @param {object} d
  */
 function onRaceFinishPayload(d) {
-  if (!d || d.type !== 'raceFinish') return;
+  if (!d || typeof d !== 'object') return;
+  if (d.type === 'raceAborted') {
+    if (appState.screen !== 'race') return;
+    showAppToast('하트가 부족해 경기를 시작할 수 없어요.');
+    removeRaceMount();
+    navigate('lobby', undefined, { replaceHistory: true });
+    return;
+  }
+  if (d.type !== 'raceFinish') return;
   if (appState.screen !== 'race') return;
 
   const myD = d.myDistance ?? d.distance;
@@ -421,8 +447,18 @@ function onRaceFinishPayload(d) {
     opponentDistance: Number(opD),
     myDistance: Number(myD),
     oppDistance: Number(opD),
+    ...(d.hearts && typeof d.hearts === 'object' ? { hearts: d.hearts } : {}),
   };
   appState.lastRaceResult = normalized;
+  const uid = appState.user?.uid;
+  if (
+    uid &&
+    d.hearts &&
+    typeof d.hearts === 'object' &&
+    typeof d.hearts[uid] === 'number'
+  ) {
+    syncHeartBalanceFromServer(appState, d.hearts[uid]);
+  }
   if (!appState.qrGuestOneShot) {
     saveRaceResult(appState, normalized, appState.lastOpponent);
   }
