@@ -5,6 +5,7 @@
 import { LANGUAGES } from '../data/languages.js';
 import { getToken, resolvePublicApiUrl } from '../services/auth.js';
 import { saveUserRecord, getUserRecord, ensureUserFromAuth } from '../services/db.js';
+import { postProfile, validateNicknameLocal } from '../services/profileApi.js';
 
 function fillLanguageSelect(select, selectedCode) {
   const t1 = LANGUAGES.filter((l) => l.tier === 1);
@@ -80,6 +81,7 @@ export function mountProfileSetup(root, api) {
   box.className = 'app-box';
   box.appendChild(nickLabel);
   box.appendChild(nickInput);
+  box.appendChild(nickError);
   box.appendChild(langLabel);
   box.appendChild(langSelect);
 
@@ -89,21 +91,44 @@ export function mountProfileSetup(root, api) {
   submit.style.marginTop = '16px';
   submit.textContent = '시작하기';
   submit.addEventListener('click', async () => {
+    nickError.hidden = true;
+    nickError.textContent = '';
     if (!rec) {
       api.navigate('splash');
       return;
     }
-    const nickname = nickInput.value.trim() || api.state.user?.displayName || '플레이어';
+    const nickname = nickInput.value.trim() || api.state.user?.displayName || '';
+    const nv = validateNicknameLocal(nickname);
+    if (!nv.ok) {
+      nickError.textContent = '닉네임은 2~12자, 한글·영문·숫자만 사용할 수 있어요.';
+      nickError.hidden = false;
+      return;
+    }
     const language = langSelect.value || 'ko';
+    const selectedDuckId = rec.selectedDuckId || 'bori';
+    const photoURL = api.state.user?.photoURL || rec.profilePhotoURL || '';
+    const body = { nickname: nv.nickname, photoURL, language, selectedDuckId };
+    const pr = await postProfile(body);
+    if (!pr.ok) {
+      if (pr.status === 409 && pr.error === 'nickname_taken') {
+        nickError.textContent = '이미 사용 중인 닉네임입니다';
+      } else if (pr.error === 'bad_nickname') {
+        nickError.textContent = '닉네임은 2~12자, 한글·영문·숫자만 사용할 수 있어요.';
+      } else {
+        nickError.textContent = '저장에 실패했어요. 잠시 후 다시 시도해 주세요.';
+      }
+      nickError.hidden = false;
+      return;
+    }
     const next = {
       ...rec,
-      nickname,
+      nickname: nv.nickname,
       language,
-      profilePhotoURL: api.state.user?.photoURL || rec.profilePhotoURL,
+      profilePhotoURL: photoURL,
       profileSetupComplete: true,
     };
     saveUserRecord(next);
-    api.state.nickname = nickname;
+    api.state.nickname = next.nickname;
     api.state.language = language;
     api.state.profilePhotoURL = next.profilePhotoURL;
     api.state.profileSetupComplete = true;
@@ -112,7 +137,11 @@ export function mountProfileSetup(root, api) {
       try {
         await fetch(resolvePublicApiUrl('/api/auth/complete-profile'), {
           method: 'POST',
-          headers: { Authorization: `Bearer ${t}` },
+          headers: {
+            Authorization: `Bearer ${t}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
         });
       } catch (e) {
         console.warn('[profileSetup] complete-profile', e);

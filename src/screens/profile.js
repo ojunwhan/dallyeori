@@ -10,6 +10,8 @@ import {
   persistLanguage,
 } from '../services/profileViewModel.js';
 import { getOverallStats } from '../services/raceHistory.js';
+import { getUserRecord } from '../services/db.js';
+import { postProfile, validateNicknameLocal } from '../services/profileApi.js';
 
 function fillLanguageSelect(select, selectedCode) {
   const t1 = LANGUAGES.filter((l) => l.tier === 1);
@@ -178,6 +180,12 @@ function sectionNickname(vm, api, editing, onCancelEdit, onStartEdit) {
     input.className = 'app-input';
     input.value = api.state.nickname || api.state.user?.displayName || '';
     input.autocomplete = 'nickname';
+    input.maxLength = 12;
+
+    const errNick = document.createElement('p');
+    errNick.className = 'profile-nick-error';
+    errNick.hidden = true;
+    errNick.setAttribute('role', 'alert');
 
     const actions = document.createElement('div');
     actions.className = 'profile-inline-actions';
@@ -185,12 +193,41 @@ function sectionNickname(vm, api, editing, onCancelEdit, onStartEdit) {
     save.type = 'button';
     save.className = 'app-btn app-btn--primary';
     save.textContent = '저장';
-    save.addEventListener('click', () => {
-      persistNickname(api.state, input.value);
+    save.addEventListener('click', async () => {
+      errNick.hidden = true;
+      errNick.textContent = '';
+      const nv = validateNicknameLocal(input.value);
+      if (!nv.ok) {
+        errNick.textContent = '닉네임은 2~12자, 한글·영문·숫자만 사용할 수 있어요.';
+        errNick.hidden = false;
+        return;
+      }
+      const uid = api.state.user?.uid;
+      const rec = uid ? getUserRecord(uid) : null;
+      const body = {
+        nickname: nv.nickname,
+        photoURL: api.state.profilePhotoURL || api.state.user?.photoURL || rec?.profilePhotoURL || '',
+        language: api.state.language || rec?.language || 'ko',
+        selectedDuckId: api.state.selectedDuckId || rec?.selectedDuckId || 'bori',
+      };
+      const pr = await postProfile(body);
+      if (!pr.ok) {
+        if (pr.status === 409 && pr.error === 'nickname_taken') {
+          errNick.textContent = '이미 사용 중인 닉네임입니다';
+        } else if (pr.error === 'bad_nickname') {
+          errNick.textContent = '닉네임은 2~12자, 한글·영문·숫자만 사용할 수 있어요.';
+        } else {
+          errNick.textContent = '저장에 실패했어요. 잠시 후 다시 시도해 주세요.';
+        }
+        errNick.hidden = false;
+        return;
+      }
+      persistNickname(api.state, nv.nickname);
       onCancelEdit();
     });
     actions.appendChild(save);
     valueEl.appendChild(input);
+    valueEl.appendChild(errNick);
     valueEl.appendChild(actions);
   } else {
     editBtn.textContent = '수정';

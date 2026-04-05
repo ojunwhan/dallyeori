@@ -16,14 +16,14 @@ import {
   markFriendRejectNotifsSeen,
   rejectRequest,
   removeFriend,
-  searchUsers,
   sendRequest,
 } from '../services/friends.js';
 import { emitFriendRequestSent, ensureSocket } from '../services/socket.js';
+import { isMutualHeart, markHeartNotificationsSeen, sendHeart } from '../services/likes.js';
+import { searchUsersOnServer } from '../services/profileApi.js';
 
 /** @type {(() => void) | null} */
 let detachFriendsStorageListener = null;
-import { isMutualHeart, markHeartNotificationsSeen, sendHeart } from '../services/likes.js';
 
 /** @param {string | null | undefined} duckId */
 function duckLabel(duckId) {
@@ -312,50 +312,102 @@ export function mountFriends(root, api) {
     return card;
   }
 
-  function renderSearchResults() {
+  let searchDebounceT = 0;
+  let searchSeq = 0;
+
+  async function runServerSearch() {
     if (!uid) {
+      searchResults.hidden = true;
+      searchResults.replaceChildren();
+      return;
+    }
+    const q = searchInput.value.trim();
+    searchResults.replaceChildren();
+    if (!q) {
       searchResults.hidden = true;
       return;
     }
-    const found = searchUsers(searchInput.value, uid);
+    const seq = (searchSeq += 1);
+    const loading = document.createElement('p');
+    loading.className = 'app-muted friends-search-loading';
+    loading.textContent = '검색 중…';
+    searchResults.appendChild(loading);
+    searchResults.hidden = false;
+    const { ok, users } = await searchUsersOnServer(q);
+    if (seq !== searchSeq) return;
     searchResults.replaceChildren();
-    if (!searchInput.value.trim() || found.length === 0) {
-      searchResults.hidden = true;
+    if (!ok) {
+      const p = document.createElement('p');
+      p.className = 'app-muted';
+      p.textContent = '검색에 실패했어요.';
+      searchResults.appendChild(p);
+      searchResults.hidden = false;
+      return;
+    }
+    if (users.length === 0) {
+      const p = document.createElement('p');
+      p.className = 'app-muted';
+      p.textContent = '검색 결과가 없어요.';
+      searchResults.appendChild(p);
+      searchResults.hidden = false;
       return;
     }
     searchResults.hidden = false;
-    for (const u of found) {
+    for (const u of users) {
+      const peerId = u.uid;
+      const duckMeta = DUCKS_NINE.find((d) => d.id === u.selectedDuckId);
       const rw = document.createElement('div');
       rw.className = 'friends-search-row';
+      const main = document.createElement('div');
+      main.className = 'friends-search-row-main';
+      const duckDot = document.createElement('span');
+      duckDot.className = 'friends-search-duck';
+      duckDot.style.backgroundColor = duckMeta?.color || '#666';
+      duckDot.title = duckLabel(u.selectedDuckId);
       const meta = document.createElement('span');
-      meta.textContent = `${u.nickname} · ${duckLabel(u.duckId)}`;
+      meta.className = 'friends-search-meta';
+      meta.textContent = u.nickname;
+      main.appendChild(duckDot);
+      main.appendChild(meta);
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'app-btn app-btn--inline';
-      if (isFriend(uid, u.id)) {
+      if (isFriend(uid, peerId)) {
         btn.textContent = '친구';
         btn.disabled = true;
       } else {
         btn.textContent = '요청';
         btn.addEventListener('click', () => {
-          const r = sendRequest(uid, u.id);
-          if (r.ok && r.requestId) emitFriendRequestSent(u.id, r.requestId);
+          const r = sendRequest(uid, peerId);
+          if (r.ok && r.requestId) emitFriendRequestSent(peerId, r.requestId);
           if (r.ok) window.alert('친구 요청을 보냈어요.');
           else if (r.message) window.alert(r.message);
           else if (r.error === 'pending_out') window.alert('이미 요청 중이에요.');
           else if (r.error === 'pending_in') window.alert('상대가 먼저 요청했다면 요청 탭에서 수락해 주세요.');
           else window.alert('요청할 수 없어요.');
-          renderSearchResults();
+          void runServerSearch();
           renderReq();
         });
       }
-      rw.appendChild(meta);
+      rw.appendChild(main);
       rw.appendChild(btn);
       searchResults.appendChild(rw);
     }
   }
 
-  searchInput.addEventListener('input', renderSearchResults);
+  function scheduleSearch() {
+    window.clearTimeout(searchDebounceT);
+    searchDebounceT = window.setTimeout(() => void runServerSearch(), 300);
+  }
+
+  searchInput.addEventListener('input', scheduleSearch);
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      window.clearTimeout(searchDebounceT);
+      void runServerSearch();
+    }
+  });
 
   function renderFriends() {
     listFriends.replaceChildren();
