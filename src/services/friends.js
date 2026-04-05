@@ -341,7 +341,7 @@ export function isFriend(myUid, peerId) {
 
 /**
  * @param {string} myUid
- * @returns {{ id: string, nickname: string, duckId: string, online: boolean, addedAt: number, mutualLike?: boolean }[]}
+ * @returns {{ id: string, nickname: string, duckId: string, online: boolean, addedAt: number, mutualHeart?: boolean }[]}
  */
 export function getFriendList(myUid) {
   const list = readFriendList(myUid);

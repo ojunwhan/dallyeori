@@ -6,7 +6,7 @@
 import { DUCKS_NINE } from '../constants.js';
 import { getBalance } from '../services/hearts.js';
 import { getNewFriendRejectNotifCount } from '../services/friends.js';
-import { getNewLikesCount } from '../services/likes.js';
+import { getNewHeartsCount } from '../services/likes.js';
 import { getTotalUnreadCount } from '../services/chat.js';
 
 /** @param {string | null | undefined} id */
@@ -173,9 +173,9 @@ export function createLobbyBottomMenu(api) {
   nav.setAttribute('aria-label', '로비 메뉴');
 
   const uid = api.state.user?.uid;
-  const likeBadgeCount = uid ? getNewLikesCount(uid) : 0;
+  const heartBadgeCount = uid ? getNewHeartsCount(uid) : 0;
   const rejectBadgeCount = uid ? getNewFriendRejectNotifCount(uid) : 0;
-  const friendBadge = likeBadgeCount + rejectBadgeCount;
+  const friendBadge = heartBadgeCount + rejectBadgeCount;
 
   const items = [
     { label: '상점', onClick: () => api.navigate('shop'), badge: 0 },

@@ -19,7 +19,12 @@ import {
   searchUsers,
   sendRequest,
 } from '../services/friends.js';
-import { canSendLikeToday, isMutualLike, markLikesNotificationsSeen, sendLike } from '../services/likes.js';
+import {
+  canSendHeartToday,
+  isMutualHeart,
+  markHeartNotificationsSeen,
+  sendHeart,
+} from '../services/likes.js';
 
 /** @param {string | null | undefined} duckId */
 function duckLabel(duckId) {
@@ -28,10 +33,10 @@ function duckLabel(duckId) {
 }
 
 /** @param {HTMLElement} el */
-function playLikeAnim(el) {
-  el.classList.remove('like-burst');
+function playHeartAnim(el) {
+  el.classList.remove('heart-burst');
   void el.offsetWidth;
-  el.classList.add('like-burst');
+  el.classList.add('heart-burst');
 }
 
 /**
@@ -40,7 +45,7 @@ function playLikeAnim(el) {
  */
 export function mountFriends(root, api) {
   const uid = api.state.user?.uid;
-  if (uid) markLikesNotificationsSeen(uid);
+  if (uid) markHeartNotificationsSeen(uid);
 
   const wrap = document.createElement('div');
   wrap.className = 'app-screen friends-screen';
@@ -223,7 +228,7 @@ export function mountFriends(root, api) {
 
   function friendCard(
     /** @type {{ id: string, nickname: string, duckId: string, online?: boolean }} */ f,
-    /** @type {{ showLike?: boolean, likeBtn?: HTMLButtonElement }} */ opts,
+    /** @type {{ showHeart?: boolean, heartBtn?: HTMLButtonElement }} */ opts,
   ) {
     const card = document.createElement('div');
     card.className = 'friend-card app-box';
@@ -246,10 +251,10 @@ export function mountFriends(root, api) {
     duck.textContent = duckLabel(f.duckId);
     mid.appendChild(duck);
 
-    if (uid && isMutualLike(uid, f.id)) {
+    if (uid && isMutualHeart(uid, f.id)) {
       const badge = document.createElement('div');
       badge.className = 'friend-mutual-badge';
-      badge.textContent = '💕 서로 호감';
+      badge.textContent = '💕 서로 하트';
       mid.appendChild(badge);
     }
 
@@ -265,26 +270,26 @@ export function mountFriends(root, api) {
 
     card.appendChild(row);
 
-    if (opts.showLike && uid) {
-      const likeRow = document.createElement('div');
-      likeRow.className = 'friend-like-row';
-      const likeBtn = document.createElement('button');
-      likeBtn.type = 'button';
-      likeBtn.className = 'app-btn app-btn--inline friend-like-btn';
-      likeBtn.textContent = '♥ 호감';
-      likeBtn.addEventListener('click', (ev) => {
+    if (opts.showHeart && uid) {
+      const heartRow = document.createElement('div');
+      heartRow.className = 'friend-heart-row';
+      const heartBtn = document.createElement('button');
+      heartBtn.type = 'button';
+      heartBtn.className = 'app-btn app-btn--inline friend-heart-btn';
+      heartBtn.textContent = '♥ 하트 보내기';
+      heartBtn.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        if (!canSendLikeToday(uid, f.id)) {
-          window.alert('오늘은 이미 호감을 보냈어요.');
+        if (!canSendHeartToday(uid, f.id)) {
+          window.alert('오늘은 이미 하트를 보냈어요.');
           return;
         }
-        const r = sendLike(uid, f.id);
-        if (r.ok) playLikeAnim(/** @type {HTMLElement} */ (ev.currentTarget));
-        window.alert(r.ok ? '호감을 보냈어요!' : '보낼 수 없어요.');
+        const r = sendHeart(uid, f.id);
+        if (r.ok) playHeartAnim(/** @type {HTMLElement} */ (ev.currentTarget));
+        window.alert(r.ok ? '하트를 보냈어요!' : '보낼 수 없어요.');
         renderFriends();
       });
-      likeRow.appendChild(likeBtn);
-      card.appendChild(likeRow);
+      heartRow.appendChild(heartBtn);
+      card.appendChild(heartRow);
     }
 
     card.addEventListener('click', () => openSheet(f));
@@ -353,7 +358,7 @@ export function mountFriends(root, api) {
       return;
     }
     for (const f of list) {
-      listFriends.appendChild(friendCard(f, { showLike: true }));
+      listFriends.appendChild(friendCard(f, { showHeart: true }));
     }
   }
 

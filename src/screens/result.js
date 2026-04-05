@@ -5,7 +5,7 @@
 import { DUCKS_NINE } from '../constants.js';
 import { sendRequest, isFriend } from '../services/friends.js';
 import { rewardForRace } from '../services/hearts.js';
-import { canSendLikeToday, isMutualLike, sendLike } from '../services/likes.js';
+import { canSendHeartToday, isMutualHeart, sendHeart } from '../services/likes.js';
 import { MOCK_USERS } from '../services/mockUsers.js';
 import { decodeJWT, getToken } from '../services/auth.js';
 import { recordRaceOutcome } from '../services/profileViewModel.js';
@@ -244,10 +244,10 @@ function openResultChatComposeOverlay(uid, peerId, peerName) {
 }
 
 /** @param {HTMLElement} el */
-function playLikeBurst(el) {
-  el.classList.remove('like-burst');
+function playHeartBurst(el) {
+  el.classList.remove('heart-burst');
   void el.offsetWidth;
-  el.classList.add('like-burst');
+  el.classList.add('heart-burst');
 }
 
 /**
@@ -376,10 +376,10 @@ export function mountResult(root, api) {
 
     const uid = api.state.user?.uid;
     const peerId = resolveOpponentUserId(opp);
-    if (!isQrGuest && uid && peerId && isMutualLike(uid, peerId)) {
+    if (!isQrGuest && uid && peerId && isMutualHeart(uid, peerId)) {
       const mb = document.createElement('div');
       mb.className = 'result-mutual-badge';
-      mb.textContent = '💕 서로 호감';
+      mb.textContent = '💕 서로 하트';
       oppCard.appendChild(mb);
     }
 
@@ -462,11 +462,11 @@ export function mountResult(root, api) {
       else window.alert('요청할 수 없어요.');
     });
 
-    const btnLike = document.createElement('button');
-    btnLike.type = 'button';
-    btnLike.className = 'app-btn result-btn-secondary result-like-btn';
-    btnLike.textContent = '♥ 호감';
-    btnLike.addEventListener('click', () => {
+    const btnHeart = document.createElement('button');
+    btnHeart.type = 'button';
+    btnHeart.className = 'app-btn result-btn-secondary result-heart-btn';
+    btnHeart.textContent = '♥ 하트 보내기';
+    btnHeart.addEventListener('click', () => {
       if (!uid) {
         showAppToast('로그인이 필요해요.');
         return;
@@ -475,13 +475,13 @@ export function mountResult(root, api) {
         window.alert('상대 정보를 찾을 수 없어요.');
         return;
       }
-      if (!canSendLikeToday(uid, peerId)) {
-        window.alert('오늘은 이미 호감을 보냈어요.');
+      if (!canSendHeartToday(uid, peerId)) {
+        window.alert('오늘은 이미 하트를 보냈어요.');
         return;
       }
-      const r = sendLike(uid, peerId);
-      if (r.ok) playLikeBurst(btnLike);
-      window.alert(r.ok ? '호감을 보냈어요!' : '보낼 수 없어요.');
+      const r = sendHeart(uid, peerId);
+      if (r.ok) playHeartBurst(btnHeart);
+      window.alert(r.ok ? '하트를 보냈어요!' : '보낼 수 없어요.');
     });
 
     const btnMsg = document.createElement('button');
@@ -552,9 +552,9 @@ export function mountResult(root, api) {
 
     if (!peerId) {
       btnFriend.disabled = true;
-      btnLike.disabled = true;
+      btnHeart.disabled = true;
       btnMsg.disabled = true;
-      btnFriend.title = btnLike.title = btnMsg.title = '매칭 상대 정보가 없어요.';
+      btnFriend.title = btnHeart.title = btnMsg.title = '매칭 상대 정보가 없어요.';
     }
 
     const btnLobby = document.createElement('button');
@@ -565,7 +565,7 @@ export function mountResult(root, api) {
 
     actions.appendChild(btnRematch);
     actions.appendChild(btnFriend);
-    actions.appendChild(btnLike);
+    actions.appendChild(btnHeart);
     actions.appendChild(btnMsg);
     actions.appendChild(btnLobby);
   }

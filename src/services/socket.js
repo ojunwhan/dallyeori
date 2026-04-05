@@ -7,7 +7,7 @@ import { decodeJWT, getToken } from './auth.js';
 import { getUserRecord } from './db.js';
 import { DUCKS_NINE } from '../constants.js';
 import { getRandomMockUser } from './mockUsers.js';
-import { showAppToast } from './toast.js';
+import { showAppToast, showHeartReceiveToast } from './toast.js';
 
 /** @type {import('socket.io-client').Socket | null} */
 let gameSocket = null;
@@ -83,6 +83,26 @@ function attachReceiveChatRelay(sock) {
   console.log('[socket] receiveChat relay attached');
 }
 
+/** @param {unknown} data */
+function receiveHeartRelayHandler(data) {
+  const o = data && typeof data === 'object' ? /** @type {Record<string, unknown>} */ (data) : {};
+  const senderName =
+    typeof o.senderName === 'string' && o.senderName.trim()
+      ? o.senderName.trim()
+      : typeof o.senderUid === 'string'
+        ? o.senderUid
+        : '';
+  showHeartReceiveToast(senderName);
+}
+
+/**
+ * @param {import('socket.io-client').Socket} sock
+ */
+function attachReceiveHeartRelay(sock) {
+  sock.off('receiveHeart', receiveHeartRelayHandler);
+  sock.on('receiveHeart', receiveHeartRelayHandler);
+}
+
 /**
  * @returns {import('socket.io-client').Socket | null}
  */
@@ -154,6 +174,7 @@ export function connectQrGuestSocket(token) {
     reconnectToastShown = false;
   });
   attachReceiveChatRelay(gameSocket);
+  attachReceiveHeartRelay(gameSocket);
   return gameSocket;
 }
 
@@ -176,12 +197,14 @@ export function ensureSocket() {
   if (gameSocket?.connected && lastSocketToken === token) {
     console.log('[socket] reusing existing socket, connected:', gameSocket?.connected);
     attachReceiveChatRelay(gameSocket);
+    attachReceiveHeartRelay(gameSocket);
     return gameSocket;
   }
   // 연결 중이어도 같은 토큰이면 기존 인스턴스 유지 (매칭 직전에 끊었다가 다시 만들면 서버 매칭 불가)
   if (gameSocket && lastSocketToken === token) {
     console.log('[socket] reusing existing socket, connected:', gameSocket?.connected);
     attachReceiveChatRelay(gameSocket);
+    attachReceiveHeartRelay(gameSocket);
     return gameSocket;
   }
   if (gameSocket) {
@@ -212,6 +235,7 @@ export function ensureSocket() {
     }
   });
   attachReceiveChatRelay(gameSocket);
+  attachReceiveHeartRelay(gameSocket);
   return gameSocket;
 }
 
