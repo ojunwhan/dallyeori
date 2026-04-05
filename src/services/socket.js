@@ -7,7 +7,7 @@ import { decodeJWT, getToken } from './auth.js';
 import { getUserRecord } from './db.js';
 import { DUCKS_NINE } from '../constants.js';
 import { getRandomMockUser } from './mockUsers.js';
-import { applyIncomingFriendRequest } from './friends.js';
+import { applyIncomingFriendRequest, applyFriendAccepted } from './friends.js';
 import {
   showAppToast,
   showFriendRequestToast,
@@ -220,6 +220,19 @@ function receiveFriendRequestRelayHandler(data) {
   });
 }
 
+/** @param {unknown} data */
+function friendAcceptedRelayHandler(data) {
+  const o = data && typeof data === 'object' ? /** @type {Record<string, unknown>} */ (data) : {};
+  const peerUid = typeof o.peerUid === 'string' ? o.peerUid.trim() : '';
+  const requestId = typeof o.requestId === 'string' ? o.requestId : '';
+  const nickname = typeof o.nickname === 'string' ? o.nickname : '';
+  const photoURL = typeof o.photoURL === 'string' ? o.photoURL : '';
+  const duckId = typeof o.duckId === 'string' ? o.duckId : '';
+  const myUid = getJwtUid();
+  if (!myUid || !peerUid) return;
+  applyFriendAccepted(myUid, { peerUid, requestId, nickname, photoURL, duckId });
+}
+
 function removeRematchInviteOverlay() {
   document.getElementById('dallyeori-rematch-invite')?.remove();
 }
@@ -300,6 +313,8 @@ function receiveRematchRelayHandler(data) {
 function attachReceiveFriendRematchRelay(sock) {
   sock.off('receiveFriendRequest', receiveFriendRequestRelayHandler);
   sock.on('receiveFriendRequest', receiveFriendRequestRelayHandler);
+  sock.off('friendAccepted', friendAcceptedRelayHandler);
+  sock.on('friendAccepted', friendAcceptedRelayHandler);
   sock.off('receiveRematch', receiveRematchRelayHandler);
   sock.on('receiveRematch', receiveRematchRelayHandler);
 }
@@ -516,6 +531,26 @@ export function emitFriendRequestSent(targetUid, requestId) {
   const payload = { targetUid, requestId };
   const send = () => {
     if (s.connected) s.emit('sendFriendRequest', payload);
+  };
+  if (s.connected) {
+    send();
+  } else {
+    s.once('connect', send);
+  }
+}
+
+/**
+ * 친구 요청 수락 — 서버가 양쪽에 friendAccepted 전달
+ * @param {string} peerUid 요청 보낸 사람 uid (수락자가 아님)
+ * @param {string} requestId
+ */
+export function emitAcceptFriendRequest(peerUid, requestId) {
+  if (!peerUid || !requestId) return;
+  const s = ensureSocket();
+  if (!s) return;
+  const payload = { peerUid, requestId };
+  const send = () => {
+    if (s.connected) s.emit('acceptFriendRequest', payload);
   };
   if (s.connected) {
     send();

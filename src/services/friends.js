@@ -3,6 +3,7 @@
  */
 
 import { getMockUser, searchMockUsersByNickname, shouldAutoRejectFriendRequest } from './mockUsers.js';
+import { fetchProfileByUid } from './profileApi.js';
 
 const SOCIAL_KEY = 'dallyeori.social.v1';
 const REJ_KEY = (uid) => `dallyeori.friends.rejections.${uid}`;
@@ -28,7 +29,7 @@ function writeSocial(data) {
 }
 
 /**
- * @typedef {{ id: string, fromUid: string, toUid: string, status: 'pending'|'accepted'|'rejected'|'cancelled', createdAt: number, fromNickname?: string, fromPhotoURL?: string, fromDuckId?: string }} SocialRequest
+ * @typedef {{ id: string, fromUid: string, toUid: string, status: 'pending'|'accepted'|'rejected'|'cancelled', createdAt: number, fromNickname?: string, fromPhotoURL?: string, fromDuckId?: string, toNickname?: string, toPhotoURL?: string, toDuckId?: string }} SocialRequest
  */
 
 /** @param {string} uid */
@@ -36,18 +37,25 @@ function listKey(uid) {
   return `dallyeori.friends.list.${uid}`;
 }
 
-/** @returns {{ peerId: string, addedAt: number }[]} */
+/** @returns {{ peerId: string, addedAt: number, nickname?: string, photoURL?: string, duckId?: string }[]} */
 function readFriendList(uid) {
   try {
     const raw = localStorage.getItem(listKey(uid));
     const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
+    if (!Array.isArray(arr)) return [];
+    return arr.map((x) => ({
+      peerId: String(x.peerId ?? ''),
+      addedAt: Number(x.addedAt) || 0,
+      ...(typeof x.nickname === 'string' && x.nickname.trim() ? { nickname: x.nickname.trim() } : {}),
+      ...(typeof x.photoURL === 'string' && x.photoURL.trim() ? { photoURL: x.photoURL.trim() } : {}),
+      ...(typeof x.duckId === 'string' && x.duckId.trim() ? { duckId: x.duckId.trim() } : {}),
+    })).filter((x) => x.peerId);
   } catch {
     return [];
   }
 }
 
-/** @param {string} uid @param {{ peerId: string, addedAt: number }[]} list */
+/** @param {string} uid @param {{ peerId: string, addedAt: number, nickname?: string, photoURL?: string, duckId?: string }[]} list */
 function writeFriendList(uid, list) {
   localStorage.setItem(listKey(uid), JSON.stringify(list));
 }
@@ -229,8 +237,9 @@ export function scheduleMockAutoReject(requestId, fromUid, toUid) {
 /**
  * @param {string} myUid
  * @param {string} targetId
+ * @param {{ nickname?: string, photoURL?: string, duckId?: string } | null} [peerMeta] 상대 표시용 (검색·경주 결과 등)
  */
-export function sendRequest(myUid, targetId) {
+export function sendRequest(myUid, targetId, peerMeta = null) {
   if (!myUid || !targetId || myUid === targetId) return { ok: false, error: 'invalid', message: '' };
 
   const gate = canSendRequest(myUid, targetId);
@@ -248,13 +257,23 @@ export function sendRequest(myUid, targetId) {
     return { ok: false, error: 'pending_in', message: '' };
   }
   const id = newId('fr');
-  social.requests.push({
+  /** @type {SocialRequest} */
+  const row = {
     id,
     fromUid: myUid,
     toUid: targetId,
     status: 'pending',
     createdAt: Date.now(),
-  });
+  };
+  if (peerMeta && typeof peerMeta === 'object') {
+    const nick = typeof peerMeta.nickname === 'string' ? peerMeta.nickname.trim() : '';
+    const ph = typeof peerMeta.photoURL === 'string' ? peerMeta.photoURL.trim() : '';
+    const dk = typeof peerMeta.duckId === 'string' ? peerMeta.duckId.trim() : '';
+    if (nick) row.toNickname = nick;
+    if (ph) row.toPhotoURL = ph;
+    if (dk) row.toDuckId = dk;
+  }
+  social.requests.push(row);
   writeSocial(social);
   scheduleMockAutoReject(id, myUid, targetId);
   return { ok: true, requestId: id, message: '' };
@@ -305,6 +324,78 @@ export function applyIncomingFriendRequest(myUid, detail) {
 }
 
 /**
+ * 내 친구 목록에만 추가 (localStorage는 기기별이므로 상대 키에 쓰지 않음)
+ * @param {string} myUid
+ * @param {string} peerId
+ * @param {{ nickname?: string, photoURL?: string, duckId?: string }} [meta]
+ */
+function addFriendEntry(myUid, peerId, meta = {}) {
+  if (!myUid || !peerId || myUid === peerId) return;
+  const list = readFriendList(myUid);
+  if (list.some((x) => x.peerId === peerId)) return;
+  /** @type {{ peerId: string, addedAt: number, nickname?: string, photoURL?: string, duckId?: string }} */
+  const entry = { peerId, addedAt: Date.now() };
+  if (meta.nickname && String(meta.nickname).trim()) entry.nickname = String(meta.nickname).trim();
+  if (meta.photoURL && String(meta.photoURL).trim()) entry.photoURL = String(meta.photoURL).trim();
+  if (meta.duckId && String(meta.duckId).trim()) entry.duckId = String(meta.duckId).trim();
+  list.push(entry);
+  writeFriendList(myUid, list);
+}
+
+function syncOutgoingRequestAccepted(myUid, peerUid) {
+  const social = readSocial();
+  let changed = false;
+  for (const req of social.requests) {
+    if (req.fromUid === myUid && req.toUid === peerUid && req.status === 'pending') {
+      req.status = 'accepted';
+      changed = true;
+    }
+  }
+  if (changed) writeSocial(social);
+}
+
+/**
+ * 소켓 friendAccepted — 상대방 기기에서 내 목록 갱신
+ * @param {string} myUid
+ * @param {{ peerUid: string, requestId?: string, nickname?: string, photoURL?: string, duckId?: string }} detail
+ */
+export function applyFriendAccepted(myUid, detail) {
+  const peerUid = detail && typeof detail.peerUid === 'string' ? detail.peerUid.trim() : '';
+  if (!myUid || !peerUid || myUid === peerUid) return;
+  const nickname = typeof detail.nickname === 'string' ? detail.nickname.trim() : '';
+  const photoURL = typeof detail.photoURL === 'string' ? detail.photoURL.trim() : '';
+  const duckId = typeof detail.duckId === 'string' ? detail.duckId.trim() : '';
+  const meta = {
+    ...(nickname ? { nickname } : {}),
+    ...(photoURL ? { photoURL } : {}),
+    ...(duckId ? { duckId } : {}),
+  };
+
+  if (isFriend(myUid, peerUid)) {
+    const list = readFriendList(myUid);
+    const i = list.findIndex((x) => x.peerId === peerUid);
+    if (i >= 0) {
+      const cur = list[i];
+      const next = { ...cur };
+      if (nickname && !cur.nickname) next.nickname = nickname;
+      if (photoURL && !cur.photoURL) next.photoURL = photoURL;
+      if (duckId && !cur.duckId) next.duckId = duckId;
+      if (next.nickname !== cur.nickname || next.photoURL !== cur.photoURL || next.duckId !== cur.duckId) {
+        list[i] = next;
+        writeFriendList(myUid, list);
+      }
+    }
+    syncOutgoingRequestAccepted(myUid, peerUid);
+    window.dispatchEvent(new Event('dallyeori-friends-updated'));
+    return;
+  }
+
+  addFriendEntry(myUid, peerUid, meta);
+  syncOutgoingRequestAccepted(myUid, peerUid);
+  window.dispatchEvent(new Event('dallyeori-friends-updated'));
+}
+
+/**
  * @param {string} myUid
  * @param {string} requestId
  */
@@ -314,8 +405,12 @@ export function acceptRequest(myUid, requestId) {
   if (!r) return { ok: false, error: 'not_found' };
   r.status = 'accepted';
   writeSocial(social);
-  addFriendship(r.fromUid, r.toUid);
-  return { ok: true };
+  addFriendEntry(myUid, r.fromUid, {
+    nickname: r.fromNickname,
+    photoURL: r.fromPhotoURL,
+    duckId: r.fromDuckId || 'bori',
+  });
+  return { ok: true, peerUid: r.fromUid, requestId: r.id };
 }
 
 /**
@@ -351,17 +446,6 @@ export function cancelSentRequest(myUid, requestId) {
   return { ok: true };
 }
 
-/** @param {string} a @param {string} b */
-function addFriendship(a, b) {
-  const t = Date.now();
-  const la = readFriendList(a);
-  const lb = readFriendList(b);
-  if (!la.some((x) => x.peerId === b)) la.push({ peerId: b, addedAt: t });
-  if (!lb.some((x) => x.peerId === a)) lb.push({ peerId: a, addedAt: t });
-  writeFriendList(a, la);
-  writeFriendList(b, lb);
-}
-
 /**
  * @param {string} myUid
  * @param {string} friendId
@@ -369,8 +453,6 @@ function addFriendship(a, b) {
 export function removeFriend(myUid, friendId) {
   const la = readFriendList(myUid).filter((x) => x.peerId !== friendId);
   writeFriendList(myUid, la);
-  const lb = readFriendList(friendId).filter((x) => x.peerId !== myUid);
-  writeFriendList(friendId, lb);
   return { ok: true };
 }
 
@@ -391,10 +473,11 @@ export function getFriendList(myUid) {
   const list = readFriendList(myUid);
   return list.map((x) => {
     const u = getMockUser(x.peerId);
+    const storedNick = x.nickname && String(x.nickname).trim() ? String(x.nickname).trim() : '';
     return {
       id: x.peerId,
-      nickname: u?.nickname ?? x.peerId,
-      duckId: u?.duckId ?? 'bori',
+      nickname: storedNick || u?.nickname || x.peerId,
+      duckId: (x.duckId && String(x.duckId).trim()) || u?.duckId || 'bori',
       online: Math.random() < 0.35,
       addedAt: x.addedAt,
     };
@@ -431,10 +514,12 @@ export function getSentRequests(myUid) {
     .filter((r) => r.fromUid === myUid && r.status === 'pending')
     .map((r) => {
       const u = getMockUser(r.toUid);
+      const stored =
+        r.toNickname && String(r.toNickname).trim() ? String(r.toNickname).trim() : '';
       return {
         requestId: r.id,
         toId: r.toUid,
-        nickname: u?.nickname ?? r.toUid,
+        nickname: stored || u?.nickname || r.toUid,
         createdAt: r.createdAt,
       };
     });
@@ -447,4 +532,38 @@ export function getSentRequests(myUid) {
  */
 export function searchUsers(query, myUid) {
   return searchMockUsersByNickname(query, myUid);
+}
+
+/**
+ * 저장된 표시 이름이 없거나 uid와 같으면 서버 프로필로 보강
+ * @param {string} myUid
+ */
+export async function enrichStaleFriendMeta(myUid) {
+  if (!myUid) return;
+  const list = readFriendList(myUid);
+  if (list.length === 0) return;
+  const next = [];
+  let changed = false;
+  for (const x of list) {
+    let e = { ...x };
+    const nick = e.nickname && String(e.nickname).trim() ? String(e.nickname).trim() : '';
+    const needMeta = !nick || nick === e.peerId;
+    if (needMeta) {
+      const p = await fetchProfileByUid(e.peerId);
+      if (p && typeof p.nickname === 'string' && p.nickname.trim()) {
+        e = {
+          ...e,
+          nickname: p.nickname.trim(),
+          photoURL: (p.photoURL && String(p.photoURL)) || e.photoURL,
+          duckId: (p.selectedDuckId && String(p.selectedDuckId).trim()) || e.duckId || 'bori',
+        };
+        changed = true;
+      }
+    }
+    next.push(e);
+  }
+  if (changed) {
+    writeFriendList(myUid, next);
+    window.dispatchEvent(new Event('dallyeori-friends-updated'));
+  }
 }

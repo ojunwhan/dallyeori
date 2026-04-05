@@ -472,7 +472,11 @@ export function mountResult(root, api) {
         window.alert('이미 친구예요.');
         return;
       }
-      const r = sendRequest(uid, peerId);
+      const r = sendRequest(uid, peerId, {
+        nickname: typeof opp?.nickname === 'string' ? opp.nickname : '',
+        photoURL: typeof opp?.photoURL === 'string' ? opp.photoURL : '',
+        duckId: typeof opp?.duckId === 'string' ? opp.duckId : '',
+      });
       if (r.ok && r.requestId) emitFriendRequestSent(peerId, r.requestId);
       if (r.ok) window.alert('친구 요청을 보냈어요.');
       else if (r.error === 'pending_out') window.alert('이미 요청 중이에요.');

@@ -50,6 +50,26 @@ export async function postProfile(body) {
  * @param {string} query
  * @returns {Promise<{ ok: boolean, users: { uid: string, nickname: string, photoURL: string, selectedDuckId: string }[] }>}
  */
+/**
+ * @param {string} peerUid
+ * @returns {Promise<{ uid: string, nickname: string, photoURL: string, language: string, selectedDuckId: string } | null>}
+ */
+export async function fetchProfileByUid(peerUid) {
+  if (!peerUid) return null;
+  const t = getToken();
+  if (!t) return null;
+  const res = await fetch(
+    resolvePublicApiUrl(`/api/profile/${encodeURIComponent(peerUid)}`),
+    { headers: { Authorization: `Bearer ${t}` } },
+  );
+  if (!res.ok) return null;
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function searchUsersOnServer(query) {
   const t = getToken();
   if (!t) return { ok: false, users: [] };

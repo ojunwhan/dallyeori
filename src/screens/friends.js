@@ -17,8 +17,9 @@ import {
   rejectRequest,
   removeFriend,
   sendRequest,
+  enrichStaleFriendMeta,
 } from '../services/friends.js';
-import { emitFriendRequestSent, ensureSocket } from '../services/socket.js';
+import { emitAcceptFriendRequest, emitFriendRequestSent, ensureSocket } from '../services/socket.js';
 import { isMutualHeart, markHeartNotificationsSeen, sendHeart } from '../services/likes.js';
 import { searchUsersOnServer } from '../services/profileApi.js';
 
@@ -456,7 +457,12 @@ export function mountFriends(root, api) {
         bOk.className = 'app-btn app-btn--inline';
         bOk.textContent = '수락';
         bOk.addEventListener('click', () => {
-          if (acceptRequest(uid, r.requestId).ok) renderFriends();
+          const ar = acceptRequest(uid, r.requestId);
+          if (ar.ok && ar.peerUid && ar.requestId) {
+            ensureSocket();
+            emitAcceptFriendRequest(ar.peerUid, ar.requestId);
+          }
+          if (ar.ok) renderFriends();
           renderReq();
         });
         const bNo = document.createElement('button');
@@ -524,4 +530,7 @@ export function mountFriends(root, api) {
 
   renderFriends();
   renderReq();
+  if (uid) {
+    queueMicrotask(() => void enrichStaleFriendMeta(uid));
+  }
 }
