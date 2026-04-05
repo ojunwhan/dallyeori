@@ -28,7 +28,7 @@ function writeSocial(data) {
 }
 
 /**
- * @typedef {{ id: string, fromUid: string, toUid: string, status: 'pending'|'accepted'|'rejected'|'cancelled', createdAt: number }} SocialRequest
+ * @typedef {{ id: string, fromUid: string, toUid: string, status: 'pending'|'accepted'|'rejected'|'cancelled', createdAt: number, fromNickname?: string, fromPhotoURL?: string, fromDuckId?: string }} SocialRequest
  */
 
 /** @param {string} uid */
@@ -263,11 +263,23 @@ export function sendRequest(myUid, targetId) {
 /**
  * 소켓으로 받은 친구 요청을 로컬 social 저장소에 반영 (보낸 쪽 requestId와 동일해야 함)
  * @param {string} myUid
- * @param {{ senderUid: string, requestId: string }} detail
+ * @param {{ senderUid: string, requestId: string, nickname?: string, photoURL?: string, duckId?: string }} detail
  */
 export function applyIncomingFriendRequest(myUid, detail) {
   const senderUid = detail && typeof detail.senderUid === 'string' ? detail.senderUid : '';
   const requestId = detail && typeof detail.requestId === 'string' ? detail.requestId : '';
+  const fromNickname =
+    detail && typeof detail.nickname === 'string' && detail.nickname.trim()
+      ? detail.nickname.trim()
+      : '';
+  const fromPhotoURL =
+    detail && typeof detail.photoURL === 'string' && detail.photoURL.trim()
+      ? detail.photoURL.trim()
+      : '';
+  const fromDuckId =
+    detail && typeof detail.duckId === 'string' && detail.duckId.trim()
+      ? detail.duckId.trim()
+      : '';
   if (!myUid || !senderUid || !requestId || myUid === senderUid) return;
   if (isFriend(myUid, senderUid)) return;
   const social = readSocial();
@@ -275,13 +287,18 @@ export function applyIncomingFriendRequest(myUid, detail) {
   const pend = social.requests.filter((r) => r.status === 'pending');
   if (pend.some((r) => r.fromUid === senderUid && r.toUid === myUid)) return;
   if (pend.some((r) => r.fromUid === myUid && r.toUid === senderUid)) return;
-  social.requests.push({
+  /** @type {SocialRequest} */
+  const row = {
     id: requestId,
     fromUid: senderUid,
     toUid: myUid,
     status: 'pending',
     createdAt: Date.now(),
-  });
+  };
+  if (fromNickname) row.fromNickname = fromNickname;
+  if (fromPhotoURL) row.fromPhotoURL = fromPhotoURL;
+  if (fromDuckId) row.fromDuckId = fromDuckId;
+  social.requests.push(row);
   writeSocial(social);
   scheduleMockAutoReject(requestId, senderUid, myUid);
   window.dispatchEvent(new Event('dallyeori-friends-updated'));
@@ -397,8 +414,8 @@ export function getPendingRequests(myUid) {
       return {
         requestId: r.id,
         fromId: r.fromUid,
-        nickname: u?.nickname ?? r.fromUid,
-        duckId: u?.duckId ?? 'bori',
+        nickname: r.fromNickname ?? u?.nickname ?? r.fromUid,
+        duckId: r.fromDuckId ?? u?.duckId ?? 'bori',
         createdAt: r.createdAt,
       };
     });

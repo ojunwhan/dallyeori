@@ -20,6 +20,9 @@ import {
   sendRequest,
 } from '../services/friends.js';
 import { emitFriendRequestSent, ensureSocket } from '../services/socket.js';
+
+/** @type {(() => void) | null} */
+let detachFriendsStorageListener = null;
 import { isMutualHeart, markHeartNotificationsSeen, sendHeart } from '../services/likes.js';
 
 /** @param {string | null | undefined} duckId */
@@ -57,8 +60,12 @@ function ensureHeartGiftAnimListener() {
  */
 export function mountFriends(root, api) {
   ensureHeartGiftAnimListener();
+  detachFriendsStorageListener?.();
   const uid = api.state.user?.uid;
-  if (uid) markHeartNotificationsSeen(uid);
+  if (uid) {
+    markHeartNotificationsSeen(uid);
+    ensureSocket();
+  }
 
   const wrap = document.createElement('div');
   wrap.className = 'app-screen friends-screen';
@@ -440,6 +447,14 @@ export function mountFriends(root, api) {
       }
     }
   }
+
+  const onFriendsStorageUpdated = () => {
+    renderFriends();
+    renderReq();
+  };
+  window.addEventListener('dallyeori-friends-updated', onFriendsStorageUpdated);
+  detachFriendsStorageListener = () =>
+    window.removeEventListener('dallyeori-friends-updated', onFriendsStorageUpdated);
 
   tabFriends.addEventListener('click', () => {
     tabFriends.classList.add('is-active');

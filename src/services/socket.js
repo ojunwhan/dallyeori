@@ -201,14 +201,23 @@ function receiveFriendRequestRelayHandler(data) {
   const o = data && typeof data === 'object' ? /** @type {Record<string, unknown>} */ (data) : {};
   const senderUid = typeof o.senderUid === 'string' ? o.senderUid : '';
   const requestId = typeof o.requestId === 'string' ? o.requestId : '';
+  const nickRaw = typeof o.nickname === 'string' && o.nickname.trim() ? o.nickname.trim() : '';
   const senderName =
     typeof o.senderName === 'string' && o.senderName.trim()
       ? o.senderName.trim()
-      : senderUid;
+      : nickRaw || senderUid;
+  const photoURL = typeof o.photoURL === 'string' ? o.photoURL : '';
+  const duckId = typeof o.duckId === 'string' && o.duckId.trim() ? o.duckId.trim() : '';
   const myUid = getJwtUid();
   if (!myUid || !senderUid || !requestId) return;
   showFriendRequestToast(senderName);
-  applyIncomingFriendRequest(myUid, { senderUid, requestId });
+  applyIncomingFriendRequest(myUid, {
+    senderUid,
+    requestId,
+    nickname: nickRaw || senderName,
+    photoURL,
+    duckId: duckId || undefined,
+  });
 }
 
 function removeRematchInviteOverlay() {
@@ -501,9 +510,18 @@ export function ensureSocket() {
  * @param {string} requestId
  */
 export function emitFriendRequestSent(targetUid, requestId) {
-  const s = getGameSocket();
-  if (!s?.connected || !targetUid || !requestId) return;
-  s.emit('sendFriendRequest', { targetUid, requestId });
+  if (!targetUid || !requestId) return;
+  const s = ensureSocket();
+  if (!s) return;
+  const payload = { targetUid, requestId };
+  const send = () => {
+    if (s.connected) s.emit('sendFriendRequest', payload);
+  };
+  if (s.connected) {
+    send();
+  } else {
+    s.once('connect', send);
+  }
 }
 
 /** @param {string} targetUid */
