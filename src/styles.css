@@ -975,11 +975,14 @@
 
 .chat-bubble {
   max-width: 80%;
+  width: fit-content;
   padding: 10px 14px;
   border-radius: 12px;
   font-size: 0.95rem;
   line-height: 1.4;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  box-sizing: border-box;
 }
 
 .chat-msg--mine .chat-bubble {

@@ -124,7 +124,7 @@ function openResultChatComposeOverlay(uid, peerId, peerName) {
   syncResultChatUiOpenFlag();
 
   const bubbleBaseStyle =
-    'min-width:48px;max-width:75%;word-break:keep-all;box-sizing:border-box;';
+    'min-width:48px;max-width:80%;width:fit-content;word-break:keep-all;overflow-wrap:break-word;box-sizing:border-box;';
 
   function scrollBottom() {
     scroll.scrollTop = scroll.scrollHeight;
