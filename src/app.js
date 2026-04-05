@@ -168,7 +168,8 @@ setServerMatchFoundNavigate((data) => {
   };
   if (data.terrain) appState.terrain = data.terrain;
   const scr = appState.screen;
-  if (scr === 'matching' || scr === 'race') return;
+  // matching 화면은 startMockRandomMatch 쪽에서 race 로 네비게이트함. race 에서도 재매치 matchFound 는 새 방으로 다시 태워야 함.
+  if (scr === 'matching') return;
   navigate('race', { opponentName: appState.lastOpponent.nickname });
 });
 
@@ -461,6 +462,7 @@ function runRace(_payload) {
     const raceSock = pr.socket;
     const myId = pr.myDuckId || appState.selectedDuckId || 'bori';
     const oppId = pr.oppDuckId || 'bori';
+    console.log('RACE INIT roomId:', roomId, 'myDuck:', myId, 'oppDuck:', oppId);
     serverRace = {
       socket: raceSock,
       roomId,

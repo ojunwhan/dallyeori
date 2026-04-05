@@ -115,6 +115,32 @@ function getJwtUid() {
   return p && typeof p.uid === 'string' ? p.uid : '';
 }
 
+/** 로컬 DB + __dallyeoriMatchProfile — 서버 sync / sendRematch(profile) 공통 */
+function buildLocalMatchProfilePayload() {
+  const uid = getJwtUid();
+  const rec = uid ? getUserRecord(uid) : null;
+  const mp = globalThis.__dallyeoriMatchProfile || {};
+  return {
+    nickname:
+      (rec?.nickname && String(rec.nickname).trim()) || mp.nickname || '',
+    photoURL: rec?.profilePhotoURL ?? mp.photoURL ?? '',
+    duckId: (rec?.selectedDuckId && String(rec.selectedDuckId)) || mp.duckId || 'bori',
+    wins: Number(rec?.wins ?? mp.wins ?? 0) || 0,
+    losses: Number(rec?.losses ?? mp.losses ?? 0) || 0,
+    draws: Number(rec?.draws ?? mp.draws ?? 0) || 0,
+  };
+}
+
+/**
+ * 로컬 DB + __dallyeoriMatchProfile 기준으로 서버에 matchProfile 반영.
+ * 소켓 재연결 직후·재매치 직전에 호출해 탭/오리 유실을 막음 (끊었다 다시 연결하지 않음).
+ */
+export function emitSyncMatchProfileToServer() {
+  const s = gameSocket;
+  if (!s?.connected || guestQrFlowActive) return;
+  s.emit('syncMatchProfile', { profile: buildLocalMatchProfilePayload() });
+}
+
 /** @param {unknown} data */
 function receiveFriendRequestRelayHandler(data) {
   const o = data && typeof data === 'object' ? /** @type {Record<string, unknown>} */ (data) : {};
@@ -136,6 +162,7 @@ function removeRematchInviteOverlay() {
 
 /** @param {unknown} data */
 function receiveRematchRelayHandler(data) {
+  console.log('RECEIVE_REMATCH', data);
   const o = data && typeof data === 'object' ? /** @type {Record<string, unknown>} */ (data) : {};
   const senderUid = typeof o.senderUid === 'string' ? o.senderUid : '';
   const senderName =
@@ -169,8 +196,18 @@ function receiveRematchRelayHandler(data) {
     btnAcc.textContent = '수락';
     btnAcc.addEventListener('click', () => {
       removeRematchInviteOverlay();
+      const s = ensureSocket();
+      if (!s?.connected) {
+        showAppToast('연결이 끊겼어요. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
+      emitSyncMatchProfileToServer();
       const terrain = globalThis.__dallyeoriTerrain || 'normal';
-      getGameSocket()?.emit('acceptRematch', { peerUid: senderUid, terrain });
+      s.emit('acceptRematch', {
+        peerUid: senderUid,
+        terrain,
+        profile: buildLocalMatchProfilePayload(),
+      });
     });
 
     const btnNo = document.createElement('button');
@@ -219,8 +256,14 @@ function globalMatchFoundBridge(data) {
   if (!data || typeof data !== 'object') return;
   const d = /** @type {Record<string, unknown>} */ (data);
   if (typeof d.roomId !== 'string' || (d.slot !== 0 && d.slot !== 1)) return;
-  const s = gameSocket;
+  const s = ensureSocket();
   if (!s) return;
+  console.log('[client] matchFound received', {
+    roomId: d.roomId,
+    slot: d.slot,
+    appScreen: globalThis.__dallyeoriAppScreen,
+    socketConnected: s.connected,
+  });
   const opp = d.opponent && typeof d.opponent === 'object' ? d.opponent : {};
   const mp = globalThis.__dallyeoriMatchProfile || {};
   globalThis.__dallyeoriPendingRace = {
@@ -385,6 +428,7 @@ export function ensureSocket() {
       const u = socketUrl();
       console.log('[dallyeori/socket] connected →', u || window.location.origin);
     }
+    emitSyncMatchProfileToServer();
   });
   attachReceiveChatRelay(gameSocket);
   attachReceiveHeartRelay(gameSocket);
@@ -405,9 +449,10 @@ export function emitFriendRequestSent(targetUid, requestId) {
 
 /** @param {string} targetUid */
 export function emitSendRematch(targetUid) {
-  const s = getGameSocket();
+  const s = ensureSocket();
   if (!s?.connected || !targetUid) return;
-  s.emit('sendRematch', { targetUid });
+  emitSyncMatchProfileToServer();
+  s.emit('sendRematch', { targetUid, profile: buildLocalMatchProfilePayload() });
 }
 
 /**
@@ -415,9 +460,14 @@ export function emitSendRematch(targetUid) {
  * @param {string} [terrain]
  */
 export function emitAcceptRematch(peerUid, terrain) {
-  const s = getGameSocket();
+  const s = ensureSocket();
   if (!s?.connected || !peerUid) return;
-  s.emit('acceptRematch', { peerUid, terrain: terrain || 'normal' });
+  emitSyncMatchProfileToServer();
+  s.emit('acceptRematch', {
+    peerUid,
+    terrain: terrain || 'normal',
+    profile: buildLocalMatchProfilePayload(),
+  });
 }
 
 /**
@@ -433,33 +483,6 @@ export function emitRaceJoin(roomId, slot, socketOverride) {
   };
   if (s.connected) emit();
   else s.once('connect', emit);
-}
-
-/**
- * 재대전 화면용 — 서버 재대전 미구현 시 로컬 모의 응답
- * @returns {{ promise: Promise<{ accepted: boolean }>, cancel: () => void }}
- */
-export function startMockRematchRequest() {
-  let tid = null;
-  let cancelled = false;
-  const waitMs = 2000 + Math.random() * 2000;
-  const promise = new Promise((resolve) => {
-    tid = setTimeout(() => {
-      tid = null;
-      if (cancelled) return;
-      resolve({ accepted: Math.random() > 0.4 });
-    }, waitMs);
-  });
-  return {
-    promise,
-    cancel: () => {
-      cancelled = true;
-      if (tid != null) {
-        clearTimeout(tid);
-        tid = null;
-      }
-    },
-  };
 }
 
 /** --- 사용자 스펙 API (추후 화면에서 직접 사용) --- */
@@ -545,29 +568,6 @@ function _raceResultHandler(data) {
 
 export function cancelMatch() {
   gameSocket?.emit('cancelMatch');
-}
-
-export function requestRematch() {
-  gameSocket?.emit('requestRematch');
-}
-
-/** @type {((data: object) => void) | null} */
-let _onRematchRequest = null;
-
-/**
- * @param {(data: object) => void} cb
- */
-export function onRematchRequest(cb) {
-  _onRematchRequest = cb;
-  const s = gameSocket;
-  if (s) {
-    s.off('rematchRequest', _rematchHandler);
-    s.on('rematchRequest', _rematchHandler);
-  }
-}
-
-function _rematchHandler(data) {
-  if (_onRematchRequest) _onRematchRequest(data);
 }
 
 export function disconnect() {
