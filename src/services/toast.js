@@ -17,7 +17,8 @@ export function showAppToast(msg) {
 
 /** 하트 수신 알림 — 상단 고정, 약 2초 후 페이드아웃 */
 /** @param {string} senderName */
-export function showHeartReceiveToast(senderName) {
+/** @param {boolean} [free] 서버 receiveHeart.free */
+export function showHeartReceiveToast(senderName, free) {
   const name = String(senderName || '누군가').slice(0, 32);
   let el = document.getElementById('dallyeori-heart-recv-toast');
   if (!el) {
@@ -27,7 +28,8 @@ export function showHeartReceiveToast(senderName) {
     el.setAttribute('role', 'status');
     document.body.appendChild(el);
   }
-  el.textContent = `❤️ ${name}님이 하트를 보냈어요!`;
+  const tag = free === true ? ' (무료)' : free === false ? ' (친구 하트)' : '';
+  el.textContent = `❤️ ${name}님이 하트를 보냈어요!${tag}`;
   el.classList.remove('is-visible');
   void el.offsetWidth;
   el.classList.add('is-visible');

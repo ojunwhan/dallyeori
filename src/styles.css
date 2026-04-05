@@ -794,6 +794,13 @@
   border-top: 1px solid #2a2a2a;
 }
 
+.friend-heart-btn--icon {
+  min-width: 44px;
+  padding: 8px 12px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
 .friend-req-card {
   margin-bottom: 8px;
 }

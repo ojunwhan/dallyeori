@@ -5,11 +5,16 @@
 import { DUCKS_NINE } from '../constants.js';
 import { sendRequest, isFriend } from '../services/friends.js';
 import { rewardForRace, syncHeartBalanceFromServer } from '../services/hearts.js';
-import { canSendHeartToday, isMutualHeart, sendHeart } from '../services/likes.js';
+import { isMutualHeart, sendHeart } from '../services/likes.js';
 import { MOCK_USERS } from '../services/mockUsers.js';
 import { decodeJWT, getToken } from '../services/auth.js';
 import { recordRaceOutcome } from '../services/profileViewModel.js';
-import { emitFriendRequestSent, emitSendRematch, endGuestQrFlow } from '../services/socket.js';
+import {
+  emitFriendRequestSent,
+  emitSendRematch,
+  endGuestQrFlow,
+  ensureSocket,
+} from '../services/socket.js';
 import { showAppToast } from '../services/toast.js';
 import {
   getConversation,
@@ -479,6 +484,7 @@ export function mountResult(root, api) {
     btnHeart.type = 'button';
     btnHeart.className = 'app-btn result-btn-secondary result-heart-btn';
     btnHeart.textContent = '♥ 하트 보내기';
+    if (peerId) btnHeart.setAttribute('data-heart-peer', peerId);
     btnHeart.addEventListener('click', () => {
       if (!uid) {
         showAppToast('로그인이 필요해요.');
@@ -488,13 +494,8 @@ export function mountResult(root, api) {
         window.alert('상대 정보를 찾을 수 없어요.');
         return;
       }
-      if (!canSendHeartToday(uid, peerId)) {
-        window.alert('오늘은 이미 하트를 보냈어요.');
-        return;
-      }
-      const r = sendHeart(uid, peerId);
-      if (r.ok) playHeartBurst(btnHeart);
-      window.alert(r.ok ? '하트를 보냈어요!' : '보낼 수 없어요.');
+      if (!ensureSocket()) return;
+      sendHeart(uid, peerId);
     });
 
     const btnMsg = document.createElement('button');
@@ -543,7 +544,16 @@ export function mountResult(root, api) {
       });
     }
 
+    /** @param {Event} ev */
+    const onHeartGiftSentAnim = (ev) => {
+      const ce = /** @type {CustomEvent} */ (ev);
+      const t = ce.detail?.targetUid;
+      if (t && peerId && String(t) === String(peerId)) playHeartBurst(btnHeart);
+    };
+    window.addEventListener('dallyeori-heart-gift-sent', onHeartGiftSentAnim);
+
     dispose = () => {
+      window.removeEventListener('dallyeori-heart-gift-sent', onHeartGiftSentAnim);
       globalThis.__onChatReceived = null;
       closeResultScreenChatUi();
     };

@@ -13,7 +13,7 @@ import {
   showFriendRequestToast,
   showHeartReceiveToast,
 } from './toast.js';
-import { revertTodayHeartSend } from './likes.js';
+import { recordHeartGiftSuccess, revertTodayHeartSend } from './likes.js';
 
 /** @type {import('socket.io-client').Socket | null} */
 let gameSocket = null;
@@ -98,7 +98,8 @@ function receiveHeartRelayHandler(data) {
       : typeof o.senderUid === 'string'
         ? o.senderUid
         : '';
-  showHeartReceiveToast(senderName);
+  const free = o.free === true ? true : o.free === false ? false : undefined;
+  showHeartReceiveToast(senderName, free);
 }
 
 /**
@@ -124,8 +125,23 @@ function heartErrorSocketHandler(d) {
     const uid = getJwtUid();
     if (uid) revertTodayHeartSend(uid, o.targetUid);
   }
-  showAppToast('하트가 부족해요.');
+  showAppToast('하트가 부족합니다');
   window.dispatchEvent(new CustomEvent('dallyeori-heart-error', { detail: d }));
+}
+
+/** @param {unknown} d */
+function heartGiftSentHandler(d) {
+  const o = d && typeof d === 'object' ? /** @type {Record<string, unknown>} */ (d) : {};
+  const free = o.free === true;
+  const targetUid = typeof o.targetUid === 'string' ? o.targetUid : '';
+  const uid = getJwtUid();
+  if (uid && targetUid) recordHeartGiftSuccess(uid, targetUid);
+  showAppToast(
+    free ? '♥ 하트를 보냈어요 (무료)' : '♥ 하트를 보냈어요 (잔액에서 차감)',
+  );
+  window.dispatchEvent(
+    new CustomEvent('dallyeori-heart-gift-sent', { detail: { free, targetUid } }),
+  );
 }
 
 /** @param {unknown} d */
@@ -141,6 +157,8 @@ function attachHeartEconomyRelay(sock) {
   sock.on('heartBalance', heartBalanceSocketHandler);
   sock.off('heartError', heartErrorSocketHandler);
   sock.on('heartError', heartErrorSocketHandler);
+  sock.off('heartGiftSent', heartGiftSentHandler);
+  sock.on('heartGiftSent', heartGiftSentHandler);
   sock.off('matchError', matchErrorSocketHandler);
   sock.on('matchError', matchErrorSocketHandler);
 }

@@ -19,13 +19,8 @@ import {
   searchUsers,
   sendRequest,
 } from '../services/friends.js';
-import { emitFriendRequestSent } from '../services/socket.js';
-import {
-  canSendHeartToday,
-  isMutualHeart,
-  markHeartNotificationsSeen,
-  sendHeart,
-} from '../services/likes.js';
+import { emitFriendRequestSent, ensureSocket } from '../services/socket.js';
+import { isMutualHeart, markHeartNotificationsSeen, sendHeart } from '../services/likes.js';
 
 /** @param {string | null | undefined} duckId */
 function duckLabel(duckId) {
@@ -40,11 +35,28 @@ function playHeartAnim(el) {
   el.classList.add('heart-burst');
 }
 
+let heartGiftAnimGloballyBound = false;
+function ensureHeartGiftAnimListener() {
+  if (heartGiftAnimGloballyBound) return;
+  heartGiftAnimGloballyBound = true;
+  window.addEventListener('dallyeori-heart-gift-sent', (ev) => {
+    const ce = /** @type {CustomEvent} */ (ev);
+    const t = ce.detail?.targetUid;
+    if (!t) return;
+    for (const b of document.querySelectorAll('button[data-heart-peer]')) {
+      if (b.getAttribute('data-heart-peer') === t) {
+        playHeartAnim(/** @type {HTMLElement} */ (b));
+      }
+    }
+  });
+}
+
 /**
  * @param {HTMLElement} root
  * @param {{ navigate: (s: string, p?: object) => void, state: object }} api
  */
 export function mountFriends(root, api) {
+  ensureHeartGiftAnimListener();
   const uid = api.state.user?.uid;
   if (uid) markHeartNotificationsSeen(uid);
 
@@ -276,18 +288,14 @@ export function mountFriends(root, api) {
       heartRow.className = 'friend-heart-row';
       const heartBtn = document.createElement('button');
       heartBtn.type = 'button';
-      heartBtn.className = 'app-btn app-btn--inline friend-heart-btn';
-      heartBtn.textContent = '♥ 하트 보내기';
+      heartBtn.className = 'app-btn app-btn--inline friend-heart-btn friend-heart-btn--icon';
+      heartBtn.textContent = '♥';
+      heartBtn.title = '하트 보내기 (첫 1회/일 무료)';
+      heartBtn.setAttribute('data-heart-peer', f.id);
       heartBtn.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        if (!canSendHeartToday(uid, f.id)) {
-          window.alert('오늘은 이미 하트를 보냈어요.');
-          return;
-        }
-        const r = sendHeart(uid, f.id);
-        if (r.ok) playHeartAnim(/** @type {HTMLElement} */ (ev.currentTarget));
-        window.alert(r.ok ? '하트를 보냈어요!' : '보낼 수 없어요.');
-        renderFriends();
+        if (!ensureSocket()) return;
+        sendHeart(uid, f.id);
       });
       heartRow.appendChild(heartBtn);
       card.appendChild(heartRow);

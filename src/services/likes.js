@@ -8,12 +8,9 @@ const sentKey = (uid) => `dallyeori.likes.sent.${uid}`;
 const recvKey = (uid) => `dallyeori.likes.recv.${uid}`;
 const lastViewKey = (uid) => `dallyeori.likes.lastView.${uid}`;
 
+/** KST 기준 날짜 (서버 daily_free_hearts 와 맞춤) */
 function dayKey(ts) {
-  const d = new Date(ts);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date(ts));
 }
 
 /** @returns {{ targetId: string, day: string, ts: number }[]} */
@@ -47,7 +44,7 @@ function writeRecv(uid, list) {
 }
 
 /** @param {string} targetUid */
-function emitSendHeartToServer(targetUid) {
+export function emitSendHeartToServer(targetUid) {
   try {
     const sock = getGameSocket();
     if (sock?.connected) {
@@ -59,7 +56,26 @@ function emitSendHeartToServer(targetUid) {
 }
 
 /**
- * 오늘 이미 보냈는지
+ * 서버 heartGiftSent 수신 후 로컬 기록 (뱃지·서로 하트 UI)
+ * @param {string} fromUid
+ * @param {string} targetId
+ */
+export function recordHeartGiftSuccess(fromUid, targetId) {
+  if (!fromUid || !targetId) return;
+  const today = dayKey(Date.now());
+  const ts = Date.now();
+  const sent = readSent(fromUid);
+  if (!sent.some((x) => x.targetId === targetId && x.day === today)) {
+    sent.push({ targetId, day: today, ts });
+    writeSent(fromUid, sent);
+  }
+  const recv = readRecv(targetId);
+  recv.push({ fromId: fromUid, ts });
+  writeRecv(targetId, recv);
+}
+
+/**
+ * (로컬 힌트) 오늘 이 친구에게 보낸 기록이 있는지 — 서버는 유료로 추가 전송 허용
  * @param {string} uid
  * @param {string} targetId
  */
@@ -69,22 +85,12 @@ export function canSendHeartToday(uid, targetId) {
 }
 
 /**
+ * 하트 선물 요청만 전송. 무료/유료·토스트는 서버 heartGiftSent / heartError.
  * @param {string} fromUid
  * @param {string} targetId
  */
 export function sendHeart(fromUid, targetId) {
   if (!fromUid || !targetId || fromUid === targetId) return { ok: false, error: 'invalid' };
-  const today = dayKey(Date.now());
-  const sent = readSent(fromUid);
-  if (sent.some((x) => x.targetId === targetId && x.day === today)) {
-    return { ok: false, error: 'daily_limit' };
-  }
-  const ts = Date.now();
-  sent.push({ targetId, day: today, ts });
-  writeSent(fromUid, sent);
-  const recv = readRecv(targetId);
-  recv.push({ fromId: fromUid, ts });
-  writeRecv(targetId, recv);
   emitSendHeartToServer(targetId);
   return { ok: true };
 }
@@ -101,7 +107,7 @@ export function revertTodayHeartSend(fromUid, targetId) {
     (x) => !(x.targetId === targetId && x.day === today),
   );
   writeSent(fromUid, sent);
-  const cutoff = Date.now() - 60_000;
+  const cutoff = Date.now() - 120_000;
   const recv = readRecv(targetId).filter(
     (x) => !(x.fromId === fromUid && x.ts >= cutoff),
   );
