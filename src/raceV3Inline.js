@@ -546,15 +546,11 @@ function update(dt){
     cdT+=dt;
     updAnim(P,dt);
     updAnim(CPU,dt);
-    if(cdT>=CD_STEP_SEC){
+    const srvCd=serverRaceOpt&&serverRaceOpt.socket;
+    if(!srvCd&&cdT>=CD_STEP_SEC){
       cdT=0;
-      const srvCd=serverRaceOpt&&serverRaceOpt.socket;
-      if(srvCd){
-        if(cdVal>0)cdVal--;
-      }else{
-        cdVal--;
-        if(cdVal<0)state='racing';
-      }
+      cdVal--;
+      if(cdVal<0)state='racing';
     }
     return;
   }
@@ -562,8 +558,9 @@ function update(dt){
     const srv=serverRaceOpt&&serverRaceOpt.socket;
     if(srv){
       if(!fallPaused){
-        if(serverRaceSnap)raceT=serverRaceSnap.raceT;
-        else raceT+=dt;
+        if(serverRaceSnap&&typeof serverRaceSnap.raceT==='number'&&Number.isFinite(serverRaceSnap.raceT)){
+          raceT=serverRaceSnap.raceT;
+        }
       }
       if(!fallPaused){
         updDuck(P,dt);
@@ -1328,31 +1325,28 @@ function loop(t){
 }
 rafId=requestAnimationFrame(loop);
 
-/** @type {{ sock: import('socket.io-client').Socket, onPre: (d: object) => void, onGo: () => void, onTick: (p: object) => void, onRace: (r: object) => void, onPeerTap: (d: object) => void } | null} */
+/** @type {{ sock: import('socket.io-client').Socket, onCountdown: (d: object) => void, onRaceStart: () => void, onTick: (p: object) => void, onRace: (r: object) => void, onPeerTap: (d: object) => void } | null} */
 let srvHandlers=null;
 if(serverRaceOpt&&serverRaceOpt.socket){
   const sock=serverRaceOpt.socket;
-  const onPre=(d)=>{
+  const onCountdown=(d)=>{
     ensureAudio();
     state='countdown';
-    const deadline=d&&d.deadline?Number(d.deadline):0;
-    if(deadline>Date.now()){
-      cdVal=Math.max(1,Math.ceil((deadline-Date.now())/1000));
-    }else{
-      cdVal=Math.max(1,Math.min(10,Number(d&&d.seconds)||4));
-    }
+    const c=d&&typeof d.count==='number'?d.count:3;
+    cdVal=Math.max(0,Math.min(3,c));
     cdT=0;
   };
-  const onGo=()=>{
+  const onRaceStart=()=>{
     state='racing';
     raceT=0;
     serverRaceSnap=null;
     _raceTickLogCounter=0;
     _blendLogCounter=0;
-    console.log('[race] raceGo — HUD 내 오리:',hudLabelMe(),'mySlot:',myServerSlot,'(서버 ducks['+myServerSlot+'] = 내 거리 P.dist)');
+    console.log('[race] race-start — HUD 내 오리:',hudLabelMe(),'mySlot:',myServerSlot);
   };
   const onTick=(p)=>{
     serverRaceSnap=p;
+    if(p&&typeof p.raceT==='number'&&Number.isFinite(p.raceT))raceT=p.raceT;
     _raceTickLogCounter+=1;
     if(_raceTickLogCounter%30===1){
       console.log('[race] raceTick received',p);
@@ -1368,12 +1362,13 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     applyPeerTapVisual(foot);
     console.log('[raceV3] peerTap applied', foot, 'forcedMovingTimer=', CPU.forcedMovingTimer);
   };
-  sock.on('preRaceCountdown',onPre);
-  sock.on('raceGo',onGo);
+  sock.on('countdown',onCountdown);
+  sock.on('race-start',onRaceStart);
+  sock.on('raceGo',onRaceStart);
   sock.on('raceTick',onTick);
   sock.on('peerTap',onPeerTap);
   sock.on('raceResult',onServerRaceResult);
-  srvHandlers={sock,onPre,onGo,onTick,onRace:onServerRaceResult,onPeerTap};
+  srvHandlers={sock,onCountdown,onRaceStart,onTick,onRace:onServerRaceResult,onPeerTap};
   console.log('[race] serverRace active', { roomId: serverRaceOpt.roomId, mySlot: serverRaceOpt.mySlot, socketConnected: sock.connected });
 }
 
@@ -1398,8 +1393,9 @@ if(EMBED_APP&&!serverRaceOpt){
 
   function stop() {
     if(srvHandlers){
-      srvHandlers.sock.off('preRaceCountdown',srvHandlers.onPre);
-      srvHandlers.sock.off('raceGo',srvHandlers.onGo);
+      srvHandlers.sock.off('countdown',srvHandlers.onCountdown);
+      srvHandlers.sock.off('race-start',srvHandlers.onRaceStart);
+      srvHandlers.sock.off('raceGo',srvHandlers.onRaceStart);
       srvHandlers.sock.off('raceTick',srvHandlers.onTick);
       srvHandlers.sock.off('peerTap',srvHandlers.onPeerTap);
       srvHandlers.sock.off('raceResult',srvHandlers.onRace);
