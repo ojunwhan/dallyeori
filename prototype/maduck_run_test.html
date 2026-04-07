@@ -13,29 +13,41 @@
       font-size: 13px; line-height: 1.45; border-radius: 10px; z-index: 10; pointer-events: none;
     }
     #hint kbd { background: #333; padding: 2px 6px; border-radius: 4px; }
+    #hud {
+      position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+      padding: 10px 18px; background: rgba(0,0,0,.6); color: #fff;
+      font-size: 18px; font-weight: 700; border-radius: 10px; z-index: 12; pointer-events: none;
+      text-align: center; min-width: 200px;
+    }
+    #hud .sub { font-size: 13px; font-weight: 500; opacity: .85; margin-top: 4px; }
   </style>
 </head>
 <body>
-  <div id="hint">
-    화면 <kbd>탭</kbd> / <kbd>스페이스</kbd> = 가속 + 과장 스쿼시 · 마우스 드래그 회전(오빗) · 멈추면 idle
-    <br /><span style="opacity:.75">향후 통합 참고: 트랙 70m / 13s · 좌우발 교대 탭 (constants.js / physics.js)</span>
+  <div id="hud" aria-live="polite">
+    <span id="hudTime">13.0</span>초
+    <div class="sub" id="hudSub"></div>
   </div>
-  <!-- file:// 더블클릭 동작: ES 모듈/import map 미사용 · three r128 (cdnjs) + 레거시 OrbitControls -->
+  <div id="hint">
+    ←왼발 →오른발 교대로 눌러서 달리기 | 13초 제한
+  </div>
+  <!-- file:// 더블클릭 동작: three r128 (cdnjs), OrbitControls 미사용 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script>
   (function () {
   var THREE = window.THREE;
 
-  // ── 향후 race 물리와 맞출 때 참고용 (읽기 전용 상수, 이 파일에서는 단순 가속 모델 사용)
-  const REF_TRACK_M = 70;
-  const REF_TIME_S = 13;
-  const REF_AVG_SPEED = REF_TRACK_M / REF_TIME_S;
+  // ── 제한시간(초) — 거리 제한 없음, 13초 동안 누가 더 멀리
+  const RACE_LIMIT_S = 13;
+  // 보행 페널티(같은 발 연속) — 기존 앱 physics SAME_FOOT_ANGLE와 비슷한 느낌
+  const SAME_FOOT_YAW = 0.14;
+  const ALT_FOOT_YAW_RECOVER = 0.88;
 
-  let renderer, scene, camera, controls;
+  let renderer, scene, camera;
   let duckRoot, bodySquashGroup, torsoMesh, headGroup, tailPivot, wingL, wingR;
   let legLU, legLL, footL, legRU, legRL, footR;
-  let ground, trackMesh;
+  let ground, trackMesh, decorGroup, laneLineL, laneLineR;
+  const hudTimeEl = typeof document !== 'undefined' ? document.getElementById('hudTime') : null;
+  const hudSubEl = typeof document !== 'undefined' ? document.getElementById('hudSub') : null;
 
   const clock = new THREE.Clock();
 
@@ -50,7 +62,16 @@
     wasContact: false,
   };
 
-  const MAX_V = REF_AVG_SPEED * 2.2;
+  /** 코스 방향(rad). 오리 로컬 -Z 가 전진. */
+  let courseYaw = 0;
+  /** 누적 이동 거리(m) — 전진 속도 적분 */
+  let distanceM = 0;
+  let lastFoot = null;
+  /** @type {'prestart' | 'racing' | 'done'} */
+  let racePhase = 'prestart';
+  let raceTimeLeft = RACE_LIMIT_S;
+
+  const MAX_V = 12;
   const TAP_IMPULSE = 4.5;
   const DRAG = 1.85;
   const IDLE_ENTER = 0.15;
@@ -229,13 +250,6 @@
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(renderer.domElement);
 
-    controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.target.set(0, 0.9, -1);
-    controls.maxPolarAngle = Math.PI / 2 - 0.08;
-    controls.minDistance = 2.5;
-    controls.maxDistance = 14;
-
     const hemi = new THREE.HemisphereLight(0xfff5e6, 0x3d5c3a, 0.85);
     scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xffffff, 1.05);
@@ -270,18 +284,21 @@
     trackMesh.receiveShadow = true;
     scene.add(trackMesh);
 
-    // 레인 라인
-    for (const x of [-1.45, 1.45]) {
-      const line = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.08, 120),
-        new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x222222 })
-      );
-      line.rotation.x = -Math.PI / 2;
-      line.position.set(x, 0.02, 0);
-      scene.add(line);
-    }
+    // 레인 라인 (트랙과 동일 오프셋으로 따라감)
+    laneLineL = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.08, 120),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x222222 })
+    );
+    laneLineL.rotation.x = -Math.PI / 2;
+    laneLineL.position.set(-1.45, 0.02, 0);
+    scene.add(laneLineL);
+    laneLineR = laneLineL.clone();
+    laneLineR.position.set(1.45, 0.02, 0);
+    scene.add(laneLineR);
 
-    // 간단한 배경 나무/울타리 느낌
+    // 간단한 배경 나무/울타리 느낌 (오리 Z와 같이 이동해 무한 트랙 느낌 유지)
+    decorGroup = new THREE.Group();
+    scene.add(decorGroup);
     const trunkMat = clayMat(0x5d4037);
     const leafMat = clayMat(0x2e7d32, 0.9);
     for (let i = -6; i <= 6; i++) {
@@ -292,32 +309,84 @@
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 1.2, 8), trunkMat);
       trunk.position.set(tx, 0.6, z);
       trunk.castShadow = true;
-      scene.add(trunk);
+      decorGroup.add(trunk);
       const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.7, 12, 10), leafMat);
       leaf.position.set(tx, 1.35, z);
       leaf.scale.y = 0.85;
       leaf.castShadow = true;
-      scene.add(leaf);
+      decorGroup.add(leaf);
     }
 
     scene.add(makeDuck());
+    updateHud();
   }
 
-  function onTap() {
+  function updateHud() {
+    if (!hudTimeEl || !hudSubEl) return;
+    if (racePhase === 'prestart') {
+      hudTimeEl.textContent = String(RACE_LIMIT_S.toFixed(1));
+      hudSubEl.textContent = '← → 로 시작 (13초 카운트)';
+      return;
+    }
+    if (racePhase === 'racing') {
+      hudTimeEl.textContent = Math.max(0, raceTimeLeft).toFixed(1);
+      hudSubEl.textContent = distanceM.toFixed(1) + ' m';
+      return;
+    }
+    hudTimeEl.textContent = '0.0';
+    hudSubEl.textContent = '종료! 달린 거리 — ' + distanceM.toFixed(2) + ' m';
+  }
+
+  /**
+   * @param {'L'|'R'} foot
+   */
+  function footTap(foot) {
+    if (racePhase === 'done') return;
+
+    if (racePhase === 'prestart') {
+      racePhase = 'racing';
+      raceTimeLeft = RACE_LIMIT_S;
+      distanceM = 0;
+      courseYaw = 0;
+      lastFoot = null;
+    }
+
     const t = performance.now() / 1000;
     run.lastTapT = t;
-    run.v = Math.min(MAX_V, run.v + TAP_IMPULSE * 0.35);
+
+    let impulse = TAP_IMPULSE * 0.35;
+    if (lastFoot === foot) {
+      if (foot === 'L') courseYaw += SAME_FOOT_YAW;
+      else courseYaw -= SAME_FOOT_YAW;
+      impulse *= 0.75;
+    } else if (lastFoot !== null) {
+      courseYaw *= ALT_FOOT_YAW_RECOVER;
+    }
+    courseYaw = Math.max(-1.15, Math.min(1.15, courseYaw));
+    lastFoot = foot;
+
+    run.v = Math.min(MAX_V, run.v + impulse);
     run.squashT = 1;
-    // 교대 발 느낌: 위상을 살짝 밀어 한 발이 앞으로 나가게
     run.phase += Math.PI * 0.5;
   }
 
   window.addEventListener('pointerdown', (e) => {
-    if (e.target.closest && e.target.closest('#hint')) return;
-    onTap();
+    if (racePhase === 'done') return;
+    const x = e.clientX;
+    if (x < window.innerWidth * 0.5) footTap('L');
+    else footTap('R');
   });
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space') { e.preventDefault(); onTap(); }
+    if (racePhase === 'done') return;
+    if (e.code === 'ArrowLeft') {
+      if (e.repeat) return;
+      e.preventDefault();
+      footTap('L');
+    } else if (e.code === 'ArrowRight') {
+      if (e.repeat) return;
+      e.preventDefault();
+      footTap('R');
+    }
   });
 
   window.addEventListener('resize', () => {
@@ -328,18 +397,31 @@
 
   makeWorld();
 
-  let camVelZ = 0;
-  let prevCamZ = camera.position.z;
-
   function animate() {
     requestAnimationFrame(animate);
     const dt = Math.min(clock.getDelta(), 0.05);
-    const t = performance.now() / 1000;
-    const idle = run.v < IDLE_ENTER;
+
+    if (racePhase === 'racing') {
+      raceTimeLeft -= dt;
+      if (raceTimeLeft <= 0) {
+        raceTimeLeft = 0;
+        racePhase = 'done';
+        updateHud();
+      }
+    }
+
+    duckRoot.rotation.y = courseYaw;
+
+    const runningAnim = racePhase === 'racing' && run.v >= IDLE_ENTER;
+    const idle = !runningAnim;
 
     if (idle) {
       run.idleT += dt;
-      run.v = Math.max(0, run.v - DRAG * 0.5 * dt);
+      if (racePhase === 'prestart' || racePhase === 'done') {
+        run.v = Math.max(0, run.v - DRAG * 0.5 * dt);
+      } else {
+        run.v = Math.max(0, run.v - DRAG * 0.5 * dt);
+      }
     } else {
       run.v = Math.max(0, run.v - DRAG * dt);
       run.idleT = 0;
@@ -347,7 +429,9 @@
 
     const speedN = Math.min(1, run.v / MAX_V);
     const cadence = 6 + speedN * 14;
-    if (!idle) run.phase += dt * cadence;
+    if (runningAnim) run.phase += dt * cadence;
+
+    if (racePhase === 'racing') updateHud();
 
     // 스쿼시 복원 (탭 피드백)
     run.squashT = Math.max(0, run.squashT - dt * 5);
@@ -394,7 +478,8 @@
     }
     run.wasContact = contact;
     run.dipImpulse *= Math.pow(0.82, dt * 60);
-    duckRoot.position.y = idle ? duckRoot.position.y * (1 - dt * 6) : -run.dipImpulse * 0.35;
+    duckRoot.position.y =
+      idle ? duckRoot.position.y * (1 - dt * 6) : -run.dipImpulse * 0.35;
 
     // 날개 — 느리면 붙음, 빠르면 살짝 벌림
     const wingOpen = speedN * 0.55;
@@ -403,10 +488,28 @@
     wingL.rotation.z = 0.25 + Math.sin(ph * 2) * 0.06 * speedN;
     wingR.rotation.z = -0.25 - Math.sin(ph * 2) * 0.06 * speedN;
 
-    // 전진 (Z-) + 트랙 무한 느낌
-    duckRoot.position.z -= run.v * dt;
+    // 전진: 오리가 바라보는 방향(-Z 로컬)으로 이동, 거리 적분
+    const fx = Math.sin(courseYaw);
+    const fz = -Math.cos(courseYaw);
+    if (racePhase === 'racing' && run.v > 0) {
+      distanceM += run.v * dt;
+    }
+    duckRoot.position.x += fx * run.v * dt;
+    duckRoot.position.z += fz * run.v * dt;
+    ground.position.x = duckRoot.position.x;
     ground.position.z = duckRoot.position.z;
+    trackMesh.position.x = duckRoot.position.x;
     trackMesh.position.z = duckRoot.position.z;
+    if (laneLineL && laneLineR) {
+      laneLineL.position.x = duckRoot.position.x - 1.45;
+      laneLineL.position.z = duckRoot.position.z;
+      laneLineR.position.x = duckRoot.position.x + 1.45;
+      laneLineR.position.z = duckRoot.position.z;
+    }
+    if (decorGroup) {
+      decorGroup.position.x = duckRoot.position.x;
+      decorGroup.position.z = duckRoot.position.z;
+    }
 
     // Idle
     if (idle) {
@@ -424,21 +527,21 @@
       wingR.rotation.y = 0.15;
     }
 
-    // 동적 카메라: 가속 시 뒤로, 감속 시 가까이
+    // 고정 추적 카메라: 오리 뒤·위, 궁둥이 중심 룩앳 (Orbit 없음)
+    const duckPx = duckRoot.position.x;
+    const duckPy = duckRoot.position.y;
+    const duckPz = duckRoot.position.z;
     const targetDist = 4.8 + speedN * 2.4;
-    const targetH = 1.85 + speedN * 0.35;
-    const duckZ = duckRoot.position.z;
-    const idealCamZ = duckZ + targetDist;
-    const idealCamY = targetH;
-    camera.position.z += (idealCamZ - camera.position.z) * (1 - Math.pow(0.9, dt * 60));
-    camera.position.y += (idealCamY - camera.position.y) * (1 - Math.pow(0.92, dt * 60));
-    controls.target.set(0, 0.85, duckZ - 1.2);
+    const targetH = 1.55 + speedN * 0.32;
+    const bx = duckPx - fx * targetDist;
+    const bz = duckPz - fz * targetDist;
+    const camLerp = 1 - Math.pow(0.88, dt * 60);
+    camera.position.x += (bx - camera.position.x) * camLerp;
+    camera.position.z += (bz - camera.position.z) * camLerp;
+    camera.position.y += (duckPy + targetH - camera.position.y) * (1 - Math.pow(0.9, dt * 60));
+    const lookY = duckPy + 0.72;
+    camera.lookAt(duckPx, lookY, duckPz);
 
-    camVelZ = (camera.position.z - prevCamZ) / Math.max(dt, 1e-4);
-    prevCamZ = camera.position.z;
-    camera.position.x += camVelZ * 0.02 * speedN;
-
-    controls.update();
     renderer.render(scene, camera);
   }
 
