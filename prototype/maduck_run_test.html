@@ -725,20 +725,20 @@
       wingR.rotation.y = 0.15;
     }
 
-    // 고정 추적 카메라: 오리 뒤·위, 궁둥이 중심 룩앳 (Orbit 없음)
+    // 카트라이더式: 카메라 yaw는 오리 dirA/lastEffA 절대 미사용. 월드 +Z = 뒤(트랙 직진 축 기준),
+    // 위치 (오리.x, 오리.y+h, 오리.z+뒤거리) → lookAt 오리 — 수평면에서 yaw 0 (오리만 비틀어 보임)
     const duckPx = duckRoot.position.x;
     const duckPy = duckRoot.position.y;
     const duckPz = duckRoot.position.z;
-    const fx = Math.sin(lastEffA);
-    const fz = -Math.cos(lastEffA);
     const targetDist = 4.8 + speedN * 2.4;
     const targetH = 1.55 + speedN * 0.32;
-    const bx = duckPx - fx * targetDist;
-    const bz = duckPz - fz * targetDist;
+    const idealX = duckPx;
+    const idealY = duckPy + targetH;
+    const idealZ = duckPz + targetDist;
     const camLerp = 1 - Math.pow(0.88, dt * 60);
-    camera.position.x += (bx - camera.position.x) * camLerp;
-    camera.position.z += (bz - camera.position.z) * camLerp;
-    camera.position.y += (duckPy + targetH - camera.position.y) * (1 - Math.pow(0.9, dt * 60));
+    camera.position.x += (idealX - camera.position.x) * camLerp;
+    camera.position.z += (idealZ - camera.position.z) * camLerp;
+    camera.position.y += (idealY - camera.position.y) * (1 - Math.pow(0.9, dt * 60));
     const lookY = duckPy + 0.72;
     camera.lookAt(duckPx, lookY, duckPz);
 
