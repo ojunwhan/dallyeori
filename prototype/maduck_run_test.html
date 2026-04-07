@@ -254,10 +254,13 @@
   }
 
   function makeDuck() {
-    const black = clayMat(0x1c1c1e);
+    // 뒤샷·배 실루엣 참고: prototype/ori01.png (스타트 라인 두 마리)
+    const feather = clayMat(0xf5f5f5, 0.92);
+    const featherShadow = clayMat(0xe8e8e8, 0.9);
     const orange = clayMat(0xff6a2d, 0.82);
-    const white = clayMat(0xf5f5f5, 0.9);
+    const white = clayMat(0xffffff, 0.88);
     const pupil = clayMat(0x0a0a0a, 0.75);
+    const browMat = clayMat(0x3a3a3a, 0.82);
 
     duckRoot = new THREE.Group();
     duckRoot.position.set(0, 0, 0);
@@ -265,67 +268,72 @@
     bodySquashGroup = new THREE.Group();
     duckRoot.add(bodySquashGroup);
 
-    // 몸통: 앞(-Z) 좁고 뒤(+Z) 넓은 계란형 — 가슴 쪽 얇고 엉덩이 쪽 두툼
-    const bodyGeo = new THREE.SphereGeometry(0.46, 40, 32);
-    bodyGeo.scale(0.86, 1.04, 1.42);
-    torsoMesh = new THREE.Mesh(bodyGeo, black);
-    torsoMesh.position.set(0, 0.64, -0.06);
+    // 배·엉덩이 쪽이 넓은 배(pear) — 가슴(-Z)은 상대적으로 좁음
+    const bodyGeo = new THREE.SphereGeometry(0.44, 40, 32);
+    bodyGeo.scale(0.88, 1.06, 1.36);
+    torsoMesh = new THREE.Mesh(bodyGeo, feather);
+    torsoMesh.position.set(0, 0.66, -0.05);
     torsoMesh.castShadow = true;
     bodySquashGroup.add(torsoMesh);
 
-    // 엉덩이 볼륨 (+Z, 카메라 뒤샷에서 과장)
-    const buttGeo = new THREE.SphereGeometry(0.34, 24, 20);
-    buttGeo.scale(1.38, 1.12, 1.22);
-    const butt = new THREE.Mesh(buttGeo, black);
-    butt.position.set(0, 0.58, 0.44);
+    const bellyGeo = new THREE.SphereGeometry(0.32, 28, 22);
+    bellyGeo.scale(1.22, 0.72, 1.05);
+    const belly = new THREE.Mesh(bellyGeo, featherShadow);
+    belly.position.set(0, 0.38, 0.08);
+    belly.castShadow = true;
+    bodySquashGroup.add(belly);
+
+    const buttGeo = new THREE.SphereGeometry(0.36, 26, 22);
+    buttGeo.scale(1.42, 1.05, 1.28);
+    const butt = new THREE.Mesh(buttGeo, feather);
+    butt.position.set(0, 0.55, 0.46);
     butt.castShadow = true;
     bodySquashGroup.add(butt);
 
-    // 짧고 굵은 목 (몸 앞쪽 위)
     const neck = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.14, 0.17, 0.28, 14, 1),
-      black
+      new THREE.CylinderGeometry(0.15, 0.19, 0.34, 14, 1),
+      feather
     );
-    neck.rotation.x = Math.PI / 2 - 0.38;
-    neck.position.set(0, 1.02, -0.34);
+    neck.rotation.x = Math.PI / 2 - 0.36;
+    neck.position.set(0, 1.04, -0.32);
     neck.castShadow = true;
     bodySquashGroup.add(neck);
 
     const collar = new THREE.Mesh(
-      new THREE.TorusGeometry(0.21, 0.065, 12, 36),
+      new THREE.TorusGeometry(0.22, 0.068, 12, 36),
       orange
     );
     collar.rotation.x = Math.PI / 2;
-    collar.position.set(0, 1.02, -0.36);
+    collar.position.set(0, 1.04, -0.34);
     collar.castShadow = true;
     bodySquashGroup.add(collar);
 
-    const logo = new THREE.Mesh(new THREE.TorusGeometry(0.042, 0.014, 10, 20), white);
-    logo.position.set(0, 1.02, -0.2);
+    const logo = new THREE.Mesh(new THREE.TorusGeometry(0.044, 0.015, 10, 20), white);
+    logo.position.set(0, 1.04, -0.18);
     bodySquashGroup.add(logo);
 
     headGroup = new THREE.Group();
-    headGroup.position.set(0, 1.2, -0.54);
+    headGroup.position.set(0, 1.22, -0.52);
     bodySquashGroup.add(headGroup);
 
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 32, 26), black);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.31, 32, 26), feather);
     head.castShadow = true;
     headGroup.add(head);
 
     for (let i = -1; i <= 1; i++) {
-      const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), black);
-      tuft.position.set(i * 0.09, 0.36, -0.02);
-      tuft.scale.set(0.68, 1.08, 0.62);
+      const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), featherShadow);
+      tuft.position.set(i * 0.085, 0.33, -0.02);
+      tuft.scale.set(0.68, 1.05, 0.6);
       headGroup.add(tuft);
     }
 
-    const browGeo = new THREE.CylinderGeometry(0.032, 0.032, 0.18, 8, 1);
-    const browL = new THREE.Mesh(browGeo, black);
+    const browGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.16, 8, 1);
+    const browL = new THREE.Mesh(browGeo, browMat);
     browL.rotation.z = 0.55;
     browL.rotation.x = 0.2;
     browL.position.set(-0.13, 0.06, 0.32);
     headGroup.add(browL);
-    const browR = new THREE.Mesh(browGeo, black);
+    const browR = new THREE.Mesh(browGeo, browMat);
     browR.rotation.z = -0.55;
     browR.rotation.x = 0.2;
     browR.position.set(0.13, 0.06, 0.32);
@@ -349,32 +357,45 @@
     beak.position.set(0, -0.05, 0.4);
     headGroup.add(beak);
 
-    const wingGeo = new THREE.SphereGeometry(0.18, 14, 10);
-    wingGeo.scale(0.3, 0.48, 0.64);
-    wingL = new THREE.Mesh(wingGeo, black);
-    wingL.position.set(-0.46, 0.66, 0.02);
-    wingL.rotation.z = 0.2;
-    wingL.rotation.y = -0.08;
+    const wingGeo = new THREE.SphereGeometry(0.17, 14, 10);
+    wingGeo.scale(0.32, 0.45, 0.58);
+    wingL = new THREE.Mesh(wingGeo, feather);
+    wingL.position.set(-0.48, 0.74, 0.04);
+    wingL.rotation.z = 0.22;
+    wingL.rotation.y = -0.06;
     wingL.castShadow = true;
     bodySquashGroup.add(wingL);
+    const wingL2 = new THREE.Mesh(wingGeo.clone(), featherShadow);
+    wingL2.scale.multiplyScalar(0.72);
+    wingL2.position.set(-0.02, -0.04, -0.06);
+    wingL.add(wingL2);
     wingR = wingL.clone();
-    wingR.position.x = 0.46;
-    wingR.rotation.z = -0.2;
-    wingR.rotation.y = 0.08;
+    while (wingR.children.length) wingR.remove(wingR.children[0]);
+    wingR.position.x = 0.48;
+    wingR.rotation.z = -0.22;
+    wingR.rotation.y = 0.06;
     bodySquashGroup.add(wingR);
+    const wingR2 = new THREE.Mesh(wingGeo.clone(), featherShadow);
+    wingR2.scale.multiplyScalar(0.72);
+    wingR2.position.set(0.02, -0.04, -0.06);
+    wingR.add(wingR2);
 
     tailPivot = new THREE.Group();
-    tailPivot.position.set(0, 0.9, 0.4);
+    tailPivot.position.set(0, 0.92, 0.44);
     bodySquashGroup.add(tailPivot);
-    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.34, 10), black);
-    tail.rotation.x = -0.22;
-    tail.position.set(0, 0.2, 0.02);
-    tail.castShadow = true;
-    tailPivot.add(tail);
+    const tailAngles = [-0.42, 0, 0.42];
+    for (let ti = 0; ti < 3; ti++) {
+      const plume = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.26, 6), featherShadow);
+      plume.rotation.z = tailAngles[ti];
+      plume.rotation.x = -0.85 + Math.abs(tailAngles[ti]) * 0.15;
+      plume.position.set(ti === 0 ? -0.04 : ti === 2 ? 0.04 : 0, 0.18, 0.02);
+      plume.castShadow = true;
+      tailPivot.add(plume);
+    }
 
     function makeLeg(side) {
       const hip = new THREE.Group();
-      hip.position.set(side * 0.24, 0.4, -0.05);
+      hip.position.set(side * 0.3, 0.39, 0.02);
       bodySquashGroup.add(hip);
 
       const upper = new THREE.Mesh(
@@ -397,8 +418,10 @@
       shin.castShadow = true;
       lower.add(shin);
 
-      const foot = new THREE.Mesh(new THREE.SphereGeometry(0.13, 14, 10), orange);
-      foot.scale.set(1.55, 0.32, 2.05);
+      const foot = new THREE.Mesh(new THREE.ConeGeometry(0.21, 0.038, 3), orange);
+      foot.rotation.x = Math.PI / 2;
+      foot.rotation.y = Math.PI / 2;
+      foot.scale.set(1.42, 1, 1.88);
       foot.position.set(0, -0.15, 0.02);
       foot.castShadow = true;
       lower.add(foot);
@@ -751,8 +774,8 @@
     legRL.rotation.x = Math.max(0, kneeB * Math.pow(Math.max(0, -sR), 1.28));
     const flatL = Math.pow(Math.max(0, Math.cos(lp)), 1.38);
     const flatR = Math.pow(Math.max(0, Math.cos(lp + Math.PI)), 1.38);
-    footL.scale.set(1.55, 0.28 + flatL * 0.24, 2.05);
-    footR.scale.set(1.55, 0.28 + flatR * 0.24, 2.05);
+    footL.scale.set(1.48 + flatL * 0.1, 0.55 + flatL * 0.42, 1.95 + flatL * 0.12);
+    footR.scale.set(1.48 + flatR * 0.1, 0.55 + flatR * 0.42, 1.95 + flatR * 0.12);
 
     // 뒤뚱 — 롤 + 무게 이동 (과장·빠를수록 격해짐)
     const waddleAmp = (0.12 + speedN * 0.38) * 1.85;
@@ -801,8 +824,8 @@
       legRU.rotation.x = Math.sin(id * 2.2 + Math.PI) * 0.12;
       legLL.rotation.x = 0.05;
       legRL.rotation.x = 0.05;
-      footL.scale.set(1.55, 0.32, 2.05);
-      footR.scale.set(1.55, 0.32, 2.05);
+      footL.scale.set(1.48, 1, 1.95);
+      footR.scale.set(1.48, 1, 1.95);
       tailPivot.rotation.y = Math.sin(id * 1.3) * 0.15;
       wingL.rotation.y = -0.08;
       wingR.rotation.y = 0.08;
@@ -814,7 +837,7 @@
     const duckPy = duckRoot.position.y;
     const duckPz = duckRoot.position.z;
     const targetDist = 2.85 + speedN * 1.38;
-    const targetH = 0.9 + speedN * 0.2;
+    const targetH = 0.76 + speedN * 0.18;
     const idealX = duckPx;
     const idealY = duckPy + targetH;
     const idealZ = duckPz + targetDist;
@@ -822,7 +845,7 @@
     camera.position.x += (idealX - camera.position.x) * camLerp;
     camera.position.z += (idealZ - camera.position.z) * camLerp;
     camera.position.y += (idealY - camera.position.y) * (1 - Math.pow(0.9, dt * 60));
-    const lookY = duckPy + 0.62;
+    const lookY = duckPy + 0.48;
     camera.lookAt(duckPx, lookY, duckPz);
     const targetFov = 60 + speedN * 8;
     camera.fov += (targetFov - camera.fov) * (1 - Math.pow(0.86, dt * 60));
