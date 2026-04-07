@@ -179,6 +179,7 @@
       arr[i * 3 + 1] += dustVy[i] * dt;
       arr[i * 3 + 2] += dustVz[i] * dt;
       dustVy[i] -= 3.2 * dt;
+      if (dustLifeArr[i] <= 0) arr[i * 3 + 1] = -800;
     }
     if (racing && v > 0.25) {
       const spawnChance = Math.min(0.88, (0.07 + speedN * 0.48) * dt * 62);
