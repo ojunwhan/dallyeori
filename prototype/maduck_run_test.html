@@ -547,6 +547,7 @@
     botRoot.position.set(BOT_LANE_X, 0, 0);
     scene.add(duckRoot);
     scene.add(botRoot);
+    botRoot.rotation.y = duckRoot.rotation.y;
     if (infoEl) {
       infoEl.textContent =
         'ontouchstart' in window
@@ -706,6 +707,7 @@
 
     lastEffA = dirA;
     duckRoot.rotation.y = lastEffA + Math.PI;
+    botRoot.rotation.y = duckRoot.rotation.y;
 
     const runningAnim =
       (gameStarted && !gameEnded && v >= IDLE_ENTER) ||
