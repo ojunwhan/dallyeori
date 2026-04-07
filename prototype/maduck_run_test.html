@@ -179,8 +179,6 @@
   let waitBeforeCd = 0;
   let cdElapsed = 0;
   let lastCdNumber = -1;
-  /** step 직후 렌더용 (카메라/회전) */
-  let lastEffA = 0;
   /** 카운트다운 중 탭 시 제자리뛰기 애니 길이 */
   let countdownJogT = 0;
   let wobbleImpulse = 0;
@@ -879,9 +877,8 @@
       botRoot.position.x = BOT_LANE_X + botLateral;
     }
 
-    lastEffA = dirA;
-    duckRoot.rotation.y = lastEffA + Math.PI;
-    botRoot.rotation.y = duckRoot.rotation.y;
+    duckRoot.rotation.y = Math.PI + dirA;
+    botRoot.rotation.y = Math.PI + botDirA;
 
     const runningAnim =
       (gameStarted && !gameEnded && v >= IDLE_ENTER) ||
@@ -927,7 +924,7 @@
     const waddleAmp = (0.12 + speedN * 0.38) * 1.85;
     const waddle = waddleAmp * Math.sin(ph) + wobbleImpulse;
     bodySquashGroup.rotation.z = waddle;
-    const tiltFromDirA = dirA * 2.5;
+    const tiltFromDirA = dirA * 1.5;
     bodySquashGroup.rotation.z += tiltFromDirA;
     bodySquashGroup.position.x = Math.sin(ph) * (0.07 + speedN * 0.22) * 1.85;
 
@@ -967,7 +964,7 @@
       headGroup.rotation.y = Math.sin(id * 1.1) * 0.35;
       headGroup.rotation.x = Math.sin(id * 0.7) * 0.06;
       bodySquashGroup.rotation.z = Math.sin(id * 0.9) * 0.06;
-      bodySquashGroup.rotation.z += dirA * 2.5;
+      bodySquashGroup.rotation.z += dirA * 1.5;
       bodySquashGroup.rotation.x = Math.sin(id * 0.5) * 0.03;
       legLU.rotation.x = Math.sin(id * 2.2) * 0.12;
       legRU.rotation.x = Math.sin(id * 2.2 + Math.PI) * 0.12;
@@ -1013,7 +1010,7 @@
       const bwad = (0.12 + botSpeedN * 0.38) * 1.85;
       const bwaddle = bwad * Math.sin(bph) + botWobbleImpulse;
       botDuck.body.rotation.z = bwaddle;
-      botDuck.body.rotation.z += botDirA * 2.5;
+      botDuck.body.rotation.z += botDirA * 1.5;
       botDuck.body.position.x = Math.sin(bph) * (0.07 + botSpeedN * 0.22) * 1.85;
       const blev = botSpeedN * 0.38;
       botDuck.body.rotation.x =
@@ -1044,7 +1041,7 @@
       botDuck.head.rotation.y = Math.sin(bid * 1.1) * 0.35;
       botDuck.head.rotation.x = Math.sin(bid * 0.7) * 0.06;
       botDuck.body.rotation.z = Math.sin(bid * 0.9) * 0.06;
-      botDuck.body.rotation.z += botDirA * 2.5;
+      botDuck.body.rotation.z += botDirA * 1.5;
       botDuck.body.rotation.x = Math.sin(bid * 0.5) * 0.03;
       botDuck.leftLeg.hip.rotation.x = Math.sin(bid * 2.2) * 0.12;
       botDuck.rightLeg.hip.rotation.x = Math.sin(bid * 2.2 + Math.PI) * 0.12;
