@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>MADUCK Run — Three.js 프로토타입 (달려오리)</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #87c5ff; font-family: system-ui, sans-serif; }
+    #hint {
+      position: fixed; left: 12px; bottom: 12px; right: 12px;
+      padding: 10px 14px; background: rgba(0,0,0,.55); color: #fff;
+      font-size: 13px; line-height: 1.45; border-radius: 10px; z-index: 10; pointer-events: none;
+    }
+    #hint kbd { background: #333; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div id="hint">
+    화면 <kbd>탭</kbd> / <kbd>스페이스</kbd> = 가속 + 과장 스쿼시 · 마우스 드래그 회전(오빗) · 멈추면 idle
+    <br /><span style="opacity:.75">향후 통합 참고: 트랙 70m / 13s · 좌우발 교대 탭 (constants.js / physics.js)</span>
+  </div>
+  <!-- file:// 더블클릭 동작: ES 모듈/import map 미사용 · three r128 (cdnjs) + 레거시 OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script>
+  (function () {
+  var THREE = window.THREE;
+
+  // ── 향후 race 물리와 맞출 때 참고용 (읽기 전용 상수, 이 파일에서는 단순 가속 모델 사용)
+  const REF_TRACK_M = 70;
+  const REF_TIME_S = 13;
+  const REF_AVG_SPEED = REF_TRACK_M / REF_TIME_S;
+
+  let renderer, scene, camera, controls;
+  let duckRoot, bodySquashGroup, torsoMesh, headGroup, tailPivot, wingL, wingR;
+  let legLU, legLL, footL, legRU, legRL, footR;
+  let ground, trackMesh;
+
+  const clock = new THREE.Clock();
+
+  /** @type {{ v: number, phase: number, idleT: number, lastTapT: number, squashT: number, dipImpulse: number, wasContact: boolean }} */
+  const run = {
+    v: 0,
+    phase: 0,
+    idleT: 0,
+    lastTapT: -999,
+    squashT: 0,
+    dipImpulse: 0,
+    wasContact: false,
+  };
+
+  const MAX_V = REF_AVG_SPEED * 2.2;
+  const TAP_IMPULSE = 4.5;
+  const DRAG = 1.85;
+  const IDLE_ENTER = 0.15;
+  const IDLE_EXIT = 0.35;
+
+  function clayMat(hex, r = 0.88, m = 0.04) {
+    return new THREE.MeshStandardMaterial({
+      color: hex, roughness: r, metalness: m,
+    });
+  }
+
+  function makeDuck() {
+    const black = clayMat(0x1c1c1e);
+    const orange = clayMat(0xff6a2d, 0.82);
+    const white = clayMat(0xf5f5f5, 0.9);
+    const pupil = clayMat(0x0a0a0a, 0.75);
+
+    duckRoot = new THREE.Group();
+    duckRoot.position.set(0, 0, 0);
+
+    bodySquashGroup = new THREE.Group();
+    duckRoot.add(bodySquashGroup);
+
+    // 뚱뚱한 알통 — 세그먼트 많이 + 약간 늘린 구체 (클레이 둥글림)
+    const bodyGeo = new THREE.SphereGeometry(0.52, 48, 40);
+    bodyGeo.scale(1.05, 1.18, 0.92);
+    torsoMesh = new THREE.Mesh(bodyGeo, black);
+    torsoMesh.position.y = 0.62;
+    torsoMesh.castShadow = true;
+    bodySquashGroup.add(torsoMesh);
+
+    // 목 밴드 (뚱한 토러스)
+    const collar = new THREE.Mesh(
+      new THREE.TorusGeometry(0.38, 0.09, 16, 48),
+      orange
+    );
+    collar.rotation.x = Math.PI / 2;
+    collar.position.set(0, 1.12, 0);
+    collar.castShadow = true;
+    bodySquashGroup.add(collar);
+
+    // 밴드 앞쪽 흰 O 느낌
+    const logo = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.018, 12, 24), white);
+    logo.position.set(0, 1.12, 0.36);
+    logo.rotation.y = 0;
+    bodySquashGroup.add(logo);
+
+    headGroup = new THREE.Group();
+    headGroup.position.set(0, 1.38, 0.06);
+    bodySquashGroup.add(headGroup);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.44, 40, 32), black);
+    head.castShadow = true;
+    headGroup.add(head);
+
+    // 머리털 3개
+    for (let i = -1; i <= 1; i++) {
+      const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), black);
+      tuft.position.set(i * 0.12, 0.46, -0.02);
+      tuft.scale.set(0.7, 1.15, 0.65);
+      headGroup.add(tuft);
+    }
+
+    // 화난 눈썹 (r128에는 CapsuleGeometry 없음 → 동일 실루엣에 가깝게 원통)
+    const browGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.22, 8, 1);
+    const browL = new THREE.Mesh(browGeo, black);
+    browL.rotation.z = 0.55;
+    browL.rotation.x = 0.2;
+    browL.position.set(-0.16, 0.08, 0.38);
+    headGroup.add(browL);
+    const browR = new THREE.Mesh(browGeo, black);
+    browR.rotation.z = -0.55;
+    browR.rotation.x = 0.2;
+    browR.position.set(0.16, 0.08, 0.38);
+    headGroup.add(browR);
+
+    // 눈
+    const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), white);
+    eyeWhite.position.set(-0.17, 0.02, 0.39);
+    headGroup.add(eyeWhite);
+    const eyeWhite2 = eyeWhite.clone();
+    eyeWhite2.position.x = 0.17;
+    headGroup.add(eyeWhite2);
+    const pup = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), pupil);
+    pup.position.set(-0.15, 0.02, 0.47);
+    headGroup.add(pup);
+    const pup2 = pup.clone();
+    pup2.position.set(0.19, 0.02, 0.47);
+    headGroup.add(pup2);
+
+    // 부리 — 납작한 캡슐 느낌
+    const beak = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 16), orange);
+    beak.scale.set(1.35, 0.65, 0.85);
+    beak.position.set(0, -0.06, 0.48);
+    headGroup.add(beak);
+
+    // 날개 (몸에 붙음)
+    const wingGeo = new THREE.SphereGeometry(0.22, 16, 12);
+    wingGeo.scale(0.35, 0.75, 1);
+    wingL = new THREE.Mesh(wingGeo, black);
+    wingL.position.set(-0.52, 0.75, -0.02);
+    wingL.rotation.z = 0.25;
+    wingL.rotation.y = -0.15;
+    wingL.castShadow = true;
+    bodySquashGroup.add(wingL);
+    wingR = wingL.clone();
+    wingR.position.x = 0.52;
+    wingR.rotation.z = -0.25;
+    wingR.rotation.y = 0.15;
+    bodySquashGroup.add(wingR);
+
+    // 꼬리 — 엉덩이 흔들림용 피벗
+    tailPivot = new THREE.Group();
+    tailPivot.position.set(0, 0.72, -0.48);
+    bodySquashGroup.add(tailPivot);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 12), black);
+    tail.rotation.x = -Math.PI / 2 + 0.35;
+    tail.position.set(0, 0.05, -0.12);
+    tail.castShadow = true;
+    tailPivot.add(tail);
+
+    function makeLeg(side) {
+      const hip = new THREE.Group();
+      hip.position.set(side * 0.22, 0.38, 0);
+      bodySquashGroup.add(hip);
+
+      const upper = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.11, 0.11, 0.24, 12, 1),
+        orange
+      );
+      upper.position.y = -0.12;
+      upper.castShadow = true;
+      hip.add(upper);
+
+      const lower = new THREE.Group();
+      lower.position.y = -0.22;
+      hip.add(lower);
+
+      const shin = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.09, 0.09, 0.18, 10, 1),
+        orange
+      );
+      shin.position.y = -0.1;
+      shin.castShadow = true;
+      lower.add(shin);
+
+      const foot = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), orange);
+      foot.scale.set(1.5, 0.35, 2.1);
+      foot.position.y = -0.22;
+      foot.castShadow = true;
+      lower.add(foot);
+
+      return { hip, upper, lower, footMesh: foot };
+    }
+
+    const L = makeLeg(-1);
+    const R = makeLeg(1);
+    legLU = L.hip; legLL = L.lower; footL = L.footMesh;
+    legRU = R.hip; legRL = R.lower; footR = R.footMesh;
+
+    return duckRoot;
+  }
+
+  function makeWorld() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87c5ff);
+    scene.fog = new THREE.Fog(0xa8dcff, 12, 55);
+
+    camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 200);
+    camera.position.set(0, 2.2, 5.2);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 0.9, -1);
+    controls.maxPolarAngle = Math.PI / 2 - 0.08;
+    controls.minDistance = 2.5;
+    controls.maxDistance = 14;
+
+    const hemi = new THREE.HemisphereLight(0xfff5e6, 0x3d5c3a, 0.85);
+    scene.add(hemi);
+    const sun = new THREE.DirectionalLight(0xffffff, 1.05);
+    sun.position.set(4, 14, 6);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 60;
+    sun.shadow.camera.left = -20;
+    sun.shadow.camera.right = 20;
+    sun.shadow.camera.top = 20;
+    sun.shadow.camera.bottom = -20;
+    scene.add(sun);
+
+    // 잔디
+    const grass = new THREE.Mesh(
+      new THREE.PlaneGeometry(120, 120, 1, 1),
+      new THREE.MeshStandardMaterial({ color: 0x4caf6a, roughness: 0.95, metalness: 0 })
+    );
+    grass.rotation.x = -Math.PI / 2;
+    grass.receiveShadow = true;
+    scene.add(grass);
+    ground = grass;
+
+    // 트랙 레인
+    trackMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.2, 120, 1, 1),
+      new THREE.MeshStandardMaterial({ color: 0x6d4c41, roughness: 0.92 })
+    );
+    trackMesh.rotation.x = -Math.PI / 2;
+    trackMesh.position.y = 0.01;
+    trackMesh.receiveShadow = true;
+    scene.add(trackMesh);
+
+    // 레인 라인
+    for (const x of [-1.45, 1.45]) {
+      const line = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.08, 120),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x222222 })
+      );
+      line.rotation.x = -Math.PI / 2;
+      line.position.set(x, 0.02, 0);
+      scene.add(line);
+    }
+
+    // 간단한 배경 나무/울타리 느낌
+    const trunkMat = clayMat(0x5d4037);
+    const leafMat = clayMat(0x2e7d32, 0.9);
+    for (let i = -6; i <= 6; i++) {
+      if (i === 0) continue;
+      const z = i * 8 - 4;
+      const side = i % 2 === 0 ? -1 : 1;
+      const tx = side * (5 + (i % 3) * 0.5);
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 1.2, 8), trunkMat);
+      trunk.position.set(tx, 0.6, z);
+      trunk.castShadow = true;
+      scene.add(trunk);
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.7, 12, 10), leafMat);
+      leaf.position.set(tx, 1.35, z);
+      leaf.scale.y = 0.85;
+      leaf.castShadow = true;
+      scene.add(leaf);
+    }
+
+    scene.add(makeDuck());
+  }
+
+  function onTap() {
+    const t = performance.now() / 1000;
+    run.lastTapT = t;
+    run.v = Math.min(MAX_V, run.v + TAP_IMPULSE * 0.35);
+    run.squashT = 1;
+    // 교대 발 느낌: 위상을 살짝 밀어 한 발이 앞으로 나가게
+    run.phase += Math.PI * 0.5;
+  }
+
+  window.addEventListener('pointerdown', (e) => {
+    if (e.target.closest && e.target.closest('#hint')) return;
+    onTap();
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { e.preventDefault(); onTap(); }
+  });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  makeWorld();
+
+  let camVelZ = 0;
+  let prevCamZ = camera.position.z;
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const t = performance.now() / 1000;
+    const idle = run.v < IDLE_ENTER;
+
+    if (idle) {
+      run.idleT += dt;
+      run.v = Math.max(0, run.v - DRAG * 0.5 * dt);
+    } else {
+      run.v = Math.max(0, run.v - DRAG * dt);
+      run.idleT = 0;
+    }
+
+    const speedN = Math.min(1, run.v / MAX_V);
+    const cadence = 6 + speedN * 14;
+    if (!idle) run.phase += dt * cadence;
+
+    // 스쿼시 복원 (탭 피드백)
+    run.squashT = Math.max(0, run.squashT - dt * 5);
+    const sq = run.squashT;
+    const squashX = 1 + sq * 0.22;
+    const squashY = 1 - sq * 0.28;
+    const squashZ = 1 + sq * 0.12;
+    bodySquashGroup.scale.set(squashX, squashY, squashZ);
+
+    const ph = run.phase;
+    const swing = (0.85 + speedN * 0.55);
+    const thighAmp = 0.95 + speedN * 0.5;
+
+    // 왼발 / 오른발 명확한 교대 (사인 위상 반대)
+    const leftPhase = ph;
+    const rightPhase = ph + Math.PI;
+    legLU.rotation.x = Math.sin(leftPhase) * thighAmp;
+    legLL.rotation.x = Math.max(0, -Math.sin(leftPhase + 0.4) * swing * 0.9);
+    legRU.rotation.x = Math.sin(rightPhase) * thighAmp;
+    legRL.rotation.x = Math.max(0, -Math.sin(rightPhase + 0.4) * swing * 0.9);
+
+    // 뒤뚱 — 롤 + 무게 이동 (빠를수록)
+    const waddle = (0.12 + speedN * 0.22) * Math.sin(ph);
+    bodySquashGroup.rotation.z = waddle;
+    bodySquashGroup.position.x = Math.sin(ph) * (0.04 + speedN * 0.1);
+
+    // 앞으로 기울임
+    const leanF = speedN * 0.38;
+    bodySquashGroup.rotation.x = leanF + Math.sin(ph * 2) * 0.04 * speedN;
+
+    // 닭 까딱 — 머리 피치
+    headGroup.rotation.x = Math.sin(ph * 2) * (0.18 + speedN * 0.2);
+    headGroup.rotation.y = Math.sin(ph) * 0.08 * speedN;
+
+    // 꼬리 좌우
+    tailPivot.rotation.y = Math.sin(ph + 0.5) * (0.55 + speedN * 0.65);
+    tailPivot.rotation.x = Math.sin(ph * 2) * 0.12 * speedN;
+
+    // 착지 충격: |cos(2φ)| 최소 근처 = 좌·우 발 교대 접지 순간 (엣지에서 한 번만)
+    const stepWave = Math.abs(Math.cos(ph * 2));
+    const contact = stepWave < 0.11;
+    if (contact && !run.wasContact) {
+      run.dipImpulse = 0.16 + speedN * 0.12;
+    }
+    run.wasContact = contact;
+    run.dipImpulse *= Math.pow(0.82, dt * 60);
+    duckRoot.position.y = idle ? duckRoot.position.y * (1 - dt * 6) : -run.dipImpulse * 0.35;
+
+    // 날개 — 느리면 붙음, 빠르면 살짝 벌림
+    const wingOpen = speedN * 0.55;
+    wingL.rotation.y = -0.15 - wingOpen * 0.35;
+    wingR.rotation.y = 0.15 + wingOpen * 0.35;
+    wingL.rotation.z = 0.25 + Math.sin(ph * 2) * 0.06 * speedN;
+    wingR.rotation.z = -0.25 - Math.sin(ph * 2) * 0.06 * speedN;
+
+    // 전진 (Z-) + 트랙 무한 느낌
+    duckRoot.position.z -= run.v * dt;
+    ground.position.z = duckRoot.position.z;
+    trackMesh.position.z = duckRoot.position.z;
+
+    // Idle
+    if (idle) {
+      const id = run.idleT;
+      headGroup.rotation.y = Math.sin(id * 1.1) * 0.35;
+      headGroup.rotation.x = Math.sin(id * 0.7) * 0.06;
+      bodySquashGroup.rotation.z = Math.sin(id * 0.9) * 0.06;
+      bodySquashGroup.rotation.x = Math.sin(id * 0.5) * 0.03;
+      legLU.rotation.x = Math.sin(id * 2.2) * 0.12;
+      legRU.rotation.x = Math.sin(id * 2.2 + Math.PI) * 0.12;
+      legLL.rotation.x = 0.05;
+      legRL.rotation.x = 0.05;
+      tailPivot.rotation.y = Math.sin(id * 1.3) * 0.15;
+      wingL.rotation.y = -0.15;
+      wingR.rotation.y = 0.15;
+    }
+
+    // 동적 카메라: 가속 시 뒤로, 감속 시 가까이
+    const targetDist = 4.8 + speedN * 2.4;
+    const targetH = 1.85 + speedN * 0.35;
+    const duckZ = duckRoot.position.z;
+    const idealCamZ = duckZ + targetDist;
+    const idealCamY = targetH;
+    camera.position.z += (idealCamZ - camera.position.z) * (1 - Math.pow(0.9, dt * 60));
+    camera.position.y += (idealCamY - camera.position.y) * (1 - Math.pow(0.92, dt * 60));
+    controls.target.set(0, 0.85, duckZ - 1.2);
+
+    camVelZ = (camera.position.z - prevCamZ) / Math.max(dt, 1e-4);
+    prevCamZ = camera.position.z;
+    camera.position.x += camVelZ * 0.02 * speedN;
+
+    controls.update();
+    renderer.render(scene, camera);
+  }
+
+  animate();
+  })();
+  </script>
+</body>
+</html>
