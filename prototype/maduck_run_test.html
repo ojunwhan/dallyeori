@@ -254,6 +254,34 @@
     osc.stop(audioCtx.currentTime + 0.08);
   }
 
+  let penaltyFlashEl = null;
+  function showPenaltyFlash() {
+    if (!penaltyFlashEl) {
+      penaltyFlashEl = document.createElement('div');
+      penaltyFlashEl.style.cssText =
+        'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,0,0,0.15);pointer-events:none;z-index:12;opacity:0;transition:opacity 0.05s;';
+      document.body.appendChild(penaltyFlashEl);
+    }
+    penaltyFlashEl.style.opacity = '1';
+    setTimeout(function () {
+      penaltyFlashEl.style.opacity = '0';
+    }, 100);
+  }
+
+  function playPenaltyBeep() {
+    if (!audioCtx || audioCtx.state === 'suspended') return;
+    var osc = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type = 'square';
+    osc.frequency.value = 150;
+    gain.gain.value = 0.2;
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.12);
+  }
+
   function playCountdownBeep(isGo) {
     ensureAudioCtx();
     if (!audioCtx) return;
@@ -283,19 +311,29 @@
   function onStep(foot) {
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     if (inputLocked || gameEnded) return;
-    playFootstep();
     run.squashT = 1;
     run.phase += Math.PI * 0.5;
-    wobbleImpulse = 0.15 * (foot === 'L' ? 1 : -1);
     if (!gameStarted) {
+      wobbleImpulse = 0.15 * (foot === 'L' ? 1 : -1);
+      playFootstep();
       countdownJogT = 0.38;
       return;
     }
     var sameFoot = foot === lastFoot;
+    if (sameFoot) {
+      wobbleImpulse = 0.35 * (foot === 'L' ? 1 : -1);
+    } else {
+      wobbleImpulse = 0.15 * (foot === 'L' ? 1 : -1);
+    }
+    playFootstep();
+    if (sameFoot) {
+      playPenaltyBeep();
+    }
     var imp = (TAP_FORCE / DUCK_MASS) * NORMAL_FRICTION;
     if (sameFoot) {
       imp *= SAME_FOOT_IMPULSE_RATIO;
       dirA += (foot === 'L' ? -1 : 1) * SAME_FOOT_DIR_OFFSET;
+      showPenaltyFlash();
     } else {
       if (dirA > 0) dirA = Math.max(0, dirA - ANGLE_RECOVERY);
       else if (dirA < 0) dirA = Math.min(0, dirA + ANGLE_RECOVERY);
@@ -647,8 +685,9 @@
     if (!hudTimeEl || !hudSubEl) return;
     var distLine =
       '나: ' + dist.toFixed(1) + 'm | 상대: ' + botDist.toFixed(1) + 'm';
+    var dirWarning = Math.abs(dirA) > 0.1 ? ' ⚠️' : '';
     var sub =
-      'v: ' + v.toFixed(1) + ' | ' + distLine;
+      'v: ' + v.toFixed(1) + ' | ' + distLine + dirWarning;
     if (gameEnded) {
       hudTimeEl.textContent = '0.0';
       hudSubEl.textContent = sub;
@@ -888,6 +927,8 @@
     const waddleAmp = (0.12 + speedN * 0.38) * 1.85;
     const waddle = waddleAmp * Math.sin(ph) + wobbleImpulse;
     bodySquashGroup.rotation.z = waddle;
+    const tiltFromDirA = dirA * 2.5;
+    bodySquashGroup.rotation.z += tiltFromDirA;
     bodySquashGroup.position.x = Math.sin(ph) * (0.07 + speedN * 0.22) * 1.85;
 
     // 앞으로 기울임
@@ -926,6 +967,7 @@
       headGroup.rotation.y = Math.sin(id * 1.1) * 0.35;
       headGroup.rotation.x = Math.sin(id * 0.7) * 0.06;
       bodySquashGroup.rotation.z = Math.sin(id * 0.9) * 0.06;
+      bodySquashGroup.rotation.z += dirA * 2.5;
       bodySquashGroup.rotation.x = Math.sin(id * 0.5) * 0.03;
       legLU.rotation.x = Math.sin(id * 2.2) * 0.12;
       legRU.rotation.x = Math.sin(id * 2.2 + Math.PI) * 0.12;
@@ -971,6 +1013,7 @@
       const bwad = (0.12 + botSpeedN * 0.38) * 1.85;
       const bwaddle = bwad * Math.sin(bph) + botWobbleImpulse;
       botDuck.body.rotation.z = bwaddle;
+      botDuck.body.rotation.z += botDirA * 2.5;
       botDuck.body.position.x = Math.sin(bph) * (0.07 + botSpeedN * 0.22) * 1.85;
       const blev = botSpeedN * 0.38;
       botDuck.body.rotation.x =
@@ -1001,6 +1044,7 @@
       botDuck.head.rotation.y = Math.sin(bid * 1.1) * 0.35;
       botDuck.head.rotation.x = Math.sin(bid * 0.7) * 0.06;
       botDuck.body.rotation.z = Math.sin(bid * 0.9) * 0.06;
+      botDuck.body.rotation.z += botDirA * 2.5;
       botDuck.body.rotation.x = Math.sin(bid * 0.5) * 0.03;
       botDuck.leftLeg.hip.rotation.x = Math.sin(bid * 2.2) * 0.12;
       botDuck.rightLeg.hip.rotation.x = Math.sin(bid * 2.2 + Math.PI) * 0.12;
