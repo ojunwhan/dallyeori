@@ -29,33 +29,6 @@
     #cdOverlay .cd-sub {
       font-size: min(5vw, 28px); font-weight: 600; opacity: 0.95;
     }
-    #start-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 100;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-    }
-    #start-overlay .start-title {
-      color: #fff;
-      font-size: 48px;
-      font-weight: bold;
-      text-align: center;
-      text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
-    }
-    #start-overlay .start-sub {
-      color: #fff;
-      font-size: 16px;
-      font-weight: 500;
-      margin-top: 14px;
-      opacity: 0.95;
-      text-align: center;
-    }
     #foot-ui {
       position: fixed;
       bottom: 20px;
@@ -105,10 +78,6 @@
   </div>
   <div id="info">
     ← 왼발 | → 오른발
-  </div>
-  <div id="start-overlay">
-    <div class="start-title">TAP TO START</div>
-    <div class="start-sub">화면을 터치하세요</div>
   </div>
   <div id="foot-ui">
     <div id="foot-left" class="foot-btn">
@@ -312,6 +281,7 @@
    * @param {'L'|'R'} foot
    */
   function onStep(foot) {
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     if (inputLocked || gameEnded) return;
     playFootstep();
     run.squashT = 1;
@@ -720,20 +690,6 @@
     else cdOverlayEl.textContent = '';
   }
 
-  const startOverlayEl = typeof document !== 'undefined' ? document.getElementById('start-overlay') : null;
-  if (startOverlayEl) {
-    startOverlayEl.addEventListener('pointerdown', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      ensureAudioCtx();
-      if (audioCtx) {
-        audioCtx.resume();
-      }
-      startOverlayEl.style.display = 'none';
-      countdownPrimed = true;
-    });
-  }
-
   window.addEventListener('pointerdown', (e) => {
     if (inputLocked) return;
     if (window.innerWidth <= 768) return;
@@ -784,70 +740,68 @@
     const dt = Math.min(clock.getDelta(), 0.05);
 
     if (!gameEnded) {
-      if (countdownPrimed) {
-        if (waitBeforeCd < COUNTDOWN_PREWAIT_S) {
-          waitBeforeCd += dt;
-        } else {
-          cdElapsed += dt;
-          if (waitBeforeCd >= COUNTDOWN_PREWAIT_S && !gameEnded) {
-            var tCd = cdElapsed;
-            var cdNumber;
-            if (tCd < COUNTDOWN_DIGIT_S) cdNumber = 3;
-            else if (tCd < COUNTDOWN_DIGIT_S * 2) cdNumber = 2;
-            else if (tCd < COUNTDOWN_DIGIT_S * 3) cdNumber = 1;
-            else if (tCd < COUNTDOWN_DIGIT_S * 3 + GO_DISPLAY_S) cdNumber = 0;
-            else cdNumber = -1;
-            if (cdNumber !== lastCdNumber) {
-              lastCdNumber = cdNumber;
-              if (cdNumber > 0) playCountdownBeep(false);
-              else if (cdNumber === 0) playCountdownBeep(true);
-            }
+      if (waitBeforeCd < COUNTDOWN_PREWAIT_S) {
+        waitBeforeCd += dt;
+      } else {
+        cdElapsed += dt;
+        if (waitBeforeCd >= COUNTDOWN_PREWAIT_S && !gameEnded) {
+          var tCd = cdElapsed;
+          var cdNumber;
+          if (tCd < COUNTDOWN_DIGIT_S) cdNumber = 3;
+          else if (tCd < COUNTDOWN_DIGIT_S * 2) cdNumber = 2;
+          else if (tCd < COUNTDOWN_DIGIT_S * 3) cdNumber = 1;
+          else if (tCd < COUNTDOWN_DIGIT_S * 3 + GO_DISPLAY_S) cdNumber = 0;
+          else cdNumber = -1;
+          if (cdNumber !== lastCdNumber) {
+            lastCdNumber = cdNumber;
+            if (cdNumber > 0) playCountdownBeep(false);
+            else if (cdNumber === 0) playCountdownBeep(true);
           }
-          if (!gameStarted && cdElapsed >= COUNTDOWN_DIGIT_S * 3) {
-            gameStarted = true;
-            raceTimeLeft = RACE_LIMIT_S;
+        }
+        if (!gameStarted && cdElapsed >= COUNTDOWN_DIGIT_S * 3) {
+          gameStarted = true;
+          raceTimeLeft = RACE_LIMIT_S;
+          v = 0;
+          dist = 0;
+          lateral = 0;
+          dirA = 0;
+          lastFoot = null;
+          duckRoot.position.set(PLAYER_LANE_X, 0, 0);
+          botV = 0;
+          botDist = 0;
+          botLateral = 0;
+          botDirA = 0;
+          botLastFoot = null;
+          botRunPhase = 0;
+          botAnim.phase = 0;
+          botAnim.idleT = 0;
+          botAnim.squashT = 0;
+          botAnim.dipImpulse = 0;
+          botAnim.wasContact = false;
+          botRoot.position.set(BOT_LANE_X, 0, 0);
+          botNextTapTime = performance.now();
+          boostTimer = 0.3;
+          updateHud();
+        }
+        if (gameStarted) {
+          raceTimeLeft -= dt;
+          if (raceTimeLeft <= 0) {
+            raceTimeLeft = 0;
+            gameEnded = true;
+            inputLocked = true;
             v = 0;
-            dist = 0;
-            lateral = 0;
-            dirA = 0;
-            lastFoot = null;
-            duckRoot.position.set(PLAYER_LANE_X, 0, 0);
             botV = 0;
-            botDist = 0;
-            botLateral = 0;
-            botDirA = 0;
-            botLastFoot = null;
-            botRunPhase = 0;
-            botAnim.phase = 0;
-            botAnim.idleT = 0;
-            botAnim.squashT = 0;
-            botAnim.dipImpulse = 0;
-            botAnim.wasContact = false;
-            botRoot.position.set(BOT_LANE_X, 0, 0);
-            botNextTapTime = performance.now();
-            boostTimer = 0.3;
-            updateHud();
-          }
-          if (gameStarted) {
-            raceTimeLeft -= dt;
-            if (raceTimeLeft <= 0) {
-              raceTimeLeft = 0;
-              gameEnded = true;
-              inputLocked = true;
-              v = 0;
-              botV = 0;
-              if (dist > botDist + 0.01) {
-                finishOverlayMain = 'WIN!';
-                finishColor = '#4CAF50';
-              } else if (botDist > dist + 0.01) {
-                finishOverlayMain = 'LOSE!';
-                finishColor = '#f44336';
-              } else {
-                finishOverlayMain = 'DRAW!';
-                finishColor = '#FFD700';
-              }
-              updateHud();
+            if (dist > botDist + 0.01) {
+              finishOverlayMain = 'WIN!';
+              finishColor = '#4CAF50';
+            } else if (botDist > dist + 0.01) {
+              finishOverlayMain = 'LOSE!';
+              finishColor = '#f44336';
+            } else {
+              finishOverlayMain = 'DRAW!';
+              finishColor = '#FFD700';
             }
+            updateHud();
           }
         }
       }
