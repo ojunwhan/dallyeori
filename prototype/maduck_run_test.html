@@ -410,7 +410,9 @@
       }
     }
 
-    duckRoot.rotation.y = courseYaw;
+    // 메시 기본이 +Z(부리) 쪽이라 카메라(+Z 뒤)를 향함 → π 만큼 뒤집어
+    // 전진(-Z 월드) = 카트라이더式 앞, 카메라는 +Z 뒤에서 궁둥이·꼬리만 비춤
+    duckRoot.rotation.y = courseYaw + Math.PI;
 
     const runningAnim = racePhase === 'racing' && run.v >= IDLE_ENTER;
     const idle = !runningAnim;
