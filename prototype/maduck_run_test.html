@@ -60,6 +60,8 @@
   const GO_HOLD_SEC = 0.65;
   const DIR_A_LIMIT = 1.57;
   const IDLE_ENTER = 0.15;
+  /** 월드 고정 트랙 Z방향 길이(m) — 오리만 이동, 경기장은 절대 따라가지 않음 */
+  const TRACK_WORLD_LEN = 400;
 
   let renderer, scene, camera;
   let duckRoot, bodySquashGroup, torsoMesh, headGroup, tailPivot, wingL, wingR;
@@ -129,7 +131,7 @@
     const tex = new THREE.CanvasTexture(c);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = 4;
-    tex.repeat.set(1, 320);
+    tex.repeat.set(1, TRACK_WORLD_LEN / 0.5);
     return tex;
   }
 
@@ -288,9 +290,9 @@
   function makeWorld() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87c5ff);
-    scene.fog = new THREE.Fog(0xa8dcff, 10, 48);
+    scene.fog = new THREE.Fog(0xa8dcff, 15, 120);
 
-    camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 200);
+    camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 650);
     camera.position.set(0, 2.2, 5.2);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -307,27 +309,28 @@
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near = 0.5;
-    sun.shadow.camera.far = 60;
-    sun.shadow.camera.left = -20;
-    sun.shadow.camera.right = 20;
-    sun.shadow.camera.top = 20;
-    sun.shadow.camera.bottom = -20;
+    sun.shadow.camera.far = 220;
+    sun.shadow.camera.left = -40;
+    sun.shadow.camera.right = 40;
+    sun.shadow.camera.top = 200;
+    sun.shadow.camera.bottom = -200;
     scene.add(sun);
 
-    // 잔디
+    // 잔디 — 월드 고정 (오리/카메라만 이동)
     const grass = new THREE.Mesh(
-      new THREE.PlaneGeometry(160, 160, 1, 1),
+      new THREE.PlaneGeometry(420, TRACK_WORLD_LEN + 40, 1, 1),
       new THREE.MeshStandardMaterial({ color: 0x4caf6a, roughness: 0.95, metalness: 0 })
     );
     grass.rotation.x = -Math.PI / 2;
+    grass.position.y = 0;
     grass.receiveShadow = true;
     scene.add(grass);
     ground = grass;
 
-    // 트랙 레인 — 0.5m 줄무늬(UV 스크롤로 속도감)
+    // 트랙 레인 — 0.5m 줄무늬, 월드 좌표 고정
     trackStripeTex = makeTrackStripeTexture();
     trackMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.2, 160, 1, 1),
+      new THREE.PlaneGeometry(3.2, TRACK_WORLD_LEN, 1, 1),
       new THREE.MeshStandardMaterial({
         map: trackStripeTex,
         color: 0xffffff,
@@ -340,9 +343,9 @@
     trackMesh.receiveShadow = true;
     scene.add(trackMesh);
 
-    // 레인 라인 (트랙과 동일 오프셋으로 따라감)
+    // 레인 라인 — 월드 고정
     laneLineL = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.08, 160),
+      new THREE.PlaneGeometry(0.08, TRACK_WORLD_LEN),
       new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x222222 })
     );
     laneLineL.rotation.x = -Math.PI / 2;
@@ -352,11 +355,12 @@
     laneLineR.position.set(1.45, 0.02, 0);
     scene.add(laneLineR);
 
-    // 트랙 양옆 1m 간격 거리 마커(작은 말뚝)
+    // 트랙 양옆 1m 간격 거리 마커(작은 말뚝) — 월드 고정
     distMarkersGroup = new THREE.Group();
     const poleMat = clayMat(0xeceff1, 0.75);
     const capMat = clayMat(0xffb300, 0.7);
-    for (let i = -80; i <= 80; i++) {
+    const markHalf = Math.floor(TRACK_WORLD_LEN / 2);
+    for (let i = -markHalf; i <= markHalf; i++) {
       if (i === 0) continue;
       const z = i * 1.0;
       const poleGeo = new THREE.CylinderGeometry(0.04, 0.055, 0.32, 6);
@@ -375,13 +379,12 @@
       distMarkersGroup.add(capR);
     }
 
-    // 배경 나무 촘촘히 (오리 XZ와 같이 이동)
+    scene.add(distMarkersGroup);
     decorGroup = new THREE.Group();
-    decorGroup.add(distMarkersGroup);
     scene.add(decorGroup);
     const trunkMat = clayMat(0x5d4037);
     const leafMat = clayMat(0x2e7d32, 0.9);
-    for (let i = -28; i <= 28; i++) {
+    for (let i = -70; i <= 70; i++) {
       if (i === 0) continue;
       const z = i * 2.8 - 1.4;
       const side = i % 2 === 0 ? -1 : 1;
@@ -521,6 +524,7 @@
         duckPhys.lastTapRaceT = 0;
         lastFoot = null;
         countdownJogT = 0;
+        duckRoot.position.set(0, 0, 0);
         updateHud();
       }
       updateCountdownOverlay();
@@ -568,10 +572,6 @@
       distanceM += fwd;
       duckRoot.position.x += lat;
       duckRoot.position.z += -fwd;
-      if (trackStripeTex) {
-        trackStripeTex.offset.y += fwd / 160;
-        if (trackStripeTex.offset.y > 1e6) trackStripeTex.offset.y %= 1;
-      }
     } else {
       lastEffA = duckPhys.dirA;
     }
@@ -649,21 +649,6 @@
     wingR.rotation.y = 0.15 + wingOpen * 0.35;
     wingL.rotation.z = 0.25 + Math.sin(ph * 2) * 0.06 * speedN;
     wingR.rotation.z = -0.25 - Math.sin(ph * 2) * 0.06 * speedN;
-
-    ground.position.x = duckRoot.position.x;
-    ground.position.z = duckRoot.position.z;
-    trackMesh.position.x = duckRoot.position.x;
-    trackMesh.position.z = duckRoot.position.z;
-    if (laneLineL && laneLineR) {
-      laneLineL.position.x = duckRoot.position.x - 1.45;
-      laneLineL.position.z = duckRoot.position.z;
-      laneLineR.position.x = duckRoot.position.x + 1.45;
-      laneLineR.position.z = duckRoot.position.z;
-    }
-    if (decorGroup) {
-      decorGroup.position.x = duckRoot.position.x;
-      decorGroup.position.z = duckRoot.position.z;
-    }
 
     // Idle
     if (idle) {
