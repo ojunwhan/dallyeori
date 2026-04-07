@@ -62,6 +62,8 @@
   const IDLE_ENTER = 0.15;
   /** 월드 고정 트랙 Z방향 길이(m) — 오리만 이동, 경기장은 절대 따라가지 않음 */
   const TRACK_WORLD_LEN = 400;
+  /** 트랙 진행 방향 줄무늬 간격(m) — 고정 메시 위에서 오리 z 이동으로 발 밑으로 지나감 */
+  const TRACK_STRIPE_SPACING_M = 0.3;
 
   let renderer, scene, camera;
   let duckRoot, bodySquashGroup, torsoMesh, headGroup, tailPivot, wingL, wingR;
@@ -117,22 +119,75 @@
     return current + Math.sign(d) * maxStep;
   }
 
-  /** 트랙 진행 방향(Z)으로 0.5m 간격 줄무늬 */
+  /** 트랙 진행 방향(Z) 줄무늬 — 밝은 갈색/어두운 갈색 (TRACK_STRIPE_SPACING_M 주기) */
   function makeTrackStripeTexture() {
     const c = document.createElement('canvas');
     c.width = 4;
     c.height = 32;
     const cx = c.getContext('2d');
     const h = 16;
-    cx.fillStyle = '#4e3828';
+    cx.fillStyle = '#3e2723';
     cx.fillRect(0, 0, 4, h);
-    cx.fillStyle = '#6d4c41';
+    cx.fillStyle = '#8d6e63';
     cx.fillRect(0, h, 4, h);
     const tex = new THREE.CanvasTexture(c);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = 4;
-    tex.repeat.set(1, TRACK_WORLD_LEN / 0.5);
+    tex.repeat.set(1, TRACK_WORLD_LEN / TRACK_STRIPE_SPACING_M);
     return tex;
+  }
+
+  /** Web Audio — 탭마다 착착 발소리 (L/R 피치 차) */
+  let footAudioCtx = null;
+  function ensureFootAudio() {
+    if (!footAudioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) footAudioCtx = new AC();
+    }
+    if (footAudioCtx && footAudioCtx.state === 'suspended') {
+      try {
+        footAudioCtx.resume();
+      } catch (e) {}
+    }
+  }
+
+  /**
+   * @param {'L'|'R'} foot
+   */
+  function playFootstep(foot) {
+    ensureFootAudio();
+    if (!footAudioCtx) return;
+    const t0 = footAudioCtx.currentTime;
+    const rate = foot === 'L' ? 1.0 : 1.14;
+    const dur = 0.048;
+    const nSamples = Math.max(1, Math.floor(footAudioCtx.sampleRate * dur));
+    const buf = footAudioCtx.createBuffer(1, nSamples, footAudioCtx.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < nSamples; i++) {
+      ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / nSamples, 1.8);
+    }
+    const noise = footAudioCtx.createBufferSource();
+    noise.buffer = buf;
+    const gN = footAudioCtx.createGain();
+    gN.gain.setValueAtTime(0.2, t0);
+    gN.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    noise.connect(gN);
+
+    const osc = footAudioCtx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(110 * rate, t0);
+    osc.frequency.exponentialRampToValueAtTime(62 * rate, t0 + 0.055);
+    const gO = footAudioCtx.createGain();
+    gO.gain.setValueAtTime(0.32, t0);
+    gO.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.085);
+    osc.connect(gO);
+
+    gN.connect(footAudioCtx.destination);
+    gO.connect(footAudioCtx.destination);
+    noise.start(t0);
+    osc.start(t0);
+    noise.stop(t0 + dur + 0.02);
+    osc.stop(t0 + 0.1);
   }
 
   function makeDuck() {
@@ -292,7 +347,7 @@
     scene.background = new THREE.Color(0x87c5ff);
     scene.fog = new THREE.Fog(0xa8dcff, 15, 120);
 
-    camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 650);
+    camera = new THREE.PerspectiveCamera(63, innerWidth / innerHeight, 0.1, 650);
     camera.position.set(0, 2.2, 5.2);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -316,6 +371,7 @@
     sun.shadow.camera.bottom = -200;
     scene.add(sun);
 
+    // 잔디·트랙·라인·마커·나무: 전부 월드 좌표 고정. animate에서 position 보간 금지.
     // 잔디 — 월드 고정 (오리/카메라만 이동)
     const grass = new THREE.Mesh(
       new THREE.PlaneGeometry(420, TRACK_WORLD_LEN + 40, 1, 1),
@@ -465,6 +521,7 @@
     if (racePhase === 'done') return;
 
     if (racePhase === 'countdown') {
+      playFootstep(foot);
       run.squashT = 1;
       run.phase += Math.PI * 0.5;
       countdownJogT = 0.38;
@@ -472,6 +529,7 @@
     }
 
     if (racePhase === 'racing') {
+      playFootstep(foot);
       applyTapPhysics(foot);
       run.squashT = 1;
       run.phase += Math.PI * 0.5;
@@ -615,18 +673,19 @@
     legRU.rotation.x = Math.sin(rightPhase) * thighAmp;
     legRL.rotation.x = Math.max(0, -Math.sin(rightPhase + 0.4) * swing * 0.9);
 
-    // 뒤뚱 — 롤 + 무게 이동 (빠를수록)
-    const waddle = (0.12 + speedN * 0.22) * Math.sin(ph);
+    // 뒤뚱 — 롤 + 무게 이동 (과장·빠를수록 격해짐)
+    const waddleAmp = (0.12 + speedN * 0.38) * 1.85;
+    const waddle = waddleAmp * Math.sin(ph);
     bodySquashGroup.rotation.z = waddle;
-    bodySquashGroup.position.x = Math.sin(ph) * (0.04 + speedN * 0.1);
+    bodySquashGroup.position.x = Math.sin(ph) * (0.07 + speedN * 0.22) * 1.85;
 
     // 앞으로 기울임
     const leanF = speedN * 0.38;
     bodySquashGroup.rotation.x = leanF + Math.sin(ph * 2) * 0.04 * speedN;
 
-    // 닭 까딱 — 머리 피치
-    headGroup.rotation.x = Math.sin(ph * 2) * (0.18 + speedN * 0.2);
-    headGroup.rotation.y = Math.sin(ph) * 0.08 * speedN;
+    // 닭 까딱 — 머리 피치·요 (더 과장)
+    headGroup.rotation.x = Math.sin(ph * 2) * (0.18 + speedN * 0.2) * 2.0;
+    headGroup.rotation.y = Math.sin(ph) * (0.08 + speedN * 0.06) * 2.0 * speedN;
 
     // 꼬리 좌우
     tailPivot.rotation.y = Math.sin(ph + 0.5) * (0.55 + speedN * 0.65);
