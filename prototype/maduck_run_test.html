@@ -21,9 +21,13 @@
     }
     #hud .sub { font-size: 13px; font-weight: 500; opacity: .85; margin-top: 4px; }
     #cdOverlay {
-      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
       pointer-events: none; z-index: 20; font-size: min(22vw, 120px); font-weight: 900;
       color: #fff; text-shadow: 0 4px 24px rgba(0,0,0,.5); letter-spacing: -0.02em;
+      gap: 12px;
+    }
+    #cdOverlay .cd-sub {
+      font-size: min(5vw, 28px); font-weight: 600; opacity: 0.95;
     }
   </style>
 </head>
@@ -58,6 +62,24 @@
   const GO_DISPLAY_S = 0.65;
   const DIR_A_LIMIT = 1.57;
   const IDLE_ENTER = 0.15;
+  const PLAYER_LANE_X = -1.25;
+  const BOT_LANE_X = 1.25;
+  const LANE_LATERAL_MAX = 1.25;
+  let boostTimer = 0;
+  let botV = 0;
+  let botDist = 0;
+  let botLateral = 0;
+  let botDirA = 0;
+  let botLastFoot = null;
+  let botNextTapTime = 0;
+  let botRunPhase = 0;
+  const BOT_BASE_INTERVAL = 180;
+  const BOT_VARIANCE = 40;
+  const BOT_MISS_CHANCE = 0.08;
+  let finishOverlayMain = '';
+  let finishOverlaySub = '';
+  let finishColor = '#fff';
+  const BASE_CAMERA_FOV = 63;
   /** 월드 고정 트랙 Z방향 길이(m) — 오리만 이동, 경기장은 절대 따라가지 않음 */
   const TRACK_WORLD_LEN = 400;
   /** 트랙 진행 방향 줄무늬 간격(m) — 고정 메시 위에서 오리 z 이동으로 발 밑으로 지나감 */
@@ -100,6 +122,17 @@
   /** 카운트다운 중 탭 시 제자리뛰기 애니 길이 */
   let countdownJogT = 0;
   let wobbleImpulse = 0;
+  let botWobbleImpulse = 0;
+  var playerDuck = null;
+  var botDuck = null;
+  let botRoot = null;
+  const botAnim = {
+    phase: 0,
+    idleT: 0,
+    squashT: 0,
+    dipImpulse: 0,
+    wasContact: false,
+  };
 
   function clayMat(hex, r = 0.88, m = 0.04) {
     return new THREE.MeshStandardMaterial({
@@ -186,121 +219,115 @@
     dirA = Math.max(-DIR_A_LIMIT, Math.min(DIR_A_LIMIT, dirA));
   }
 
-  function makeDuck() {
+  function createDuck(collarColor) {
     const black = clayMat(0x1c1c1e);
     const orange = clayMat(0xff6a2d, 0.82);
     const white = clayMat(0xf5f5f5, 0.9);
     const pupil = clayMat(0x0a0a0a, 0.75);
+    const collarMat = clayMat(collarColor, 0.82);
+    const emblemMat = clayMat(collarColor, 0.82);
 
-    duckRoot = new THREE.Group();
-    duckRoot.position.set(0, 0, 0);
+    const root = new THREE.Group();
+    root.position.set(0, 0, 0);
 
-    bodySquashGroup = new THREE.Group();
-    duckRoot.add(bodySquashGroup);
+    const bodySquash = new THREE.Group();
+    root.add(bodySquash);
 
-    // 뚱뚱한 알통 — 세그먼트 많이 + 약간 늘린 구체 (클레이 둥글림)
     const bodyGeo = new THREE.SphereGeometry(0.52, 48, 40);
     bodyGeo.scale(1.05, 1.18, 0.92);
-    torsoMesh = new THREE.Mesh(bodyGeo, black);
-    torsoMesh.position.y = 0.62;
-    torsoMesh.castShadow = true;
-    bodySquashGroup.add(torsoMesh);
+    const belly = new THREE.Mesh(bodyGeo, black);
+    belly.position.y = 0.62;
+    belly.castShadow = true;
+    bodySquash.add(belly);
 
-    // 목 밴드 (뚱한 토러스)
     const collar = new THREE.Mesh(
       new THREE.TorusGeometry(0.38, 0.09, 16, 48),
-      orange
+      collarMat
     );
     collar.rotation.x = Math.PI / 2;
     collar.position.set(0, 1.12, 0);
     collar.castShadow = true;
-    bodySquashGroup.add(collar);
+    bodySquash.add(collar);
 
-    // 밴드 앞쪽 흰 O 느낌
-    const logo = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.018, 12, 24), white);
+    const logo = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.018, 12, 24), emblemMat);
     logo.position.set(0, 1.12, 0.36);
     logo.rotation.y = 0;
-    bodySquashGroup.add(logo);
+    bodySquash.add(logo);
 
-    headGroup = new THREE.Group();
-    headGroup.position.set(0, 1.38, 0.06);
-    bodySquashGroup.add(headGroup);
+    const head = new THREE.Group();
+    head.position.set(0, 1.38, 0.06);
+    bodySquash.add(head);
 
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.44, 40, 32), black);
-    head.castShadow = true;
-    headGroup.add(head);
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.44, 40, 32), black);
+    headMesh.castShadow = true;
+    head.add(headMesh);
 
-    // 머리털 3개
+    const hairGroup = new THREE.Group();
+    head.add(hairGroup);
     for (let i = -1; i <= 1; i++) {
       const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), black);
       tuft.position.set(i * 0.12, 0.46, -0.02);
       tuft.scale.set(0.7, 1.15, 0.65);
-      headGroup.add(tuft);
+      hairGroup.add(tuft);
     }
 
-    // 화난 눈썹 (r128에는 CapsuleGeometry 없음 → 동일 실루엣에 가깝게 원통)
     const browGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.22, 8, 1);
     const browL = new THREE.Mesh(browGeo, black);
     browL.rotation.z = 0.55;
     browL.rotation.x = 0.2;
     browL.position.set(-0.16, 0.08, 0.38);
-    headGroup.add(browL);
+    head.add(browL);
     const browR = new THREE.Mesh(browGeo, black);
     browR.rotation.z = -0.55;
     browR.rotation.x = 0.2;
     browR.position.set(0.16, 0.08, 0.38);
-    headGroup.add(browR);
+    head.add(browR);
 
-    // 눈
     const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), white);
     eyeWhite.position.set(-0.17, 0.02, 0.39);
-    headGroup.add(eyeWhite);
+    head.add(eyeWhite);
     const eyeWhite2 = eyeWhite.clone();
     eyeWhite2.position.x = 0.17;
-    headGroup.add(eyeWhite2);
+    head.add(eyeWhite2);
     const pup = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), pupil);
     pup.position.set(-0.15, 0.02, 0.47);
-    headGroup.add(pup);
+    head.add(pup);
     const pup2 = pup.clone();
     pup2.position.set(0.19, 0.02, 0.47);
-    headGroup.add(pup2);
+    head.add(pup2);
 
-    // 부리 — 납작한 캡슐 느낌
     const beak = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 16), orange);
     beak.scale.set(1.35, 0.65, 0.85);
     beak.position.set(0, -0.06, 0.48);
-    headGroup.add(beak);
+    head.add(beak);
 
-    // 날개 (몸에 붙음)
     const wingGeo = new THREE.SphereGeometry(0.22, 16, 12);
     wingGeo.scale(0.35, 0.75, 1);
-    wingL = new THREE.Mesh(wingGeo, black);
-    wingL.position.set(-0.52, 0.75, -0.02);
-    wingL.rotation.z = 0.25;
-    wingL.rotation.y = -0.15;
-    wingL.castShadow = true;
-    bodySquashGroup.add(wingL);
-    wingR = wingL.clone();
-    wingR.position.x = 0.52;
-    wingR.rotation.z = -0.25;
-    wingR.rotation.y = 0.15;
-    bodySquashGroup.add(wingR);
+    const leftWing = new THREE.Mesh(wingGeo, black);
+    leftWing.position.set(-0.52, 0.75, -0.02);
+    leftWing.rotation.z = 0.25;
+    leftWing.rotation.y = -0.15;
+    leftWing.castShadow = true;
+    bodySquash.add(leftWing);
+    const rightWing = leftWing.clone();
+    rightWing.position.x = 0.52;
+    rightWing.rotation.z = -0.25;
+    rightWing.rotation.y = 0.15;
+    bodySquash.add(rightWing);
 
-    // 꼬리 — 엉덩이 흔들림용 피벗
-    tailPivot = new THREE.Group();
-    tailPivot.position.set(0, 0.72, -0.48);
-    bodySquashGroup.add(tailPivot);
-    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 12), black);
-    tail.rotation.x = -Math.PI / 2 + 0.35;
-    tail.position.set(0, 0.05, -0.12);
-    tail.castShadow = true;
-    tailPivot.add(tail);
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.72, -0.48);
+    bodySquash.add(tail);
+    const tailMesh = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 12), black);
+    tailMesh.rotation.x = -Math.PI / 2 + 0.35;
+    tailMesh.position.set(0, 0.05, -0.12);
+    tailMesh.castShadow = true;
+    tail.add(tailMesh);
 
     function makeLeg(side) {
       const hip = new THREE.Group();
       hip.position.set(side * 0.22, 0.38, 0);
-      bodySquashGroup.add(hip);
-
+      bodySquash.add(hip);
       const upper = new THREE.Mesh(
         new THREE.CylinderGeometry(0.11, 0.11, 0.24, 12, 1),
         orange
@@ -308,11 +335,9 @@
       upper.position.y = -0.12;
       upper.castShadow = true;
       hip.add(upper);
-
       const lower = new THREE.Group();
       lower.position.y = -0.22;
       hip.add(lower);
-
       const shin = new THREE.Mesh(
         new THREE.CylinderGeometry(0.09, 0.09, 0.18, 10, 1),
         orange
@@ -320,22 +345,103 @@
       shin.position.y = -0.1;
       shin.castShadow = true;
       lower.add(shin);
-
       const foot = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), orange);
       foot.scale.set(1.5, 0.35, 2.1);
       foot.position.y = -0.22;
       foot.castShadow = true;
       lower.add(foot);
-
-      return { hip, upper, lower, footMesh: foot };
+      return { hip, lower, foot };
     }
-
     const L = makeLeg(-1);
     const R = makeLeg(1);
-    legLU = L.hip; legLL = L.lower; footL = L.footMesh;
-    legRU = R.hip; legRL = R.lower; footR = R.footMesh;
 
-    return duckRoot;
+    return {
+      root,
+      body: bodySquash,
+      head,
+      hairGroup,
+      leftLeg: { hip: L.hip, lower: L.lower, foot: L.foot },
+      rightLeg: { hip: R.hip, lower: R.lower, foot: R.foot },
+      leftWing,
+      rightWing,
+      tail,
+      belly,
+    };
+  }
+
+  function assignPlayerRefsFromDuck(d) {
+    duckRoot = d.root;
+    bodySquashGroup = d.body;
+    headGroup = d.head;
+    torsoMesh = d.belly;
+    tailPivot = d.tail;
+    wingL = d.leftWing;
+    wingR = d.rightWing;
+    legLU = d.leftLeg.hip;
+    legLL = d.leftLeg.lower;
+    footL = d.leftLeg.foot;
+    legRU = d.rightLeg.hip;
+    legRL = d.rightLeg.lower;
+    footR = d.rightLeg.foot;
+  }
+
+  function botStep() {
+    var foot = botLastFoot === 'L' ? 'R' : 'L';
+    if (Math.random() < BOT_MISS_CHANCE) foot = botLastFoot || 'L';
+    var sameFoot = foot === botLastFoot;
+    var imp = (TAP_FORCE / DUCK_MASS) * NORMAL_FRICTION;
+    if (sameFoot) {
+      imp *= SAME_FOOT_IMPULSE_RATIO;
+      botDirA += (foot === 'L' ? -1 : 1) * SAME_FOOT_DIR_OFFSET;
+    } else {
+      if (botDirA > 0) botDirA = Math.max(0, botDirA - ANGLE_RECOVERY);
+      else if (botDirA < 0) botDirA = Math.min(0, botDirA + ANGLE_RECOVERY);
+    }
+    botV = Math.min(botV + imp, MAX_SPEED);
+    botLastFoot = foot;
+    botDirA = Math.max(-DIR_A_LIMIT, Math.min(DIR_A_LIMIT, botDirA));
+    botRunPhase += Math.PI * 0.5;
+    playFootstep();
+    botAnim.squashT = 1;
+    botAnim.phase += Math.PI * 0.5;
+    botWobbleImpulse = 0.15 * (foot === 'L' ? 1 : -1);
+  }
+
+  function makeDistanceLabelSprites() {
+    const g = new THREE.Group();
+    for (let m = 10; m <= 100; m += 10) {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 128;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, 256, 128);
+      ctx.fillStyle = '#ffc107';
+      ctx.font = 'bold 56px system-ui,sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(m + 'm', 128, 64);
+      const tex = new THREE.CanvasTexture(c);
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+      const sp = new THREE.Sprite(mat);
+      sp.position.set(-3.5, 1.5, -m);
+      sp.scale.set(3.2, 1.6, 1);
+      g.add(sp);
+    }
+    return g;
+  }
+
+  function makeDashedStripeGroup(x) {
+    const grp = new THREE.Group();
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const half = TRACK_WORLD_LEN / 2;
+    for (let z = -half; z < half; z += 1) {
+      const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.5, 1, 1), mat);
+      dash.rotation.x = -Math.PI / 2;
+      dash.position.set(x, 0.021, z + 0.25);
+      grp.add(dash);
+    }
+    return grp;
   }
 
   function makeWorld() {
@@ -343,8 +449,8 @@
     scene.background = new THREE.Color(0x87c5ff);
     scene.fog = new THREE.Fog(0xa8dcff, 15, 120);
 
-    camera = new THREE.PerspectiveCamera(63, innerWidth / innerHeight, 0.1, 650);
-    camera.position.set(0, 2.2, 5.2);
+    camera = new THREE.PerspectiveCamera(BASE_CAMERA_FOV, innerWidth / innerHeight, 0.1, 650);
+    camera.position.set(0, 4.5, 8);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(innerWidth, innerHeight);
@@ -370,7 +476,7 @@
     // 잔디·트랙·라인·마커·나무: 전부 월드 좌표 고정. animate에서 position 보간 금지.
     // 잔디 — 월드 고정 (오리/카메라만 이동)
     const grass = new THREE.Mesh(
-      new THREE.PlaneGeometry(420, TRACK_WORLD_LEN + 40, 1, 1),
+      new THREE.PlaneGeometry(520, TRACK_WORLD_LEN + 40, 1, 1),
       new THREE.MeshStandardMaterial({ color: 0x4caf6a, roughness: 0.95, metalness: 0 })
     );
     grass.rotation.x = -Math.PI / 2;
@@ -382,7 +488,7 @@
     // 트랙 레인 — 0.5m 줄무늬, 월드 좌표 고정
     trackStripeTex = makeTrackStripeTexture();
     trackMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.2, TRACK_WORLD_LEN, 1, 1),
+      new THREE.PlaneGeometry(6, TRACK_WORLD_LEN, 1, 1),
       new THREE.MeshStandardMaterial({
         map: trackStripeTex,
         color: 0xffffff,
@@ -395,42 +501,23 @@
     trackMesh.receiveShadow = true;
     scene.add(trackMesh);
 
-    // 레인 라인 — 월드 고정
+    // 레인 외곽 실선
     laneLineL = new THREE.Mesh(
       new THREE.PlaneGeometry(0.08, TRACK_WORLD_LEN),
       new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x222222 })
     );
     laneLineL.rotation.x = -Math.PI / 2;
-    laneLineL.position.set(-1.45, 0.02, 0);
+    laneLineL.position.set(-2.5, 0.02, 0);
     scene.add(laneLineL);
     laneLineR = laneLineL.clone();
-    laneLineR.position.set(1.45, 0.02, 0);
+    laneLineR.position.set(2.5, 0.02, 0);
     scene.add(laneLineR);
 
-    // 트랙 양옆 1m 간격 거리 마커(작은 말뚝) — 월드 고정
-    distMarkersGroup = new THREE.Group();
-    const poleMat = clayMat(0xeceff1, 0.75);
-    const capMat = clayMat(0xffb300, 0.7);
-    const markHalf = Math.floor(TRACK_WORLD_LEN / 2);
-    for (let i = -markHalf; i <= markHalf; i++) {
-      if (i === 0) continue;
-      const z = i * 1.0;
-      const poleGeo = new THREE.CylinderGeometry(0.04, 0.055, 0.32, 6);
-      const poleL = new THREE.Mesh(poleGeo, poleMat);
-      poleL.position.set(-1.74, 0.16, z);
-      poleL.castShadow = true;
-      distMarkersGroup.add(poleL);
-      const capL = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), capMat);
-      capL.position.set(-1.74, 0.34, z);
-      distMarkersGroup.add(capL);
-      const poleR = poleL.clone();
-      poleR.position.x = 1.74;
-      const capR = capL.clone();
-      capR.position.x = 1.74;
-      distMarkersGroup.add(poleR);
-      distMarkersGroup.add(capR);
-    }
+    scene.add(makeDashedStripeGroup(0));
+    scene.add(makeDashedStripeGroup(-2.5));
+    scene.add(makeDashedStripeGroup(2.5));
 
+    distMarkersGroup = makeDistanceLabelSprites();
     scene.add(distMarkersGroup);
     decorGroup = new THREE.Group();
     scene.add(decorGroup);
@@ -440,7 +527,7 @@
       if (i === 0) continue;
       const z = i * 2.8 - 1.4;
       const side = i % 2 === 0 ? -1 : 1;
-      const tx = side * (4.8 + (Math.abs(i) % 3) * 0.45);
+      const tx = side * (5.2 + (Math.abs(i) % 3) * 0.45);
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 1.0, 8), trunkMat);
       trunk.position.set(tx, 0.5, z);
       trunk.castShadow = true;
@@ -452,7 +539,14 @@
       decorGroup.add(leaf);
     }
 
-    scene.add(makeDuck());
+    playerDuck = createDuck(0xff6b00);
+    botDuck = createDuck(0xff0000);
+    assignPlayerRefsFromDuck(playerDuck);
+    botRoot = botDuck.root;
+    duckRoot.position.set(PLAYER_LANE_X, 0, 0);
+    botRoot.position.set(BOT_LANE_X, 0, 0);
+    scene.add(duckRoot);
+    scene.add(botRoot);
     if (infoEl) {
       infoEl.textContent =
         'ontouchstart' in window
@@ -464,7 +558,10 @@
 
   function updateHud() {
     if (!hudTimeEl || !hudSubEl) return;
-    var sub = 'v: ' + v.toFixed(1) + ' | dist: ' + dist.toFixed(1) + 'm';
+    var distLine =
+      '나: ' + dist.toFixed(1) + 'm | 상대: ' + botDist.toFixed(1) + 'm';
+    var sub =
+      'v: ' + v.toFixed(1) + ' | ' + distLine;
     if (gameEnded) {
       hudTimeEl.textContent = '0.0';
       hudSubEl.textContent = sub;
@@ -482,7 +579,16 @@
   function updateCdOverlay() {
     if (!cdOverlayEl) return;
     if (gameEnded) {
-      cdOverlayEl.textContent = 'FINISH! 거리: ' + dist.toFixed(1) + 'm';
+      cdOverlayEl.innerHTML =
+        '<span style="color:' +
+        finishColor +
+        '">' +
+        finishOverlayMain +
+        '</span><div class="cd-sub">나: ' +
+        dist.toFixed(1) +
+        'm | 상대: ' +
+        botDist.toFixed(1) +
+        'm</div>';
       return;
     }
     if (waitBeforeCd < COUNTDOWN_PREWAIT_S) {
@@ -541,7 +647,21 @@
           lateral = 0;
           dirA = 0;
           lastFoot = null;
-          duckRoot.position.set(0, 0, 0);
+          duckRoot.position.set(PLAYER_LANE_X, 0, 0);
+          botV = 0;
+          botDist = 0;
+          botLateral = 0;
+          botDirA = 0;
+          botLastFoot = null;
+          botRunPhase = 0;
+          botAnim.phase = 0;
+          botAnim.idleT = 0;
+          botAnim.squashT = 0;
+          botAnim.dipImpulse = 0;
+          botAnim.wasContact = false;
+          botRoot.position.set(BOT_LANE_X, 0, 0);
+          botNextTapTime = performance.now() + BOT_BASE_INTERVAL;
+          boostTimer = 0.3;
           updateHud();
         }
         if (gameStarted) {
@@ -551,12 +671,24 @@
             gameEnded = true;
             inputLocked = true;
             v = 0;
+            botV = 0;
+            if (dist > botDist + 0.01) {
+              finishOverlayMain = 'WIN!';
+              finishColor = '#4CAF50';
+            } else if (botDist > dist + 0.01) {
+              finishOverlayMain = 'LOSE!';
+              finishColor = '#f44336';
+            } else {
+              finishOverlayMain = 'DRAW!';
+              finishColor = '#FFD700';
+            }
             updateHud();
           }
         }
       }
     } else {
       v = 0;
+      botV = 0;
     }
 
     countdownJogT = Math.max(0, countdownJogT - dt);
@@ -593,6 +725,7 @@
     if (gameStarted && !gameEnded) updateHud();
 
     wobbleImpulse *= Math.pow(0.88, dt * 60);
+    botWobbleImpulse *= Math.pow(0.88, dt * 60);
 
     // 스쿼시 복원 (탭 피드백)
     run.squashT = Math.max(0, run.squashT - dt * 5);
@@ -666,22 +799,97 @@
       wingR.rotation.y = 0.15;
     }
 
-    // 카트라이더式: 카메라 yaw는 오리 dirA/lastEffA 절대 미사용. 월드 +Z = 뒤(트랙 직진 축 기준),
-    // 위치 (오리.x, 오리.y+h, 오리.z+뒤거리) → lookAt 오리 — 수평면에서 yaw 0 (오리만 비틀어 보임)
-    const duckPx = duckRoot.position.x;
-    const duckPy = duckRoot.position.y;
-    const duckPz = duckRoot.position.z;
-    const targetDist = 4.8 + speedN * 2.4;
-    const targetH = 1.55 + speedN * 0.32;
-    const idealX = duckPx;
-    const idealY = duckPy + targetH;
-    const idealZ = duckPz + targetDist;
-    const camLerp = 1 - Math.pow(0.88, dt * 60);
-    camera.position.x += (idealX - camera.position.x) * camLerp;
-    camera.position.z += (idealZ - camera.position.z) * camLerp;
-    camera.position.y += (idealY - camera.position.y) * (1 - Math.pow(0.9, dt * 60));
-    const lookY = duckPy + 0.72;
-    camera.lookAt(duckPx, lookY, duckPz);
+    const botRunningAnim =
+      gameStarted && !gameEnded && botV >= IDLE_ENTER;
+    const botIdle = !botRunningAnim;
+
+    if (botIdle) {
+      botAnim.idleT += dt;
+    } else {
+      botAnim.idleT = 0;
+    }
+
+    const botSpeedN = Math.min(1, botV / MAX_SPEED);
+    if (botRunningAnim) botRunPhase += botV * dt * 8;
+    const bph = botRunPhase;
+    const bswing = 0.85 + botSpeedN * 0.55;
+    const bthigh = 0.95 + botSpeedN * 0.5;
+    botAnim.squashT = Math.max(0, botAnim.squashT - dt * 5);
+    const bsq = botAnim.squashT;
+    const bsx = 1 + bsq * 0.22;
+    const bsy = 1 - bsq * 0.28;
+    const bsz = 1 + bsq * 0.12;
+    botDuck.body.scale.set(bsx, bsy, bsz);
+    if (botRunningAnim) {
+      botDuck.leftLeg.hip.rotation.x = Math.sin(bph) * bthigh;
+      botDuck.leftLeg.lower.rotation.x = Math.max(
+        0,
+        -Math.sin(bph + 0.4) * bswing * 0.9
+      );
+      botDuck.rightLeg.hip.rotation.x = Math.sin(bph + Math.PI) * bthigh;
+      botDuck.rightLeg.lower.rotation.x = Math.max(
+        0,
+        -Math.sin(bph + Math.PI + 0.4) * bswing * 0.9
+      );
+      const bwad = (0.12 + botSpeedN * 0.38) * 1.85;
+      const bwaddle = bwad * Math.sin(bph) + botWobbleImpulse;
+      botDuck.body.rotation.z = bwaddle;
+      botDuck.body.position.x = Math.sin(bph) * (0.07 + botSpeedN * 0.22) * 1.85;
+      const blev = botSpeedN * 0.38;
+      botDuck.body.rotation.x =
+        blev + Math.sin(bph * 2) * 0.04 * botSpeedN;
+      botDuck.head.rotation.x =
+        Math.sin(bph * 2) * (0.18 + botSpeedN * 0.2) * 2.0;
+      botDuck.head.rotation.y =
+        Math.sin(bph) * (0.08 + botSpeedN * 0.06) * 2.0 * botSpeedN;
+      botDuck.tail.rotation.y = Math.sin(bph + 0.5) * (0.55 + botSpeedN * 0.65);
+      botDuck.tail.rotation.x = Math.sin(bph * 2) * 0.12 * botSpeedN;
+      const bwingO = botSpeedN * 0.55;
+      botDuck.leftWing.rotation.y = -0.15 - bwingO * 0.35;
+      botDuck.rightWing.rotation.y = 0.15 + bwingO * 0.35;
+      botDuck.leftWing.rotation.z =
+        0.25 + Math.sin(bph * 2) * 0.06 * botSpeedN;
+      botDuck.rightWing.rotation.z =
+        -0.25 - Math.sin(bph * 2) * 0.06 * botSpeedN;
+      const bstepWave = Math.abs(Math.cos(bph * 2));
+      const bcontact = bstepWave < 0.11;
+      if (bcontact && !botAnim.wasContact) {
+        botAnim.dipImpulse = 0.16 + botSpeedN * 0.12;
+      }
+      botAnim.wasContact = bcontact;
+      botAnim.dipImpulse *= Math.pow(0.82, dt * 60);
+      botRoot.position.y = -botAnim.dipImpulse * 0.35;
+    } else {
+      const bid = botAnim.idleT;
+      botDuck.head.rotation.y = Math.sin(bid * 1.1) * 0.35;
+      botDuck.head.rotation.x = Math.sin(bid * 0.7) * 0.06;
+      botDuck.body.rotation.z = Math.sin(bid * 0.9) * 0.06;
+      botDuck.body.rotation.x = Math.sin(bid * 0.5) * 0.03;
+      botDuck.leftLeg.hip.rotation.x = Math.sin(bid * 2.2) * 0.12;
+      botDuck.rightLeg.hip.rotation.x = Math.sin(bid * 2.2 + Math.PI) * 0.12;
+      botDuck.leftLeg.lower.rotation.x = 0.05;
+      botDuck.rightLeg.lower.rotation.x = 0.05;
+      botDuck.tail.rotation.y = Math.sin(bid * 1.3) * 0.15;
+      botDuck.leftWing.rotation.y = -0.15;
+      botDuck.rightWing.rotation.y = 0.15;
+      botRoot.position.y = botRoot.position.y * (1 - dt * 6);
+    }
+
+    const midDist = dist * 0.6 + botDist * 0.4;
+    const camTargetPos = new THREE.Vector3(0, 1.5, -midDist);
+    const camDesired = new THREE.Vector3(0, 4.5, -midDist + 8);
+    camera.position.lerp(camDesired, 0.05);
+    camera.lookAt(camTargetPos);
+
+    if (boostTimer > 0) {
+      boostTimer -= dt;
+      const t = Math.max(0, boostTimer) / 0.3;
+      camera.fov = 55 + 10 * Math.sin(t * Math.PI);
+      camera.updateProjectionMatrix();
+    } else {
+      camera.fov = BASE_CAMERA_FOV;
+      camera.updateProjectionMatrix();
+    }
 
     updateCdOverlay();
 
