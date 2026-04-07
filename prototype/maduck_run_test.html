@@ -64,11 +64,13 @@
   const TRACK_WORLD_LEN = 400;
   /** 트랙 진행 방향 줄무늬 간격(m) — 고정 메시 위에서 오리 z 이동으로 발 밑으로 지나감 */
   const TRACK_STRIPE_SPACING_M = 0.3;
+  /** 거리 말뚝 간격(m) — 트랙 진행 방향 */
+  const DIST_MARKER_SPACING_M = 2.5;
 
   let renderer, scene, camera;
   let duckRoot, bodySquashGroup, torsoMesh, headGroup, tailPivot, wingL, wingR;
   let legLU, legLL, footL, legRU, legRL, footR;
-  let ground, trackMesh, decorGroup, laneLineL, laneLineR, trackStripeTex, distMarkersGroup;
+  let ground, trackMesh, decorGroup, laneLineL, laneLineR, distMarkersGroup;
   let dustPoints, dustGeom, dustLifeArr, dustVx, dustVy, dustVz;
   const DUST_N = 72;
   const hudTimeEl = typeof document !== 'undefined' ? document.getElementById('hudTime') : null;
@@ -121,7 +123,7 @@
     return current + Math.sign(d) * maxStep;
   }
 
-  /** 트랙 진행 방향(Z) 줄무늬 — 밝은 갈색/어두운 갈색 (TRACK_STRIPE_SPACING_M 주기) */
+  /** (보존) 과거 트랙 줄무늬 텍스처 — 현재 트랙은 단색 재질 사용 */
   function makeTrackStripeTexture() {
     const c = document.createElement('canvas');
     c.width = 4;
@@ -254,13 +256,10 @@
   }
 
   function makeDuck() {
-    // 뒤샷·배 실루엣 참고: prototype/ori01.png (스타트 라인 두 마리)
-    const feather = clayMat(0xf5f5f5, 0.92);
-    const featherShadow = clayMat(0xe8e8e8, 0.9);
-    const orange = clayMat(0xff6a2d, 0.82);
-    const white = clayMat(0xffffff, 0.88);
-    const pupil = clayMat(0x0a0a0a, 0.75);
-    const browMat = clayMat(0x3a3a3a, 0.82);
+    // 체형은 prototype/ori01.png 뒤샷 참고, 색상은 MADUCK(검정+주황)
+    const black = clayMat(0x1a1a1a, 0.88);
+    const orange = clayMat(0xff6b00, 0.82);
+    const white = clayMat(0xf5f5f5, 0.9);
 
     duckRoot = new THREE.Group();
     duckRoot.position.set(0, 0, 0);
@@ -268,161 +267,148 @@
     bodySquashGroup = new THREE.Group();
     duckRoot.add(bodySquashGroup);
 
-    // 배·엉덩이 쪽이 넓은 배(pear) — 가슴(-Z)은 상대적으로 좁음
-    const bodyGeo = new THREE.SphereGeometry(0.44, 40, 32);
-    bodyGeo.scale(0.88, 1.06, 1.36);
-    torsoMesh = new THREE.Mesh(bodyGeo, feather);
-    torsoMesh.position.set(0, 0.66, -0.05);
+    // 몸통: 단일 타원(계란) — 앞(-Z) 좁고 뒤(+Z)로 불룩(엉덩이 강조)
+    const bodyGeo = new THREE.SphereGeometry(0.5, 44, 34);
+    bodyGeo.scale(0.86, 1.06, 1.48);
+    torsoMesh = new THREE.Mesh(bodyGeo, black);
+    torsoMesh.position.set(0, 0.64, 0.02);
     torsoMesh.castShadow = true;
     bodySquashGroup.add(torsoMesh);
 
-    const bellyGeo = new THREE.SphereGeometry(0.32, 28, 22);
-    bellyGeo.scale(1.22, 0.72, 1.05);
-    const belly = new THREE.Mesh(bellyGeo, featherShadow);
-    belly.position.set(0, 0.38, 0.08);
-    belly.castShadow = true;
-    bodySquashGroup.add(belly);
-
-    const buttGeo = new THREE.SphereGeometry(0.36, 26, 22);
-    buttGeo.scale(1.42, 1.05, 1.28);
-    const butt = new THREE.Mesh(buttGeo, feather);
-    butt.position.set(0, 0.55, 0.46);
-    butt.castShadow = true;
-    bodySquashGroup.add(butt);
-
     const neck = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.15, 0.19, 0.34, 14, 1),
-      feather
+      new THREE.CylinderGeometry(0.11, 0.17, 0.22, 12, 1),
+      black
     );
-    neck.rotation.x = Math.PI / 2 - 0.36;
-    neck.position.set(0, 1.04, -0.32);
+    neck.rotation.x = Math.PI / 2 - 0.4;
+    neck.position.set(0, 1.02, -0.32);
     neck.castShadow = true;
     bodySquashGroup.add(neck);
 
     const collar = new THREE.Mesh(
-      new THREE.TorusGeometry(0.22, 0.068, 12, 36),
+      new THREE.TorusGeometry(0.175, 0.055, 12, 36),
       orange
     );
     collar.rotation.x = Math.PI / 2;
-    collar.position.set(0, 1.04, -0.34);
+    collar.position.set(0, 1.02, -0.34);
     collar.castShadow = true;
     bodySquashGroup.add(collar);
 
-    const logo = new THREE.Mesh(new THREE.TorusGeometry(0.044, 0.015, 10, 20), white);
-    logo.position.set(0, 1.04, -0.18);
+    const logo = new THREE.Mesh(new THREE.TorusGeometry(0.038, 0.012, 10, 20), white);
+    logo.position.set(0, 1.02, -0.2);
     bodySquashGroup.add(logo);
 
     headGroup = new THREE.Group();
-    headGroup.position.set(0, 1.22, -0.52);
+    headGroup.position.set(0, 1.16, -0.5);
     bodySquashGroup.add(headGroup);
 
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.31, 32, 26), feather);
+    const headR = 0.168;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(headR, 28, 22), black);
     head.castShadow = true;
     headGroup.add(head);
 
     for (let i = -1; i <= 1; i++) {
-      const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), featherShadow);
-      tuft.position.set(i * 0.085, 0.33, -0.02);
-      tuft.scale.set(0.68, 1.05, 0.6);
+      const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), black);
+      tuft.position.set(i * 0.07, 0.19, -0.015);
+      tuft.scale.set(0.65, 1.05, 0.58);
       headGroup.add(tuft);
     }
 
-    const browGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.16, 8, 1);
-    const browL = new THREE.Mesh(browGeo, browMat);
-    browL.rotation.z = 0.55;
-    browL.rotation.x = 0.2;
-    browL.position.set(-0.13, 0.06, 0.32);
+    const browGeo = new THREE.CylinderGeometry(0.032, 0.032, 0.18, 8, 1);
+    const browL = new THREE.Mesh(browGeo, black);
+    browL.rotation.z = 0.58;
+    browL.rotation.x = 0.22;
+    browL.position.set(-0.11, 0.05, 0.28);
     headGroup.add(browL);
-    const browR = new THREE.Mesh(browGeo, browMat);
-    browR.rotation.z = -0.55;
-    browR.rotation.x = 0.2;
-    browR.position.set(0.13, 0.06, 0.32);
+    const browR = new THREE.Mesh(browGeo, black);
+    browR.rotation.z = -0.58;
+    browR.rotation.x = 0.22;
+    browR.position.set(0.11, 0.05, 0.28);
     headGroup.add(browR);
 
-    const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 12), white);
-    eyeWhite.position.set(-0.14, 0.02, 0.34);
+    const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 10), white);
+    eyeWhite.position.set(-0.1, 0.01, 0.3);
     headGroup.add(eyeWhite);
     const eyeWhite2 = eyeWhite.clone();
-    eyeWhite2.position.x = 0.14;
+    eyeWhite2.position.x = 0.1;
     headGroup.add(eyeWhite2);
-    const pup = new THREE.Mesh(new THREE.SphereGeometry(0.038, 10, 8), pupil);
-    pup.position.set(-0.125, 0.02, 0.42);
+    const pup = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6), black);
+    pup.position.set(-0.09, 0.01, 0.36);
     headGroup.add(pup);
     const pup2 = pup.clone();
-    pup2.position.set(0.155, 0.02, 0.42);
+    pup2.position.set(0.11, 0.01, 0.36);
     headGroup.add(pup2);
 
-    const beak = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 14), orange);
-    beak.scale.set(1.32, 0.62, 0.82);
-    beak.position.set(0, -0.05, 0.4);
+    const beak = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), orange);
+    beak.scale.set(1.28, 0.58, 0.78);
+    beak.position.set(0, -0.04, 0.35);
     headGroup.add(beak);
 
-    const wingGeo = new THREE.SphereGeometry(0.17, 14, 10);
-    wingGeo.scale(0.32, 0.45, 0.58);
-    wingL = new THREE.Mesh(wingGeo, feather);
-    wingL.position.set(-0.48, 0.74, 0.04);
-    wingL.rotation.z = 0.22;
+    const wingGeo = new THREE.SphereGeometry(0.14, 14, 10);
+    wingGeo.scale(0.3, 0.44, 0.58);
+    wingL = new THREE.Mesh(wingGeo, black);
+    wingL.position.set(-0.44, 0.7, 0.06);
+    wingL.rotation.z = 0.2;
     wingL.rotation.y = -0.06;
     wingL.castShadow = true;
     bodySquashGroup.add(wingL);
-    const wingL2 = new THREE.Mesh(wingGeo.clone(), featherShadow);
-    wingL2.scale.multiplyScalar(0.72);
-    wingL2.position.set(-0.02, -0.04, -0.06);
+    const wingL2 = new THREE.Mesh(wingGeo.clone(), black);
+    wingL2.scale.multiplyScalar(0.7);
+    wingL2.position.set(-0.02, -0.035, -0.05);
     wingL.add(wingL2);
     wingR = wingL.clone();
     while (wingR.children.length) wingR.remove(wingR.children[0]);
-    wingR.position.x = 0.48;
-    wingR.rotation.z = -0.22;
+    wingR.position.x = 0.44;
+    wingR.rotation.z = -0.2;
     wingR.rotation.y = 0.06;
     bodySquashGroup.add(wingR);
-    const wingR2 = new THREE.Mesh(wingGeo.clone(), featherShadow);
-    wingR2.scale.multiplyScalar(0.72);
-    wingR2.position.set(0.02, -0.04, -0.06);
+    const wingR2 = new THREE.Mesh(wingGeo.clone(), black);
+    wingR2.scale.multiplyScalar(0.7);
+    wingR2.position.set(0.02, -0.035, -0.05);
     wingR.add(wingR2);
 
     tailPivot = new THREE.Group();
-    tailPivot.position.set(0, 0.92, 0.44);
+    tailPivot.position.set(0, 0.88, 0.46);
     bodySquashGroup.add(tailPivot);
-    const tailAngles = [-0.42, 0, 0.42];
+    const tailAngles = [-0.4, 0, 0.4];
     for (let ti = 0; ti < 3; ti++) {
-      const plume = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.26, 6), featherShadow);
+      const plume = new THREE.Mesh(new THREE.ConeGeometry(0.052, 0.22, 6), black);
       plume.rotation.z = tailAngles[ti];
-      plume.rotation.x = -0.85 + Math.abs(tailAngles[ti]) * 0.15;
-      plume.position.set(ti === 0 ? -0.04 : ti === 2 ? 0.04 : 0, 0.18, 0.02);
+      plume.rotation.x = -0.82 + Math.abs(tailAngles[ti]) * 0.14;
+      plume.position.set(ti === 0 ? -0.035 : ti === 2 ? 0.035 : 0, 0.15, 0.02);
       plume.castShadow = true;
       tailPivot.add(plume);
     }
 
     function makeLeg(side) {
       const hip = new THREE.Group();
-      hip.position.set(side * 0.3, 0.39, 0.02);
+      hip.position.set(side * 0.26, 0.37, 0);
       bodySquashGroup.add(hip);
 
       const upper = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.12, 0.11, 0.17, 12, 1),
+        new THREE.CylinderGeometry(0.1, 0.095, 0.15, 12, 1),
         orange
       );
-      upper.position.set(0, -0.095, 0);
+      upper.position.set(0, -0.09, 0);
       upper.castShadow = true;
       hip.add(upper);
 
       const lower = new THREE.Group();
-      lower.position.set(0, -0.185, 0);
+      lower.position.set(0, -0.17, 0);
       hip.add(lower);
 
       const shin = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.096, 0.086, 0.12, 10, 1),
+        new THREE.CylinderGeometry(0.085, 0.078, 0.1, 10, 1),
         orange
       );
-      shin.position.set(0, -0.078, 0);
+      shin.position.set(0, -0.07, 0);
       shin.castShadow = true;
       lower.add(shin);
 
-      const foot = new THREE.Mesh(new THREE.ConeGeometry(0.21, 0.038, 3), orange);
+      const foot = new THREE.Mesh(new THREE.ConeGeometry(0.118, 0.028, 3), orange);
       foot.rotation.x = Math.PI / 2;
       foot.rotation.y = Math.PI / 2;
-      foot.scale.set(1.42, 1, 1.88);
-      foot.position.set(0, -0.15, 0.02);
+      foot.scale.set(1.12, 1, 1.38);
+      foot.position.set(0, -0.13, 0.018);
       foot.castShadow = true;
       lower.add(foot);
 
@@ -482,14 +468,12 @@
     scene.add(grass);
     ground = grass;
 
-    // 트랙 레인 — 0.5m 줄무늬, 월드 좌표 고정
-    trackStripeTex = makeTrackStripeTexture();
+    // 트랙 레인 — 육상 트랙 단색(적갈색), 양쪽 흰 라인만
     trackMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(3.2, TRACK_WORLD_LEN, 1, 1),
       new THREE.MeshStandardMaterial({
-        map: trackStripeTex,
-        color: 0xffffff,
-        roughness: 0.88,
+        color: 0x8b4513,
+        roughness: 0.9,
         metalness: 0.02,
       })
     );
@@ -510,26 +494,26 @@
     laneLineR.position.set(1.45, 0.02, 0);
     scene.add(laneLineR);
 
-    // 트랙 양옆 1m 간격 거리 마커(작은 말뚝) — 월드 고정
+    // 트랙 양옆 거리 마커(노란 말뚝) — 2.5m 간격, 작은 크기
     distMarkersGroup = new THREE.Group();
-    const poleMat = clayMat(0xeceff1, 0.75);
-    const capMat = clayMat(0xffb300, 0.7);
-    const markHalf = Math.floor(TRACK_WORLD_LEN / 2);
-    for (let i = -markHalf; i <= markHalf; i++) {
-      if (i === 0) continue;
-      const z = i * 1.0;
-      const poleGeo = new THREE.CylinderGeometry(0.04, 0.055, 0.32, 6);
+    const poleMat = clayMat(0xcfcfcf, 0.78);
+    const capMat = clayMat(0xffc107, 0.72);
+    const poleGeo = new THREE.CylinderGeometry(0.018, 0.024, 0.14, 6);
+    const capGeo = new THREE.SphereGeometry(0.032, 8, 6);
+    const zEnd = TRACK_WORLD_LEN / 2;
+    for (let z = -zEnd; z <= zEnd; z += DIST_MARKER_SPACING_M) {
+      if (Math.abs(z) < 0.01) continue;
       const poleL = new THREE.Mesh(poleGeo, poleMat);
-      poleL.position.set(-1.74, 0.16, z);
+      poleL.position.set(-1.72, 0.09, z);
       poleL.castShadow = true;
       distMarkersGroup.add(poleL);
-      const capL = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), capMat);
-      capL.position.set(-1.74, 0.34, z);
+      const capL = new THREE.Mesh(capGeo, capMat);
+      capL.position.set(-1.72, 0.185, z);
       distMarkersGroup.add(capL);
       const poleR = poleL.clone();
-      poleR.position.x = 1.74;
+      poleR.position.x = 1.72;
       const capR = capL.clone();
-      capR.position.x = 1.74;
+      capR.position.x = 1.72;
       distMarkersGroup.add(poleR);
       distMarkersGroup.add(capR);
     }
@@ -774,8 +758,8 @@
     legRL.rotation.x = Math.max(0, kneeB * Math.pow(Math.max(0, -sR), 1.28));
     const flatL = Math.pow(Math.max(0, Math.cos(lp)), 1.38);
     const flatR = Math.pow(Math.max(0, Math.cos(lp + Math.PI)), 1.38);
-    footL.scale.set(1.48 + flatL * 0.1, 0.55 + flatL * 0.42, 1.95 + flatL * 0.12);
-    footR.scale.set(1.48 + flatR * 0.1, 0.55 + flatR * 0.42, 1.95 + flatR * 0.12);
+    footL.scale.set(1.12 + flatL * 0.06, 0.48 + flatL * 0.4, 1.36 + flatL * 0.08);
+    footR.scale.set(1.12 + flatR * 0.06, 0.48 + flatR * 0.4, 1.36 + flatR * 0.08);
 
     // 뒤뚱 — 롤 + 무게 이동 (과장·빠를수록 격해짐)
     const waddleAmp = (0.12 + speedN * 0.38) * 1.85;
@@ -824,8 +808,8 @@
       legRU.rotation.x = Math.sin(id * 2.2 + Math.PI) * 0.12;
       legLL.rotation.x = 0.05;
       legRL.rotation.x = 0.05;
-      footL.scale.set(1.48, 1, 1.95);
-      footR.scale.set(1.48, 1, 1.95);
+      footL.scale.set(1.12, 1, 1.38);
+      footR.scale.set(1.12, 1, 1.38);
       tailPivot.rotation.y = Math.sin(id * 1.3) * 0.15;
       wingL.rotation.y = -0.08;
       wingR.rotation.y = 0.08;
@@ -837,7 +821,7 @@
     const duckPy = duckRoot.position.y;
     const duckPz = duckRoot.position.z;
     const targetDist = 2.85 + speedN * 1.38;
-    const targetH = 0.76 + speedN * 0.18;
+    const targetH = 1.02 + speedN * 0.2;
     const idealX = duckPx;
     const idealY = duckPy + targetH;
     const idealZ = duckPz + targetDist;
@@ -845,7 +829,7 @@
     camera.position.x += (idealX - camera.position.x) * camLerp;
     camera.position.z += (idealZ - camera.position.z) * camLerp;
     camera.position.y += (idealY - camera.position.y) * (1 - Math.pow(0.9, dt * 60));
-    const lookY = duckPy + 0.48;
+    const lookY = duckPy + 0.58;
     camera.lookAt(duckPx, lookY, duckPz);
     const targetFov = 60 + speedN * 8;
     camera.fov += (targetFov - camera.fov) * (1 - Math.pow(0.86, dt * 60));
