@@ -566,6 +566,17 @@ export function createRace3DRenderer(hostEl, options = {}) {
   }
 
   function renderLoop() {
+    if (Math.random() < 0.01) {
+      console.log('[3D-DBG]', {
+        vP: playerState.v,
+        vO: oppState.v,
+        speedP: (playerState.v || 0) / 4.5,
+        pPhase: playerRunPhase,
+        hasLeftHip: !!playerDuck?.leftLeg?.hip,
+        hasLeftLeg: !!playerDuck?.leftLeg,
+        bodyType: typeof playerDuck?.body,
+      });
+    }
     animId = requestAnimationFrame(renderLoop);
     const dt = Math.min(clock.getDelta(), 0.05);
 
@@ -585,8 +596,9 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const vO = oppState.v || 0;
     const speedP = vP / MAX_SPEED;
     const speedO = vO / MAX_SPEED;
-    if (vP > 0.01) playerRunPhase += vP * dt * 8;
-    if (vO > 0.01) oppRunPhase += vO * dt * 8;
+    // runPhase 증가: renderer.render 직전 FORCE LEG 블록에서 처리 (디버그/강제 경로)
+    // if (vP > 0.01) playerRunPhase += vP * dt * 8;
+    // if (vO > 0.01) oppRunPhase += vO * dt * 8;
 
     wobbleImpulse *= Math.pow(0.88, dt * 60);
     oppWobbleImpulse *= Math.pow(0.88, dt * 60);
@@ -609,10 +621,11 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const hairGroup = playerDuck.hairGroup;
 
     const ph = playerRunPhase;
-    legLU.rotation.x = Math.sin(ph) * 0.8 * speedP;
-    legRU.rotation.x = Math.sin(ph + Math.PI) * 0.8 * speedP;
-    legLL.rotation.x = Math.max(0, -Math.sin(ph + 0.4)) * 0.5 * speedP;
-    legRL.rotation.x = Math.max(0, -Math.sin(ph + Math.PI + 0.4)) * 0.5 * speedP;
+    // 다리: renderer.render 직전 FORCE LEG 블록이 최종 적용
+    // legLU.rotation.x = Math.sin(ph) * 0.8 * speedP;
+    // legRU.rotation.x = Math.sin(ph + Math.PI) * 0.8 * speedP;
+    // legLL.rotation.x = Math.max(0, -Math.sin(ph + 0.4)) * 0.5 * speedP;
+    // legRL.rotation.x = Math.max(0, -Math.sin(ph + Math.PI + 0.4)) * 0.5 * speedP;
     bodySquashGroup.rotation.z = Math.sin(ph * 2) * 0.08 * speedP;
     bodySquashGroup.position.x = Math.sin(ph) * 0.06 * speedP;
     bodySquashGroup.rotation.x = -speedP * 0.15;
@@ -637,11 +650,12 @@ export function createRace3DRenderer(hostEl, options = {}) {
     oppDuck.body.scale.set(1 + bsq * 0.22, oppBodyY, 1 + bsq * 0.12);
 
     const bph = oppRunPhase;
-    oppDuck.leftLeg.hip.rotation.x = Math.sin(bph) * 0.8 * speedO;
-    oppDuck.rightLeg.hip.rotation.x = Math.sin(bph + Math.PI) * 0.8 * speedO;
-    oppDuck.leftLeg.lower.rotation.x = Math.max(0, -Math.sin(bph + 0.4)) * 0.5 * speedO;
-    oppDuck.rightLeg.lower.rotation.x =
-      Math.max(0, -Math.sin(bph + Math.PI + 0.4)) * 0.5 * speedO;
+    // 다리: renderer.render 직전 FORCE LEG 블록이 최종 적용
+    // oppDuck.leftLeg.hip.rotation.x = Math.sin(bph) * 0.8 * speedO;
+    // oppDuck.rightLeg.hip.rotation.x = Math.sin(bph + Math.PI) * 0.8 * speedO;
+    // oppDuck.leftLeg.lower.rotation.x = Math.max(0, -Math.sin(bph + 0.4)) * 0.5 * speedO;
+    // oppDuck.rightLeg.lower.rotation.x =
+    //   Math.max(0, -Math.sin(bph + Math.PI + 0.4)) * 0.5 * speedO;
     oppDuck.body.rotation.z = Math.sin(bph * 2) * 0.08 * speedO;
     oppDuck.body.position.x = Math.sin(bph) * 0.06 * speedO;
     oppDuck.body.rotation.x = -speedO * 0.15;
@@ -675,6 +689,53 @@ export function createRace3DRenderer(hostEl, options = {}) {
       camera.fov = BASE_CAMERA_FOV;
       camera.updateProjectionMatrix();
     }
+
+    // ====== FORCE LEG ANIMATION START ======
+    {
+      const _dt = clock.getDelta ? 0.016 : 0.016; // 대략 60fps
+      const _vP = playerState.v || playerState.spd || 0;
+      const _vO = oppState.v || oppState.spd || 0;
+      const _sP = Math.min(_vP / 4.5, 1);
+      const _sO = Math.min(_vO / 4.5, 1);
+
+      if (_vP > 0.01) playerRunPhase += _vP * 0.016 * 8;
+      if (_vO > 0.01) oppRunPhase += _vO * 0.016 * 8;
+
+      // 플레이어 다리
+      const pLL = playerDuck.leftLeg;
+      const pRL = playerDuck.rightLeg;
+      if (pLL && pRL) {
+        const pTarget = pLL.hip || pLL; // hip이 있으면 hip, 없으면 leg 자체
+        const pTarget2 = pRL.hip || pRL;
+        pTarget.rotation.x = Math.sin(playerRunPhase) * 0.8 * _sP;
+        pTarget2.rotation.x = Math.sin(playerRunPhase + Math.PI) * 0.8 * _sP;
+      }
+
+      // 상대 다리
+      const oLL = oppDuck.leftLeg;
+      const oRL = oppDuck.rightLeg;
+      if (oLL && oRL) {
+        const oTarget = oLL.hip || oLL;
+        const oTarget2 = oRL.hip || oRL;
+        oTarget.rotation.x = Math.sin(oppRunPhase) * 0.8 * _sO;
+        oTarget2.rotation.x = Math.sin(oppRunPhase + Math.PI) * 0.8 * _sO;
+      }
+
+      // 플레이어 뒤뚱거림
+      if (playerDuck.body) {
+        playerDuck.body.rotation.z = Math.sin(playerRunPhase * 2) * 0.08 * _sP;
+        playerDuck.body.rotation.x = -_sP * 0.15;
+      }
+
+      // 수직 바운스
+      if (playerDuck.root) {
+        playerDuck.root.position.y = Math.abs(Math.sin(playerRunPhase)) * 0.15 * _sP;
+      }
+      if (oppDuck.root) {
+        oppDuck.root.position.y = Math.abs(Math.sin(oppRunPhase)) * 0.15 * _sO;
+      }
+    }
+    // ====== FORCE LEG ANIMATION END ======
 
     renderer.render(scene, camera);
   }
