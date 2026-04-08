@@ -363,7 +363,7 @@
     const browHex = hsl.l > 0.5 ? 0x333333 : bodyColor;
     const browMat = clayMat(browHex);
     const orange = clayMat(0xff6b00, 0.82);
-    const white = clayMat(0xf5f5f5, 0.9);
+    const white = clayMat(0xffffff, 0.9);
     const pupil = clayMat(0x0a0a0a, 0.75);
     const collarMat = clayMat(collarColor, 0.82);
     const emblemMat = clayMat(collarColor, 0.82);
@@ -399,14 +399,14 @@
     head.position.set(0, 1.38, 0.06);
     bodySquash.add(head);
 
-    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.44, 40, 32), black);
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.44, 40, 32), bodyMat);
     headMesh.castShadow = true;
     head.add(headMesh);
 
     const hairGroup = new THREE.Group();
     head.add(hairGroup);
     for (let i = -1; i <= 1; i++) {
-      const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), black);
+      const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), browMat);
       tuft.position.set(i * 0.12, 0.46, -0.02);
       tuft.scale.set(0.7, 1.15, 0.65);
       hairGroup.add(tuft);
