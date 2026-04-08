@@ -446,6 +446,7 @@ export function mountResult(root, api) {
     btnRematch.textContent = '한판 더';
     if (last && opp?.nickname) {
       btnRematch.addEventListener('click', () => {
+        console.log('[DEBUG-REMATCH-RESULT] 한판더 clicked, peerId:', peerId, 'opp:', JSON.stringify(opp || {}));
         if (peerId) emitSendRematch(peerId);
         api.navigate('rematchWait');
       });

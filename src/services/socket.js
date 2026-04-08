@@ -319,12 +319,12 @@ function attachReceiveFriendRematchRelay(sock) {
   sock.on('receiveRematch', receiveRematchRelayHandler);
 }
 
-/** @type {((data: object) => void) | null} */
+/** @type {((data: object) => false | void) | null} */
 let _onServerMatchFoundNavigate = null;
 
 /**
  * 매칭 화면 외(결과·재대전 대기 등)에서 서버 matchFound 시 경주로 진입
- * @param {(data: object) => void} cb
+ * @param {(data: object) => (false | void)} cb false이면 __dallyeoriPendingRace 저장 취소
  */
 export function setServerMatchFoundNavigate(cb) {
   _onServerMatchFoundNavigate = cb;
@@ -332,6 +332,7 @@ export function setServerMatchFoundNavigate(cb) {
 
 /** @param {unknown} data */
 function globalMatchFoundBridge(data) {
+  console.log('[DEBUG-REMATCH] globalMatchFoundBridge fired, data:', JSON.stringify(data || {}));
   if (!data || typeof data !== 'object') return;
   const d = /** @type {Record<string, unknown>} */ (data);
   if (typeof d.roomId !== 'string' || (d.slot !== 0 && d.slot !== 1)) return;
@@ -350,7 +351,10 @@ function globalMatchFoundBridge(data) {
   };
   if (typeof _onServerMatchFoundNavigate === 'function') {
     try {
-      _onServerMatchFoundNavigate(/** @type {object} */ (data));
+      const r = _onServerMatchFoundNavigate(/** @type {object} */ (data));
+      if (r === false) {
+        delete globalThis.__dallyeoriPendingRace;
+      }
     } catch (e) {
       console.warn('[socket] matchFound navigate', e);
     }
@@ -562,7 +566,11 @@ export function emitAcceptFriendRequest(peerUid, requestId) {
 /** @param {string} targetUid */
 export function emitSendRematch(targetUid) {
   const s = ensureSocket();
-  if (!s?.connected || !targetUid) return;
+  console.log('[DEBUG-REMATCH-RESULT] emitSendRematch called, targetUid:', targetUid, 'socket connected:', !!s?.connected);
+  if (!s?.connected || !targetUid) {
+    console.log('[DEBUG-REMATCH-RESULT] emitSendRematch SKIPPED - no socket or no targetUid');
+    return;
+  }
   emitSyncMatchProfileToServer();
   s.emit('sendRematch', { targetUid, profile: buildLocalMatchProfilePayload() });
 }

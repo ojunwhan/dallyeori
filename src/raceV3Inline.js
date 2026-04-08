@@ -1,5 +1,6 @@
 import { DUCKS_NINE, RACE_ENGINE_PHYSICS } from './constants.js';
 import { spend } from './services/hearts.js';
+import { showAppToast } from './services/toast.js';
 import { createRace3DRenderer } from './race3DRenderer.js';
 
 /**
@@ -9,7 +10,7 @@ import { createRace3DRenderer } from './race3DRenderer.js';
  *   onFinish?: (payload: object) => void,
  *   terrainKey?: string,
  *   getAppState?: () => object,
- *   serverRace?: { socket: import('socket.io-client').Socket, roomId: string, mySlot: 0|1, myDuckId?: string, oppDuckId?: string, myDuckName?: string, oppDuckName?: string, emitTap?: (foot: 'left'|'right') => void },
+ *   serverRace?: { socket: import('socket.io-client').Socket, roomId: string, mySlot: 0|1, myDuckId?: string, oppDuckId?: string, myDuckName?: string, oppDuckName?: string, oppUid?: string, myProfile?: Record<string, unknown>, emitTap?: (foot: 'left'|'right') => void },
  * }} options
  * @returns {() => void} stop — 리스너·rAF 정리
  */
@@ -321,11 +322,20 @@ function isNonPrimaryMouseButton(e){
 }
 
 function racePointerDown(e){
-  e.preventDefault();
   console.log('[input] pointerdown, state:',state,'clientX:',e.clientX,'button:',e.button,'pointerType:',e.pointerType);
-  if(state==='ready'&&!EMBED_APP){startCD();return}
-  if(state==='result'&&!EMBED_APP){reset();return}
+  if(state==='ready'&&!EMBED_APP){e.preventDefault();startCD();return}
+  if(state==='result'&&!EMBED_APP){e.preventDefault();reset();return}
+  if(state==='ending'){
+    const canvas=typeof renderer3D.getCanvas==='function'?renderer3D.getCanvas():null;
+    if(canvas&&(e.target===canvas||(canvas.contains&&canvas.contains(/** @type {Node} */(e.target))))){
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    console.log('[input] state가 racing이 아님, 무시');
+    return;
+  }
   if(state==='countdown'){
+    e.preventDefault();
     if(isNonPrimaryMouseButton(e)){console.log('[input] countdown: 마우스 보조 버튼, 무시');return}
     const foot=(e.clientX<window.innerWidth/2)?'L':'R';
     console.log('[input] countdown 제자리, tap 직전 foot:',foot);
@@ -334,6 +344,7 @@ function racePointerDown(e){
     return;
   }
   if(state!=='racing'){console.log('[input] state가 racing이 아님, 무시');return}
+  e.preventDefault();
   if(isNonPrimaryMouseButton(e)){console.log('[input] 마우스 button 0 아님, 무시 button:',e.button);return}
   const foot=(e.clientX<window.innerWidth/2)?'L':'R';
   console.log('[input] tap 호출 직전, foot:',foot);
@@ -714,8 +725,52 @@ function syncRace3D() {
         oppDist: CPU.dist,
       },
       {
-        onRematch: () => cleanupAndFinish(),
-        onViewRecord: () => cleanupAndFinish(),
+        onRematch: () => {
+          const appSt = typeof getAppState === 'function' ? getAppState() : null;
+          const targetUid =
+            serverRaceOpt?.oppUid ||
+            (appSt?.lastOpponent &&
+            typeof appSt.lastOpponent.userId === 'string' &&
+            appSt.lastOpponent.userId
+              ? appSt.lastOpponent.userId
+              : '');
+          if (!targetUid) {
+            showAppToast('상대방 정보가 없습니다.');
+            return;
+          }
+          const sock = serverRaceOpt?.socket;
+          if (!sock || !sock.connected) {
+            showAppToast('상대방이 떠났습니다.');
+            return;
+          }
+          if (appSt && typeof appSt === 'object') appSt.rematchFromRacePending = true;
+          console.log('[DEBUG-REMATCH] onRematch clicked, screen:', typeof getAppState === 'function' ? getAppState()?.screen : 'unknown');
+          sock.emit('sendRematch', {
+            targetUid,
+            profile: serverRaceOpt?.myProfile || {},
+          });
+          let rematchWaitTimeoutId = 0;
+          function onRematchMatchFound() {
+            clearTimeout(rematchWaitTimeoutId);
+            console.log('[DEBUG-REMATCH] matchFound received, calling cleanupAndFinish rematch');
+            cleanupAndFinish({ type: 'rematch' });
+          }
+          sock.once('matchFound', onRematchMatchFound);
+          rematchWaitTimeoutId = window.setTimeout(() => {
+            sock.off('matchFound', onRematchMatchFound);
+            const st = typeof getAppState === 'function' ? getAppState() : null;
+            if (st && typeof st === 'object') st.rematchFromRacePending = false;
+            showAppToast('상대방이 응답하지 않습니다.');
+          }, 15000);
+          showAppToast('한판더 요청을 보냈습니다...');
+        },
+        onViewRecord: () => {
+          const st = typeof getAppState === 'function' ? getAppState() : null;
+          if (st && typeof st === 'object') st.rematchFromRacePending = false;
+          const pl = makeFinishPayload();
+          pl._fromButton = true;
+          cleanupAndFinish(pl);
+        },
       },
     );
   }
@@ -759,7 +814,50 @@ function loop(t){
 }
 rafId=requestAnimationFrame(loop);
 
-/** @type {{ sock: import('socket.io-client').Socket, onCountdown: (d: object) => void, onRaceStart: () => void, onTick: (p: object) => void, onRace: (r: object) => void, onPeerTap: (d: object) => void } | null} */
+function showRematchRequest(name, onAccept, onDecline) {
+  const el = document.createElement('div');
+  el.style.cssText =
+    'position:fixed;bottom:120px;left:50%;transform:translateX(-50%);' +
+    'background:rgba(0,0,0,0.85);color:#fff;padding:16px 24px;border-radius:16px;' +
+    'display:flex;flex-direction:column;align-items:center;gap:12px;z-index:9999;font-size:16px;';
+  const line = document.createElement('div');
+  const bold = document.createElement('b');
+  bold.textContent = name;
+  line.appendChild(bold);
+  line.appendChild(document.createTextNode('님이 한판더를 신청했습니다!'));
+  el.appendChild(line);
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:12px;';
+  const acc = document.createElement('button');
+  acc.textContent = '수락';
+  acc.style.cssText =
+    'padding:8px 20px;background:#4CAF50;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;';
+  const dec = document.createElement('button');
+  dec.textContent = '거절';
+  dec.style.cssText =
+    'padding:8px 20px;background:#f44336;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;';
+  acc.onclick = () => {
+    el.remove();
+    onAccept();
+  };
+  dec.onclick = () => {
+    el.remove();
+    onDecline();
+  };
+  btnRow.appendChild(acc);
+  btnRow.appendChild(dec);
+  el.appendChild(btnRow);
+  document.body.appendChild(el);
+  window.setTimeout(() => {
+    try {
+      el.remove();
+    } catch {
+      /* ignore */
+    }
+  }, 15000);
+}
+
+/** @type {{ sock: import('socket.io-client').Socket, onCountdown: (d: object) => void, onRaceStart: () => void, onTick: (p: object) => void, onRace: (r: object) => void, onPeerTap: (d: object) => void, onReceiveRematch: (d: object) => void, onRaceAborted: (p: object) => void } | null} */
 let srvHandlers=null;
 if(serverRaceOpt&&serverRaceOpt.socket){
   const sock=serverRaceOpt.socket;
@@ -804,7 +902,22 @@ if(serverRaceOpt&&serverRaceOpt.socket){
   sock.on('raceResult',onServerRaceResult);
   const onRaceAborted=(p)=>{if(typeof onFinish==='function'){try{onFinish({type:'raceAborted',...(p&&typeof p==='object'?/** @type {object} */(p):{})});}catch(e){console.error(e);}}};
   sock.on('raceAborted',onRaceAborted);
-  srvHandlers={sock,onCountdown,onRaceStart,onTick,onRace:onServerRaceResult,onPeerTap,onRaceAborted};
+  const onReceiveRematch=(data)=>{
+    if(!data||typeof data!=='object')return;
+    const senderUid=typeof data.senderUid==='string'?data.senderUid:'';
+    const senderName=typeof data.senderName==='string'?data.senderName:'상대';
+    if(!senderUid)return;
+    if(state!=='ending')return;
+    showRematchRequest(senderName,()=>{
+      sock.emit('acceptRematch',{
+        peerUid:senderUid,
+        terrain:raceTerrainKey||'normal',
+        profile:serverRaceOpt?.myProfile||{},
+      });
+    },()=>{});
+  };
+  sock.on('receiveRematch',onReceiveRematch);
+  srvHandlers={sock,onCountdown,onRaceStart,onTick,onRace:onServerRaceResult,onPeerTap,onReceiveRematch,onRaceAborted};
   console.log('[race] serverRace active', { roomId: serverRaceOpt.roomId, mySlot: serverRaceOpt.mySlot, socketConnected: sock.connected });
 }
 
@@ -827,7 +940,10 @@ if(EMBED_APP&&!serverRaceOpt){
 }
 
 
+  let raceStopped = false;
   function stop() {
+    if (raceStopped) return;
+    raceStopped = true;
     if(srvHandlers){
       srvHandlers.sock.off('countdown',srvHandlers.onCountdown);
       srvHandlers.sock.off('race-start',srvHandlers.onRaceStart);
@@ -836,6 +952,7 @@ if(EMBED_APP&&!serverRaceOpt){
       srvHandlers.sock.off('peerTap',srvHandlers.onPeerTap);
       srvHandlers.sock.off('raceResult',srvHandlers.onRace);
       srvHandlers.sock.off('raceAborted',srvHandlers.onRaceAborted);
+      srvHandlers.sock.off('receiveRematch',srvHandlers.onReceiveRematch);
       srvHandlers=null;
     }
     cancelAnimationFrame(rafId);
@@ -857,7 +974,6 @@ if(EMBED_APP&&!serverRaceOpt){
         ? overridePayload
         : makeFinishPayload();
     serverFinishPayload = null;
-    renderer3D.dispose();
     if (typeof onFinish === 'function') {
       try {
         onFinish(pl);

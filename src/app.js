@@ -50,7 +50,7 @@ let raceV3Unmount = null;
 /** @type {(() => void) | null} */
 let screenUnmount = null;
 
-/** @type {{ screen: string, user: object | null, nickname: string, language: string, translateTone: 'casual'|'formal', profilePhotoURL: string, profileSetupComplete: boolean, wins: number, losses: number, draws: number, hearts: number, selectedDuckId: string | null, ownedDuckIds: string[], lastRaceResult: object | null, lastOpponent: object | null, terrain: string, navTab: string, qrGuestOneShot: boolean, _matchingTimer: ReturnType<typeof setTimeout> | null, _matchingUiTimer: ReturnType<typeof setTimeout> | null, _matchingCancel: (() => void) | null, _chatPeerId: string }} */
+/** @type {{ screen: string, user: object | null, nickname: string, language: string, translateTone: 'casual'|'formal', profilePhotoURL: string, profileSetupComplete: boolean, wins: number, losses: number, draws: number, hearts: number, selectedDuckId: string | null, ownedDuckIds: string[], lastRaceResult: object | null, lastOpponent: object | null, terrain: string, navTab: string, qrGuestOneShot: boolean, rematchFromRacePending: boolean, _matchingTimer: ReturnType<typeof setTimeout> | null, _matchingUiTimer: ReturnType<typeof setTimeout> | null, _matchingCancel: (() => void) | null, _chatPeerId: string }} */
 export const appState = {
   screen: 'splash',
   user: null,
@@ -171,6 +171,7 @@ const api = {
 };
 
 setServerMatchFoundNavigate((data) => {
+  console.log('[DEBUG-REMATCH] globalBridge fired, screen:', appState.screen);
   const opp = data.opponent && typeof data.opponent === 'object' ? data.opponent : {};
   const uid = opp.userId != null ? String(opp.userId) : '';
   appState.lastOpponent = {
@@ -186,8 +187,10 @@ setServerMatchFoundNavigate((data) => {
   };
   if (data.terrain) appState.terrain = data.terrain;
   const scr = appState.screen;
-  // matching 화면은 startMockRandomMatch 쪽에서 race 로 네비게이트함. race 에서도 재매치 matchFound 는 새 방으로 다시 태워야 함.
-  if (scr === 'matching') return;
+  // matching 화면은 startMockRandomMatch 쪽에서 race 로 네비게이트함.
+  // race 화면에서는 raceV3Inline.js의 rematch 핸들러가 자체 처리함.
+  // false 반환 → socket.js에서 __dallyeoriPendingRace 제거 (재매칭 중 잘못된 경주 진입·결과 화면 유발 방지)
+  if (scr === 'matching' || scr === 'race') return false;
   navigate('race', { opponentName: appState.lastOpponent.nickname });
 });
 
@@ -197,6 +200,7 @@ setServerMatchFoundNavigate((data) => {
  * @param {{ skipHistory?: boolean, replaceHistory?: boolean }} [navOpts]
  */
 function navigate(screen, payload, navOpts = {}) {
+  console.log('[DEBUG-REMATCH] navigate called:', screen, JSON.stringify(payload || {}));
   try {
     if (screenUnmount) {
       try {
@@ -424,8 +428,52 @@ window.addEventListener('beforeunload', (e) => {
  * @param {object} d
  */
 function onRaceFinishPayload(d) {
+  console.log('[DEBUG-REMATCH] onRaceFinishPayload called, payload:', JSON.stringify(arguments[0] || {}));
   if (!d || typeof d !== 'object') return;
+  if (d.type === 'rematch') {
+    appState.rematchFromRacePending = false;
+    // 한판더 수락됨 — result 이동 없이 매칭 화면으로
+    removeRaceMount();
+    navigate('matching', undefined, { replaceHistory: true });
+    return;
+  }
+  if (d.type === 'raceFinish' && d._fromButton) {
+    if (d.__viaRaceFinishBC) return;
+    if (appState.rematchFromRacePending) return;
+    if (appState.screen !== 'race') return;
+    const myDBtn = d.myDistance ?? d.distance;
+    const opDBtn = d.oppDistance ?? d.opponentDistance;
+    const resBtn =
+      d.result === 'win' || d.result === 'lose' || d.result === 'draw' ? d.result : 'lose';
+    const normalized = {
+      result: resBtn,
+      time: Number(d.time),
+      taps: Number(d.taps),
+      distance: Number(myDBtn),
+      opponentDistance: Number(opDBtn),
+      myDistance: Number(myDBtn),
+      oppDistance: Number(opDBtn),
+      ...(d.hearts && typeof d.hearts === 'object' ? { hearts: d.hearts } : {}),
+    };
+    appState.lastRaceResult = normalized;
+    const uidBtn = appState.user?.uid;
+    if (
+      uidBtn &&
+      d.hearts &&
+      typeof d.hearts === 'object' &&
+      typeof d.hearts[uidBtn] === 'number'
+    ) {
+      syncHeartBalanceFromServer(appState, d.hearts[uidBtn]);
+    }
+    if (!appState.qrGuestOneShot) {
+      saveRaceResult(appState, normalized, appState.lastOpponent);
+    }
+    removeRaceMount();
+    navigate('result', normalized, { replaceHistory: true });
+    return;
+  }
   if (d.type === 'raceAborted') {
+    appState.rematchFromRacePending = false;
     if (appState.screen !== 'race') return;
     showAppToast('하트가 부족해 경기를 시작할 수 없어요.');
     removeRaceMount();
@@ -462,17 +510,15 @@ function onRaceFinishPayload(d) {
   if (!appState.qrGuestOneShot) {
     saveRaceResult(appState, normalized, appState.lastOpponent);
   }
-  // 경주 종료 연출 시간 확보 (2초)
-  setTimeout(() => {
-    removeRaceMount();
-    console.log('[race] onRaceFinish → navigate("result", replaceHistory:true)');
-    navigate('result', normalized, { replaceHistory: true });
-  }, 2000);
+  // 유저가 기록보기 버튼 클릭 시 → cleanupAndFinish() → onFinish → 여기 다시 진입
+  // type이 'raceFinish'면 그때 navigate('result') 처리 — 아래 rematch 분기처럼
 }
 
 const raceFinishChannel = new BroadcastChannel(RACE_FINISH_BC);
 raceFinishChannel.addEventListener('message', (ev) => {
-  onRaceFinishPayload(ev.data);
+  const data = ev.data;
+  if (!data || typeof data !== 'object') return;
+  onRaceFinishPayload({ ...data, __viaRaceFinishBC: true });
 });
 
 /**
@@ -490,7 +536,7 @@ function runRace(_payload) {
   const pr = globalThis.__dallyeoriPendingRace;
   const slotNum = pr && pr.slot != null ? Number(pr.slot) : NaN;
   const raceSlot = slotNum === 0 || slotNum === 1 ? /** @type {0|1} */ (slotNum) : null;
-  /** @type {{ socket: import('socket.io-client').Socket, roomId: string, mySlot: 0|1, myDuckId: string, oppDuckId: string, myDuckName: string, oppDuckName: string, emitTap?: (foot: 'left'|'right') => void } | undefined} */
+  /** @type {{ socket: import('socket.io-client').Socket, roomId: string, mySlot: 0|1, myDuckId: string, oppDuckId: string, myDuckName: string, oppDuckName: string, oppUid?: string, myProfile?: Record<string, unknown>, emitTap?: (foot: 'left'|'right') => void } | undefined} */
   let serverRace;
   if (pr && pr.roomId != null && raceSlot != null && pr.socket) {
     const roomId = pr.roomId;
@@ -499,6 +545,7 @@ function runRace(_payload) {
     const myId = pr.myDuckId || appState.selectedDuckId || 'bori';
     const oppId = pr.oppDuckId || 'bori';
     console.log('RACE INIT roomId:', roomId, 'myDuck:', myId, 'oppDuck:', oppId);
+    const oppUidRaw = appState.lastOpponent?.userId;
     serverRace = {
       socket: raceSock,
       roomId,
@@ -507,6 +554,15 @@ function runRace(_payload) {
       oppDuckId: oppId,
       myDuckName: duckDisplayNameById(myId),
       oppDuckName: pr.oppDuckName || duckDisplayNameById(oppId),
+      oppUid: typeof oppUidRaw === 'string' && oppUidRaw ? oppUidRaw : undefined,
+      myProfile: {
+        nickname: appState.nickname,
+        photoURL: appState.profilePhotoURL || '',
+        duckId: appState.selectedDuckId || 'bori',
+        wins: appState.wins,
+        losses: appState.losses,
+        draws: appState.draws,
+      },
       emitTap(foot) {
         sendTap(foot, roomId, slot, raceSock);
       },
