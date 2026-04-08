@@ -1,6 +1,7 @@
 import { DUCKS_NINE, RACE_ENGINE_PHYSICS } from './constants.js';
 import { spend } from './services/hearts.js';
 import { showAppToast } from './services/toast.js';
+import { normalizeRaceSlot } from './services/socket.js';
 import { createRace3DRenderer } from './race3DRenderer.js';
 
 /**
@@ -24,10 +25,8 @@ export function mountRaceV3Game(hostEl, options) {
   }
   const raceTerrainKey = normalizeTerrainKey(options && options.terrainKey);
   const serverRaceOpt = options && options.serverRace;
-  const myServerSlot =
-    serverRaceOpt && (serverRaceOpt.mySlot === 0 || serverRaceOpt.mySlot === 1)
-      ? serverRaceOpt.mySlot
-      : 0;
+  const myServerSlotNorm = serverRaceOpt ? normalizeRaceSlot(serverRaceOpt.mySlot) : null;
+  const myServerSlot = myServerSlotNorm != null ? myServerSlotNorm : 0;
   function isServerRaceConnected() {
     return !!(serverRaceOpt && serverRaceOpt.socket);
   }
@@ -60,11 +59,12 @@ export function mountRaceV3Game(hostEl, options) {
     terrainKey: raceTerrainKey,
     myDuckId: serverRaceOpt?.myDuckId || 'duri',
     oppDuckId: serverRaceOpt?.oppDuckId || 'tori',
+    myServerSlot,
   });
   const hudEl = document.createElement('div');
   hudEl.id = 'race-hud';
   hudEl.style.cssText =
-    'position:fixed;top:10px;left:50%;transform:translateX(-50%);color:#fff;font-family:system-ui;font-size:16px;background:rgba(0,0,0,0.5);padding:8px 20px;border-radius:16px;z-index:10;text-align:center;pointer-events:none;';
+    'position:fixed;top:10px;left:50%;transform:translateX(-50%);color:#fff;font-family:ui-monospace,monospace,system-ui;font-size:15px;background:rgba(0,0,0,0.5);padding:8px 20px;border-radius:16px;z-index:10;text-align:center;pointer-events:none;font-variant-numeric:tabular-nums;';
   hostEl.appendChild(hudEl);
   function resize() {
     renderer3D.resize();
@@ -148,8 +148,6 @@ function mk(cpu){return{
   bodySw:0,bodySwTgt:0,
   /** 서버 peerTap 직후 풀 애니 (초) */
   forcedMovingTimer:0,
-  /** 서버 raceTick 기준 목표 거리 (상대 오리 보간용) */
-  serverTargetDist:0
 }}
 let P=mk(false),CPU=mk(true);
 
@@ -430,27 +428,28 @@ function blendServerDucks(dt){
   const me=pl[myServerSlot];
   const opp=pl[1-myServerSlot];
   if(!me||!opp)return;
-  /** 내 오리: dist는 서버 권위 70% (로컬 updDuck 예측 30% 잔류) */
-  const bmDist=0.7;
-  const bmVel=0.48;
-  P.dist=lerp(P.dist,wireNum(me.dist,P.dist),bmDist);
-  P.v=lerp(P.v,wireNum(me.v,P.v),bmVel);
-  P.spd=lerp(P.spd,wireNum(me.spd!=null?me.spd:me.v,P.spd),bmVel);
-  P.lateral=lerp(P.lateral,wireNum(me.lateral,P.lateral),bmVel);
-  P.dirA=lerp(P.dirA,wireNum(me.dirA,P.dirA),bmVel);
-  P.spinAngle=lerp(P.spinAngle,wireNum(me.spinAngle,P.spinAngle),bmVel);
+  /**
+   * 내 오리(P): 거리·횡이동·스텀블/추락만 서버 권위. v/dirA/spinAngle 은 매 프레임 서버로 lerp 하면
+   * 탭 직후 로컬 가속이 다음 틱 전에 계속 낮은 me.v 쪽으로 끌려 가 입력이 무뎌지고 3D도 죽어 보임.
+   * v·자세는 tap()+updDuck() 로컬, 추락 구간만 서버 v=0 에 맞춤.
+   */
+  const aPos=1-Math.exp(-22*dt);
+  const aVel=1-Math.exp(-11*dt);
+  P.dist=lerp(P.dist,wireNum(me.dist,P.dist),aPos);
+  P.lateral=lerp(P.lateral,wireNum(me.lateral,P.lateral),Math.min(1,aVel*1.1));
   P.stumble=me.isStumbling?1:0;
+  if(me.isFallen){
+    const wv=wireNum(me.v,0);
+    P.v=wv;
+    P.spd=wv;
+  }
   if(me.isFallen&&!fallPaused){playerFallAnim=1;showFallOverlay();}
-  /** 상대 오리: 거리는 목표만 갱신 후 dt 기반 부드럽게 추종 (~0.2/프레임@60Hz) */
-  CPU.serverTargetDist=wireNum(opp.dist,CPU.serverTargetDist);
-  const oppDistAlpha=Math.min(1,12*dt);
-  CPU.dist=lerp(CPU.dist,CPU.serverTargetDist,oppDistAlpha);
-  const bmOpp=Math.min(1,9*dt);
-  CPU.v=lerp(CPU.v,wireNum(opp.v,CPU.v),bmOpp);
-  CPU.spd=lerp(CPU.spd,wireNum(opp.spd!=null?opp.spd:opp.v,CPU.spd),bmOpp);
-  CPU.lateral=lerp(CPU.lateral,wireNum(opp.lateral,CPU.lateral),bmOpp);
-  CPU.dirA=lerp(CPU.dirA,wireNum(opp.dirA,CPU.dirA),bmOpp);
-  CPU.spinAngle=lerp(CPU.spinAngle,wireNum(opp.spinAngle,CPU.spinAngle),bmOpp);
+  CPU.dist=lerp(CPU.dist,wireNum(opp.dist,CPU.dist),aPos);
+  CPU.v=lerp(CPU.v,wireNum(opp.v,CPU.v),aVel);
+  CPU.spd=lerp(CPU.spd,wireNum(opp.spd!=null?opp.spd:opp.v,CPU.spd),aVel);
+  CPU.lateral=lerp(CPU.lateral,wireNum(opp.lateral,CPU.lateral),aVel);
+  CPU.dirA=lerp(CPU.dirA,wireNum(opp.dirA,CPU.dirA),aVel);
+  CPU.spinAngle=lerp(CPU.spinAngle,wireNum(opp.spinAngle,CPU.spinAngle),aVel);
   CPU.stumble=opp.isStumbling?1:0;
   CPU.lastTapRaceT=raceT;
   _blendLogCounter+=1;
@@ -481,17 +480,14 @@ function update(dt){
   if(state==='racing'){
     const srv=serverRaceOpt&&serverRaceOpt.socket;
     if(srv){
-      if(!fallPaused){
-        if(serverRaceSnap&&typeof serverRaceSnap.raceT==='number'&&Number.isFinite(serverRaceSnap.raceT)){
-          raceT=serverRaceSnap.raceT;
-        }
+      /** raceT·상대 동기화는 추락 UI 중에도 유지 — 멈추면 상대가 0m로 굳거나 화면이 버벅인 것처럼 보임 */
+      if(serverRaceSnap&&typeof serverRaceSnap.raceT==='number'&&Number.isFinite(serverRaceSnap.raceT)){
+        raceT=serverRaceSnap.raceT;
       }
-      if(!fallPaused){
-        updDuck(P,dt);
-        blendServerDucks(dt);
-        flowAcc+=((P.v+CPU.v)/2)*55*dt;
-        updAnim(CPU,dt);
-      }
+      blendServerDucks(dt);
+      updDuck(P,dt);
+      if(!fallPaused)flowAcc+=((P.v+CPU.v)/2)*55*dt;
+      updAnim(CPU,dt);
     }else if(!fallPaused){
       raceT+=dt;
     }
@@ -593,8 +589,11 @@ function updDuck(p,dt){
   p.v=Math.max(0,Math.min(PH.MAX_SPEED,p.v));
   const fwd=p.v*Math.cos(effA)*dt;
   const lat=p.v*Math.sin(effA)*dt;
-  p.dist+=fwd;
-  p.lateral+=lat;
+  /** 온라인+raceTick 동안 내 오리 dist/lat 는 blend 만 (CPU 는 이 분기에서 온라인 시 호출되지 않음) */
+  if(!(isServerRaceConnected()&&serverRaceSnap&&!p.isCpu)){
+    p.dist+=fwd;
+    p.lateral+=lat;
+  }
   p.spd=p.v;
   checkCliffFall(p);
   if(playerFallAnim>0&&!p.isCpu){
@@ -812,7 +811,9 @@ function syncRace3D() {
 
   const rem = Math.max(0, TIME_LIMIT - raceT);
   if (state === 'racing' || state === 'ending' || state === 'result') {
-    hudEl.innerHTML = `<div style="font-size:24px;font-weight:bold">${rem.toFixed(1)}초</div><div style="font-size:13px">나: ${P.dist.toFixed(1)}m | 상대: ${CPU.dist.toFixed(1)}m</div>`;
+    hudEl.innerHTML =
+      `<div style="font-size:24px;font-weight:bold;line-height:1.2">${rem.toFixed(2)}초</div>` +
+      `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나: ${P.dist.toFixed(3)}m | 상대: ${CPU.dist.toFixed(3)}m</div>`;
   } else {
     hudEl.innerHTML = '';
   }
@@ -901,6 +902,14 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     cdT=0;
   };
   const onRaceStart=()=>{
+    /**
+     * race-start 와 raceGo 가 둘 다 오거나, 이미 raceTick 으로 레이싱 진입한 뒤 늦게 오면
+     * raceT=0·snap=null 로 다시 밀면 한쪽만 트랙이 크게 어긋남 — 두 번째부터는 무시.
+     */
+    if(state==='racing'){
+      console.log('[race] race-start/raceGo 중복 무시(이미 레이싱)');
+      return;
+    }
     state='racing';
     raceT=0;
     serverRaceSnap=null;
@@ -911,6 +920,19 @@ if(serverRaceOpt&&serverRaceOpt.socket){
   const onTick=(p)=>{
     serverRaceSnap=p;
     if(p&&typeof p.raceT==='number'&&Number.isFinite(p.raceT))raceT=p.raceT;
+    /** race-start 유실 시 — racing 페이즈에서만 틱이 오므로 상태를 맞춤 */
+    if(
+      state!=='racing'&&
+      state!=='ending'&&
+      state!=='result'&&
+      p&&
+      Array.isArray(p.players)&&
+      p.players.length>=2
+    ){
+      state='racing';
+      cdVal=-1;
+      console.warn('[race] raceTick 으로 레이싱 강제 진입(race-start 누락 복구)');
+    }
     _raceTickLogCounter+=1;
     if(_raceTickLogCounter%30===1){
       console.log('[race] raceTick received',p);
@@ -918,9 +940,9 @@ if(serverRaceOpt&&serverRaceOpt.socket){
   };
   const onPeerTap=(d)=>{
     if(!d||typeof d!=='object')return;
-    const slot=d.slot;
+    const slot=normalizeRaceSlot(d.slot);
     const foot=d.foot;
-    if(slot!==0&&slot!==1)return;
+    if(slot==null)return;
     if(slot===myServerSlot)return;
     if(foot!=='left'&&foot!=='right')return;
     applyPeerTapVisual(foot);

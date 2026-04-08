@@ -338,9 +338,9 @@ export function mountResult(root, api) {
     const distRow = document.createElement('div');
     distRow.className = 'result-stat-row result-stat-row--dist';
     if (Number.isFinite(myN) && Number.isFinite(oppN)) {
-      distRow.textContent = `${myDuckName} ${myN.toFixed(4)}m vs ${theirDuckName} ${oppN.toFixed(4)}m`;
+      distRow.textContent = `${myDuckName} ${myN.toFixed(3)}m vs ${theirDuckName} ${oppN.toFixed(3)}m`;
     } else if (Number.isFinite(Number(last.distance))) {
-      distRow.textContent = `거리 ${Number(last.distance).toFixed(4)}m`;
+      distRow.textContent = `거리 ${Number(last.distance).toFixed(3)}m`;
     } else {
       distRow.textContent = '거리 —';
     }

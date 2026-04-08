@@ -4,7 +4,7 @@
 
 import QRCode from 'qrcode';
 import { createQrMatchRoom } from '../services/qrMatchApi.js';
-import { ensureSocket, getGameSocket } from '../services/socket.js';
+import { ensureSocket, getGameSocket, normalizeRaceSlot } from '../services/socket.js';
 import { getBalance } from '../services/hearts.js';
 import { showAppToast } from '../services/toast.js';
 
@@ -125,11 +125,16 @@ export function mountQrMatchHost(root, api) {
     const opp = data.opponent || {};
     const mp = globalThis.__dallyeoriMatchProfile || {};
     const myDuck = data.myDuckId || mp.duckId || 'bori';
+    const hostSlot = normalizeRaceSlot(data.slot);
+    if (typeof data.roomId !== 'string' || hostSlot == null) {
+      console.warn('[qrMatchHost] matchFound invalid roomId/slot', data);
+      return;
+    }
     globalThis.__dallyeoriTerrain = data.terrain || api.state.terrain || 'normal';
     globalThis.__dallyeoriPendingRace = {
       socket: sock,
       roomId: data.roomId,
-      slot: data.slot,
+      slot: hostSlot,
       terrain: data.terrain,
       myDuckId: myDuck,
       oppDuckId: opp.duckId || 'bori',

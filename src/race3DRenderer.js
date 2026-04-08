@@ -198,7 +198,10 @@ function createDuck(bodyColor, collarColor) {
     const hip = new THREE.Group();
     hip.position.set(side * 0.22, 0.38, 0);
     bodySquash.add(hip);
-    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.24, 12, 1), orange);
+    const upper = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.11, 0.11, 0.24, 12, 1),
+    orange,
+  );
     upper.position.y = -0.12;
     upper.castShadow = true;
     hip.add(upper);
@@ -246,13 +249,18 @@ function defaultDuckState() {
 
 /**
  * @param {HTMLElement} hostEl
- * @param {{ terrainKey?: string, myDuckId?: string, oppDuckId?: string }} [options]
+ * @param {{ terrainKey?: string, myDuckId?: string, oppDuckId?: string, myServerSlot?: 0 | 1 }} [options]
  */
 export function createRace3DRenderer(hostEl, options = {}) {
   if (!hostEl) throw new Error('createRace3DRenderer: hostEl required');
 
   const optsTerrainKey = options.terrainKey;
   void optsTerrainKey;
+
+  /** 서버 슬롯 0=월드 왼쪽(-), 1=오른쪽(+) — 두 클라이언트 동일 월드 */
+  const mySlot = options.myServerSlot === 0 || options.myServerSlot === 1 ? options.myServerSlot : 0;
+  const myLaneX = mySlot === 1 ? BOT_LANE_X : PLAYER_LANE_X;
+  const oppLaneX = mySlot === 1 ? PLAYER_LANE_X : BOT_LANE_X;
 
   const myId = options.myDuckId || 'duri';
   const oppId = options.oppDuckId || 'tori';
@@ -361,8 +369,8 @@ export function createRace3DRenderer(hostEl, options = {}) {
   const oppDuck = createDuck(oppCol.body, oppCol.collar);
   const duckRoot = playerDuck.root;
   const oppRoot = oppDuck.root;
-  duckRoot.position.set(PLAYER_LANE_X, 0, 0);
-  oppRoot.position.set(BOT_LANE_X, 0, 0);
+  duckRoot.position.set(myLaneX, 0, 0);
+  oppRoot.position.set(oppLaneX, 0, 0);
   scene.add(duckRoot);
   scene.add(oppRoot);
 
@@ -402,8 +410,9 @@ export function createRace3DRenderer(hostEl, options = {}) {
   let wobbleImpulse = 0;
   let oppWobbleImpulse = 0;
   let playerPhaseAccum = 0;
-  let oppPhaseAccum = 0;
   let oppRunPhase = 0;
+  /** prototype/maduck_run_test.html — 카운트다운·출발 전 제자리 조깅(run.phase += dt*cadence) */
+  let countdownJogT = 0;
 
   let internalRacing = false;
   let boostTimer = 0;
@@ -411,11 +420,29 @@ export function createRace3DRenderer(hostEl, options = {}) {
   const clock = new THREE.Clock();
 
   function updatePlayer(state) {
-    Object.assign(playerState, state);
+    if (!state || typeof state !== 'object') return;
+    const { squash, ...rest } = state;
+    Object.assign(playerState, rest);
+    if (squash === true) {
+      run.squashT = 1;
+      if (!internalRacing) countdownJogT = 0.38;
+      const foot = state.lastFoot;
+      if (foot === 'R' || foot === 'right') wobbleImpulse = -0.15;
+      else if (foot === 'L' || foot === 'left') wobbleImpulse = 0.15;
+    }
   }
 
   function updateOpponent(state) {
-    Object.assign(oppState, state);
+    if (!state || typeof state !== 'object') return;
+    const { squash, ...rest } = state;
+    Object.assign(oppState, rest);
+    if (squash === true) {
+      oppAnim.squashT = 1;
+      oppRunPhase += Math.PI * 0.5;
+      const foot = state.lastFoot;
+      if (foot === 'R' || foot === 'right') oppWobbleImpulse = -0.15;
+      else if (foot === 'L' || foot === 'left') oppWobbleImpulse = 0.15;
+    }
   }
 
   function setCountdown(val) {
@@ -452,7 +479,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
     resultOverlayEl.innerHTML =
       `<span style="color:${col}">${main}</span>` +
       `<div style="font-size:min(5vw,28px);font-weight:600;opacity:0.95;margin-top:12px;color:#fff">` +
-      `나: ${myD.toFixed(4)}m | 상대: ${opD.toFixed(4)}m</div>`;
+      `나: ${myD.toFixed(3)}m | 상대: ${opD.toFixed(3)}m</div>`;
     resultOverlayEl.style.display = 'flex';
 
     const btnWrap = document.createElement('div');
@@ -540,9 +567,9 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const latP = Math.max(-LANE_LATERAL_MAX, Math.min(LANE_LATERAL_MAX, playerState.lateral));
     const latO = Math.max(-LANE_LATERAL_MAX, Math.min(LANE_LATERAL_MAX, oppState.lateral));
     duckRoot.position.z = -distP;
-    duckRoot.position.x = PLAYER_LANE_X + latP;
+    duckRoot.position.x = myLaneX + latP;
     oppRoot.position.z = -distO;
-    oppRoot.position.x = BOT_LANE_X + latO;
+    oppRoot.position.x = oppLaneX + latO;
 
     const dirP = playerState.dirA;
     const dirO = oppState.dirA;
@@ -551,7 +578,9 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
     const vP = playerState.v;
     const vO = oppState.v;
-    const runningP = internalRacing && vP >= IDLE_ENTER;
+    countdownJogT = Math.max(0, countdownJogT - dt);
+    const runningP =
+      (internalRacing && vP >= IDLE_ENTER) || (!internalRacing && countdownJogT > 0);
     const runningO = internalRacing && vO >= IDLE_ENTER;
 
     if (runningP) {
@@ -568,7 +597,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const speedNP = Math.min(1, vP / MAX_SPEED);
     const speedNO = Math.min(1, vO / MAX_SPEED);
     const cadenceP = 6 + speedNP * 14;
-    const cadenceO = 6 + speedNO * 14;
 
     if (playerState.runPhase != null && Number.isFinite(playerState.runPhase)) {
       playerPhaseAccum = playerState.runPhase;

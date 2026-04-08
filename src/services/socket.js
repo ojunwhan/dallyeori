@@ -281,12 +281,20 @@ export function setServerMatchFoundNavigate(cb) {
   _onServerMatchFoundNavigate = cb;
 }
 
+/** 서버/직렬화가 문자열 `"0"`/`"1"` 로 올 때마다 슬롯 검사가 실패해 양쪽 클라이언트가 모두 슬롯 0처럼 동작하는 버그 방지 */
+/** @param {unknown} slot */
+export function normalizeRaceSlot(slot) {
+  const n = slot == null ? NaN : Number(slot);
+  return n === 0 || n === 1 ? /** @type {0 | 1} */ (n) : null;
+}
+
 /** @param {unknown} data */
 function globalMatchFoundBridge(data) {
   console.log('[DEBUG-REMATCH] globalMatchFoundBridge fired, data:', JSON.stringify(data || {}));
   if (!data || typeof data !== 'object') return;
   const d = /** @type {Record<string, unknown>} */ (data);
-  if (typeof d.roomId !== 'string' || (d.slot !== 0 && d.slot !== 1)) return;
+  const slotNorm = normalizeRaceSlot(d.slot);
+  if (typeof d.roomId !== 'string' || slotNorm == null) return;
   const s = ensureSocket();
   if (!s) return;
   const opp = d.opponent && typeof d.opponent === 'object' ? d.opponent : {};
@@ -294,7 +302,7 @@ function globalMatchFoundBridge(data) {
   globalThis.__dallyeoriPendingRace = {
     socket: s,
     roomId: d.roomId,
-    slot: d.slot,
+    slot: slotNorm,
     terrain: d.terrain,
     myDuckId: d.myDuckId || mp.duckId || 'bori',
     oppDuckId: typeof opp.duckId === 'string' ? opp.duckId : 'bori',
@@ -362,12 +370,17 @@ export function connectQrGuestSocket(token) {
       draws: 0,
     };
     const myDuck = data.myDuckId || mp.duckId || 'bori';
+    const guestSlot = normalizeRaceSlot(data.slot);
+    if (typeof data.roomId !== 'string' || guestSlot == null) {
+      console.warn('[socket] qr guest matchFound invalid roomId/slot', data);
+      return;
+    }
     globalThis.__dallyeoriTerrain = data.terrain || 'normal';
     globalThis.__dallyeoriMatchProfile = { ...mp, duckId: myDuck };
     globalThis.__dallyeoriPendingRace = {
       socket: gameSocket,
       roomId: data.roomId,
-      slot: data.slot,
+      slot: guestSlot,
       terrain: data.terrain,
       myDuckId: myDuck,
       oppDuckId: opp.duckId || 'bori',
@@ -721,6 +734,11 @@ export function startMockRandomMatch(excludeUid) {
   const promise = new Promise((resolve, reject) => {
     const onFound = (data) => {
       if (settled) return;
+      const foundSlot = normalizeRaceSlot(data && data.slot);
+      if (!data || typeof data !== 'object' || typeof data.roomId !== 'string' || foundSlot == null) {
+        console.warn('[socket] matchFound ignored (invalid roomId/slot)', data);
+        return;
+      }
       settled = true;
       if (connectTimeoutId != null) {
         clearTimeout(connectTimeoutId);
@@ -732,7 +750,7 @@ export function startMockRandomMatch(excludeUid) {
       globalThis.__dallyeoriPendingRace = {
         socket: s,
         roomId: data.roomId,
-        slot: data.slot,
+        slot: foundSlot,
         terrain: data.terrain,
         myDuckId: data.myDuckId || mp.duckId || 'bori',
         oppDuckId: opp.duckId || 'bori',
