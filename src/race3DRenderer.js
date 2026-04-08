@@ -195,16 +195,17 @@ function createDuck(bodyColor, collarColor) {
   tail.add(tailMesh);
 
   function makeLeg(side) {
-    const hip = new THREE.Group();
-    hip.position.set(side * 0.22, 0.38, 0);
-    bodySquash.add(hip);
+    // 프로토타입과 동일: 씬에 붙는 최상위 leg Group에 rotation.x를 건다.
+    const leg = new THREE.Group();
+    leg.position.set(side * 0.22, 0.38, 0);
+    bodySquash.add(leg);
     const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.24, 12, 1), orange);
     upper.position.y = -0.12;
     upper.castShadow = true;
-    hip.add(upper);
+    leg.add(upper);
     const lower = new THREE.Group();
     lower.position.y = -0.22;
-    hip.add(lower);
+    leg.add(lower);
     const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.18, 10, 1), orange);
     shin.position.y = -0.1;
     shin.castShadow = true;
@@ -214,7 +215,7 @@ function createDuck(bodyColor, collarColor) {
     foot.position.y = -0.22;
     foot.castShadow = true;
     lower.add(foot);
-    return { hip, lower, foot };
+    return { leg, lower, foot };
   }
   const L = makeLeg(-1);
   const R = makeLeg(1);
@@ -224,8 +225,8 @@ function createDuck(bodyColor, collarColor) {
     body: bodySquash,
     head,
     hairGroup,
-    leftLeg: { hip: L.hip, lower: L.lower, foot: L.foot },
-    rightLeg: { hip: R.hip, lower: R.lower, foot: R.foot },
+    leftLeg: L.leg,
+    rightLeg: R.leg,
     leftWing,
     rightWing,
     tail,
@@ -614,18 +615,12 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const tailPivot = playerDuck.tail;
     const wingL = playerDuck.leftWing;
     const wingR = playerDuck.rightWing;
-    const legLU = playerDuck.leftLeg.hip;
-    const legLL = playerDuck.leftLeg.lower;
-    const legRU = playerDuck.rightLeg.hip;
-    const legRL = playerDuck.rightLeg.lower;
     const hairGroup = playerDuck.hairGroup;
 
     const ph = playerRunPhase;
-    // 다리: renderer.render 직전 FORCE LEG 블록이 최종 적용
-    // legLU.rotation.x = Math.sin(ph) * 0.8 * speedP;
-    // legRU.rotation.x = Math.sin(ph + Math.PI) * 0.8 * speedP;
-    // legLL.rotation.x = Math.max(0, -Math.sin(ph + 0.4)) * 0.5 * speedP;
-    // legRL.rotation.x = Math.max(0, -Math.sin(ph + Math.PI + 0.4)) * 0.5 * speedP;
+    // 다리: renderer.render 직전 FORCE LEG 블록이 최종 적용 (leftLeg/rightLeg = Group)
+    // playerDuck.leftLeg.rotation.x = Math.sin(ph) * 0.8 * speedP;
+    // playerDuck.rightLeg.rotation.x = Math.sin(ph + Math.PI) * 0.8 * speedP;
     bodySquashGroup.rotation.z = Math.sin(ph * 2) * 0.08 * speedP;
     bodySquashGroup.position.x = Math.sin(ph) * 0.06 * speedP;
     bodySquashGroup.rotation.x = -speedP * 0.15;
@@ -650,12 +645,9 @@ export function createRace3DRenderer(hostEl, options = {}) {
     oppDuck.body.scale.set(1 + bsq * 0.22, oppBodyY, 1 + bsq * 0.12);
 
     const bph = oppRunPhase;
-    // 다리: renderer.render 직전 FORCE LEG 블록이 최종 적용
-    // oppDuck.leftLeg.hip.rotation.x = Math.sin(bph) * 0.8 * speedO;
-    // oppDuck.rightLeg.hip.rotation.x = Math.sin(bph + Math.PI) * 0.8 * speedO;
-    // oppDuck.leftLeg.lower.rotation.x = Math.max(0, -Math.sin(bph + 0.4)) * 0.5 * speedO;
-    // oppDuck.rightLeg.lower.rotation.x =
-    //   Math.max(0, -Math.sin(bph + Math.PI + 0.4)) * 0.5 * speedO;
+    // 다리: renderer.render 직전 FORCE LEG 블록이 최종 적용 (leftLeg/rightLeg = Group)
+    // oppDuck.leftLeg.rotation.x = Math.sin(bph) * 0.8 * speedO;
+    // oppDuck.rightLeg.rotation.x = Math.sin(bph + Math.PI) * 0.8 * speedO;
     oppDuck.body.rotation.z = Math.sin(bph * 2) * 0.08 * speedO;
     oppDuck.body.position.x = Math.sin(bph) * 0.06 * speedO;
     oppDuck.body.rotation.x = -speedO * 0.15;
@@ -692,6 +684,20 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
     // ====== FORCE LEG ANIMATION START ======
     {
+      if (Math.random() < 0.005) {
+        const hip = playerDuck.leftLeg.hip || playerDuck.leftLeg;
+        console.log('[LEG-DBG]', {
+          legKeys: Object.keys(playerDuck.leftLeg),
+          hipIsObject3D: hip instanceof THREE.Object3D,
+          hipType: hip?.constructor?.name,
+          hipParent: hip?.parent?.constructor?.name,
+          currentRotX: hip?.rotation?.x,
+          targetRotX:
+            Math.sin(playerRunPhase) * 0.8 * Math.min((playerState.spd || playerState.v || 0) / 4.5, 1),
+          oppV: oppState.spd || oppState.v || 0,
+          oppPhase: oppRunPhase,
+        });
+      }
       const _dt = clock.getDelta ? 0.016 : 0.016; // 대략 60fps
       const _vP = playerState.v || playerState.spd || 0;
       const _vO = oppState.v || oppState.spd || 0;
@@ -701,24 +707,16 @@ export function createRace3DRenderer(hostEl, options = {}) {
       if (_vP > 0.01) playerRunPhase += _vP * 0.016 * 8;
       if (_vO > 0.01) oppRunPhase += _vO * 0.016 * 8;
 
-      // 플레이어 다리
-      const pLL = playerDuck.leftLeg;
-      const pRL = playerDuck.rightLeg;
-      if (pLL && pRL) {
-        const pTarget = pLL.hip || pLL; // hip이 있으면 hip, 없으면 leg 자체
-        const pTarget2 = pRL.hip || pRL;
-        pTarget.rotation.x = Math.sin(playerRunPhase) * 0.8 * _sP;
-        pTarget2.rotation.x = Math.sin(playerRunPhase + Math.PI) * 0.8 * _sP;
+      // 플레이어 다리 — leg Group에 직접 (프로토타입과 동일)
+      if (playerDuck.leftLeg && playerDuck.rightLeg) {
+        playerDuck.leftLeg.rotation.x = Math.sin(playerRunPhase) * 0.8 * _sP;
+        playerDuck.rightLeg.rotation.x = Math.sin(playerRunPhase + Math.PI) * 0.8 * _sP;
       }
 
       // 상대 다리
-      const oLL = oppDuck.leftLeg;
-      const oRL = oppDuck.rightLeg;
-      if (oLL && oRL) {
-        const oTarget = oLL.hip || oLL;
-        const oTarget2 = oRL.hip || oRL;
-        oTarget.rotation.x = Math.sin(oppRunPhase) * 0.8 * _sO;
-        oTarget2.rotation.x = Math.sin(oppRunPhase + Math.PI) * 0.8 * _sO;
+      if (oppDuck.leftLeg && oppDuck.rightLeg) {
+        oppDuck.leftLeg.rotation.x = Math.sin(oppRunPhase) * 0.8 * _sO;
+        oppDuck.rightLeg.rotation.x = Math.sin(oppRunPhase + Math.PI) * 0.8 * _sO;
       }
 
       // 플레이어 뒤뚱거림
