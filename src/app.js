@@ -588,6 +588,9 @@ function boot() {
     return;
   }
   window.__dallyeoriAppBooted = true;
+  /** 배포 확인: 콘솔에 `__DALLYEORI_CLIENT_TAG` 치면 문자열이 나와야 최신 클라(결과창 한판더 없음). undefined면 예전 JS. */
+  globalThis.__DALLYEORI_CLIENT_TAG = '2026-03-31-noResultRematch';
+  console.log('[dallyeori] CLIENT_TAG', globalThis.__DALLYEORI_CLIENT_TAG);
   consumeOAuthReturn();
   const qr = consumeQrGuestParams();
   if (qr?.token) {
