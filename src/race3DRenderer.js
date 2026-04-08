@@ -22,13 +22,6 @@ function clayMat(hex, r = 0.88, m = 0.04) {
   });
 }
 
-function moveTowardVal(current, target, maxStep) {
-  if (current === target) return target;
-  const d = target - current;
-  if (Math.abs(d) <= maxStep) return target;
-  return current + Math.sign(d) * maxStep;
-}
-
 function duckColorsFromId(id) {
   const sid = (id && String(id).toLowerCase()) || 'duri';
   return DUCK_3D_COLORS[sid] || DUCK_3D_COLORS.duri;
