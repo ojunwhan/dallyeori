@@ -66,8 +66,50 @@ export function mountRaceV3Game(hostEl, options) {
   hudEl.style.cssText =
     'position:fixed;top:10px;left:50%;transform:translateX(-50%);color:#fff;font-family:ui-monospace,monospace,system-ui;font-size:15px;background:rgba(0,0,0,0.5);padding:8px 20px;border-radius:16px;z-index:10;text-align:center;pointer-events:none;font-variant-numeric:tabular-nums;';
   hostEl.appendChild(hudEl);
+
+  const DUCK_FOOTPRINT_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 56" width="54" height="42" aria-hidden="true">' +
+    '<g fill="rgba(255,176,72,0.95)" stroke="rgba(160,82,30,0.9)" stroke-width="1.3">' +
+    '<ellipse cx="36" cy="40" rx="15" ry="10"/>' +
+    '<ellipse cx="23" cy="22" rx="8" ry="15" transform="rotate(-22 23 22)"/>' +
+    '<ellipse cx="37" cy="15" rx="8" ry="16"/>' +
+    '<ellipse cx="51" cy="22" rx="8" ry="15" transform="rotate(22 51 22)"/>' +
+    '</g></svg>';
+  const tapPadsWrap = document.createElement('div');
+  tapPadsWrap.className = 'race-tap-pads';
+  tapPadsWrap.style.cssText =
+    'position:fixed;left:0;right:0;bottom:0;z-index:24;display:none;flex-direction:row;' +
+    'align-items:flex-end;justify-content:center;gap:1.5cm;pointer-events:none;box-sizing:border-box;' +
+    'padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));touch-action:manipulation;';
+  function makeTapPad(footLR) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.dataset.tapPad = footLR;
+    btn.setAttribute('aria-label', footLR === 'L' ? '왼발 탭' : '오른발 탭');
+    btn.style.cssText =
+      'pointer-events:auto;touch-action:manipulation;-webkit-tap-highlight-color:transparent;' +
+      'appearance:none;border:none;margin:0;cursor:pointer;padding:12px 20px;border-radius:22px;' +
+      'background:rgba(28,28,32,0.58);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);' +
+      'box-shadow:0 4px 22px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;' +
+      'min-width:min(32vw,132px);min-height:58px;outline-offset:2px;transition:filter .08s ease;';
+    btn.innerHTML = DUCK_FOOTPRINT_SVG;
+    return btn;
+  }
+  const leftTapPadBtn = makeTapPad('L');
+  const rightTapPadBtn = makeTapPad('R');
+  tapPadsWrap.appendChild(leftTapPadBtn);
+  tapPadsWrap.appendChild(rightTapPadBtn);
+  hostEl.appendChild(tapPadsWrap);
+  function updateTapPadsVisibility() {
+    const coarse =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches;
+    const narrow = window.innerWidth <= 900;
+    tapPadsWrap.style.display = coarse || narrow ? 'flex' : 'none';
+  }
   function resize() {
     renderer3D.resize();
+    updateTapPadsVisibility();
   }
   resize();
   window.addEventListener('resize', resize);
@@ -321,7 +363,32 @@ function isNonPrimaryMouseButton(e){
   return e.pointerType==='mouse'&&e.button!==0;
 }
 
+/** 모바일 하단 오리발 패드 — 전체 화면 좌우 절반 대신 명시적 발 구역 */
+function handleTapPadPointerDown(e, foot) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (state === 'ready' && !EMBED_APP) {
+    startCD();
+    return;
+  }
+  if (state === 'result' && !EMBED_APP) {
+    reset();
+    return;
+  }
+  if (state === 'ending') return;
+  if (state === 'countdown') {
+    if (isNonPrimaryMouseButton(e)) return;
+    tap(foot);
+    return;
+  }
+  if (state !== 'racing') return;
+  if (isNonPrimaryMouseButton(e)) return;
+  if (fallPaused) return;
+  tap(foot);
+}
+
 function racePointerDown(e){
+  if (e.target && typeof e.target.closest === 'function' && e.target.closest('[data-tap-pad]')) return;
   console.log('[input] pointerdown, state:',state,'clientX:',e.clientX,'button:',e.button,'pointerType:',e.pointerType);
   if(state==='ready'&&!EMBED_APP){e.preventDefault();startCD();return}
   if(state==='result'&&!EMBED_APP){e.preventDefault();reset();return}
@@ -350,7 +417,12 @@ function racePointerDown(e){
   console.log('[input] tap 호출 직전, foot:',foot);
   tap(foot);
   console.log('[input] tap 호출 완료, P.dist:',P.dist.toFixed(1));
-};hostEl.addEventListener('pointerdown',racePointerDown,{passive:false,capture:true});function raceKeyDown(e){
+}
+hostEl.addEventListener('pointerdown', racePointerDown, { passive: false, capture: true });
+leftTapPadBtn.addEventListener('pointerdown', (e) => handleTapPadPointerDown(e, 'L'), { passive: false });
+rightTapPadBtn.addEventListener('pointerdown', (e) => handleTapPadPointerDown(e, 'R'), { passive: false });
+
+function raceKeyDown(e){
   if(state==='result'){if(EMBED_APP)return;reset();return}
   if(state==='ready'){startCD();return}
   if(e.key==='ArrowLeft')tap('L');if(e.key==='ArrowRight')tap('R');
@@ -809,11 +881,14 @@ function syncRace3D() {
   });
   oppSquash = false;
 
+  leftTapPadBtn.style.filter = padGlowL > 0.04 ? 'brightness(1.38) saturate(1.12)' : '';
+  rightTapPadBtn.style.filter = padGlowR > 0.04 ? 'brightness(1.38) saturate(1.12)' : '';
+
   const rem = Math.max(0, TIME_LIMIT - raceT);
   if (state === 'racing' || state === 'ending' || state === 'result') {
     hudEl.innerHTML =
       `<div style="font-size:24px;font-weight:bold;line-height:1.2">${rem.toFixed(2)}초</div>` +
-      `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나: ${P.dist.toFixed(3)}m | 상대: ${CPU.dist.toFixed(3)}m</div>`;
+      `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나: ${P.dist.toFixed(4)}m | 상대: ${CPU.dist.toFixed(4)}m</div>`;
   } else {
     hudEl.innerHTML = '';
   }
@@ -929,9 +1004,14 @@ if(serverRaceOpt&&serverRaceOpt.socket){
       Array.isArray(p.players)&&
       p.players.length>=2
     ){
+      const wasCd = state === 'countdown';
       state='racing';
       cdVal=-1;
-      console.warn('[race] raceTick 으로 레이싱 강제 진입(race-start 누락 복구)');
+      console.warn(
+        wasCd
+          ? '[race] raceTick: 카운트다운 중 클라이언트를 racing 으로 동기화'
+          : '[race] raceTick 으로 레이싱 강제 진입(race-start·ready 등 누락 복구)',
+      );
     }
     _raceTickLogCounter+=1;
     if(_raceTickLogCounter%30===1){
