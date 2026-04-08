@@ -264,20 +264,6 @@
     osc.stop(audioCtx.currentTime + 0.08);
   }
 
-  let penaltyFlashEl = null;
-  function showPenaltyFlash() {
-    if (!penaltyFlashEl) {
-      penaltyFlashEl = document.createElement('div');
-      penaltyFlashEl.style.cssText =
-        'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,0,0,0.15);pointer-events:none;z-index:12;opacity:0;transition:opacity 0.05s;';
-      document.body.appendChild(penaltyFlashEl);
-    }
-    penaltyFlashEl.style.opacity = '1';
-    setTimeout(function () {
-      penaltyFlashEl.style.opacity = '0';
-    }, 100);
-  }
-
   function playPenaltyBeep() {
     if (!audioCtx || audioCtx.state === 'suspended') return;
     var osc = audioCtx.createOscillator();
@@ -343,7 +329,14 @@
     if (sameFoot) {
       imp *= SAME_FOOT_IMPULSE_RATIO;
       dirA += (foot === 'L' ? -1 : 1) * SAME_FOOT_DIR_OFFSET;
-      showPenaltyFlash();
+      const footEl = document.getElementById(foot === 'L' ? 'foot-left' : 'foot-right');
+      if (footEl) {
+        footEl.style.filter =
+          'brightness(0.5) sepia(1) saturate(5) hue-rotate(-10deg)';
+        setTimeout(function () {
+          footEl.style.filter = '';
+        }, 120);
+      }
     } else {
       if (dirA > 0) dirA = Math.max(0, dirA - ANGLE_RECOVERY);
       else if (dirA < 0) dirA = Math.min(0, dirA + ANGLE_RECOVERY);
