@@ -1,5 +1,6 @@
 import { DUCKS_NINE, RACE_ENGINE_PHYSICS } from './constants.js';
 import { spend } from './services/hearts.js';
+import { createRace3DRenderer } from './race3DRenderer.js';
 
 /**
  * dallyeori-v3.html 로직 동일 — iframe 없이 앱 페이지에서 실행
@@ -29,88 +30,9 @@ export function mountRaceV3Game(hostEl, options) {
   function isServerRaceConnected() {
     return !!(serverRaceOpt && serverRaceOpt.socket);
   }
-  function shadeHex(hex, f) {
-    const m = /^#?([0-9a-fA-F]{6})$/i.exec(hex || '');
-    if (!m) return '#888888';
-    const n = parseInt(m[1], 16);
-    let r = Math.round(((n >> 16) & 255) * f);
-    let g = Math.round(((n >> 8) & 255) * f);
-    let b = Math.round((n & 255) * f);
-    r = Math.max(0, Math.min(255, r));
-    g = Math.max(0, Math.min(255, g));
-    b = Math.max(0, Math.min(255, b));
-    return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
-  }
   function duckDefById(id) {
     const sid = (id && String(id)) || 'bori';
     return DUCKS_NINE.find((d) => d.id === sid) || DUCKS_NINE[0];
-  }
-  /** P/CPU 외형·레인 — 서버: 내 duckId / 상대 duckId, 로컬: P=아리·CPU=두리 스타일 */
-  function duckVisualState(p) {
-    const sid = !isServerRaceConnected()
-      ? p.isCpu
-        ? 'duri'
-        : 'ari'
-      : p === P
-        ? serverRaceOpt.myDuckId || 'bori'
-        : serverRaceOpt.oppDuckId || 'bori';
-    const id = (sid && String(sid)) || 'bori';
-    const def = duckDefById(id);
-    const lane = !isServerRaceConnected()
-      ? p.isCpu
-        ? 0.72
-        : 0.28
-      : myServerSlot === 0
-        ? p === P
-          ? 0.28
-          : 0.72
-        : p === P
-          ? 0.72
-          : 0.28;
-    let displayName = def.name;
-    let glyph = displayName.charAt(0) || '?';
-    if (!isServerRaceConnected()) {
-      displayName = p.isCpu ? '두리' : '아리';
-      glyph = p.isCpu ? 'D' : 'A';
-    } else if (p === P) {
-      displayName = serverRaceOpt.myDuckName || def.name;
-      glyph = displayName.charAt(0) || '?';
-    } else {
-      displayName = serverRaceOpt.oppDuckName || def.name;
-      glyph = displayName.charAt(0) || '?';
-    }
-    if (id === 'ari') {
-      return {
-        useSprites: true,
-        duriDark: false,
-        lane,
-        displayName,
-        glyph: 'A',
-        neckBand: '#D32F2F',
-      };
-    }
-    if (id === 'duri') {
-      return {
-        useSprites: false,
-        duriDark: true,
-        lane,
-        displayName,
-        glyph: 'D',
-        neckBand: '#FF8F00',
-      };
-    }
-    return {
-      useSprites: false,
-      duriDark: false,
-      lane,
-      displayName,
-      glyph,
-      neckBand: def.color,
-      col: def.color,
-      colDark: shadeHex(def.color, 0.52),
-      colLight: shadeHex(def.color, 1.14),
-      tailFill: shadeHex(def.color, 0.9),
-    };
   }
   function hudLabelMe() {
     if (!isServerRaceConnected()) return '아리';
@@ -126,15 +48,26 @@ export function mountRaceV3Game(hostEl, options) {
   }
   hostEl.style.cssText =
     'position:fixed;inset:0;z-index:200;touch-action:none;background:#222;overflow:hidden;';
-  const C = document.createElement('canvas');
-  C.setAttribute('aria-label', '달려오리 경주');
-  C.style.touchAction = 'none';
-  hostEl.replaceChildren(C);
+  hostEl.replaceChildren();
   hostEl.tabIndex = -1;
   try {
     hostEl.focus({ preventScroll: true });
   } catch (e) {}
-  const X = C.getContext('2d');
+  const renderer3D = createRace3DRenderer(hostEl, {
+    terrainKey: raceTerrainKey,
+    myDuckId: serverRaceOpt?.myDuckId || 'duri',
+    oppDuckId: serverRaceOpt?.oppDuckId || 'tori',
+  });
+  const hudEl = document.createElement('div');
+  hudEl.id = 'race-hud';
+  hudEl.style.cssText =
+    'position:fixed;top:10px;left:50%;transform:translateX(-50%);color:#fff;font-family:system-ui;font-size:16px;background:rgba(0,0,0,0.5);padding:8px 20px;border-radius:16px;z-index:10;text-align:center;pointer-events:none;';
+  hostEl.appendChild(hudEl);
+  function resize() {
+    renderer3D.resize();
+  }
+  resize();
+  window.addEventListener('resize', resize);
 
 'use strict';
 /** iframe이면 true — frameElement만 참조, 부모와는 BroadcastChannel로만 통신 */
@@ -147,7 +80,6 @@ let raceFinishPosted=false;
 })();
 
 // ═══ DESIGN ═══
-const W=360,H=640;
 const TIME_LIMIT=13;
 const CD_STEP_SEC=1,CD_START_VAL=2;
 /** true면 [input]/[physics] 로그 (프로덕션은 false) */
@@ -155,8 +87,6 @@ const DEBUG_RACE_TAP=false;
 const PH=RACE_ENGINE_PHYSICS;
 /** dirA·스핀 상한 (rad, ≈±90°) */
 const DIR_A_LIMIT=1.57;
-/** 횡위치 1m ≈ 화면 px (절벽 느낌용) */
-const LATERAL_PX_PER_M=28;
 const REVIVE_HEART_COST=3;
 /** CPU 탭 시 동일 엔진 보정 계수 */
 const CPU_TAP_DV_MUL=0.92;
@@ -166,35 +96,6 @@ function moveTowardVal(current,target,maxStep){
   if(Math.abs(d)<=maxStep)return target;
   return current+Math.sign(d)*maxStep;
 }
-/** 하단 터치패드 — 약 1cm 지름·패드 사이 ~3cm (640≈세로 14cm 가정 시 논리 px) */
-const TOUCH_PAD_R=23;
-const TOUCH_PAD_EDGE_GAP=Math.round((H*3)/14);
-/** HUD·결과·TIME UP 등 거리 표시 소수 자릿수 */
-const DIST_FP=4;
-function fmtDist(m){return (+m).toFixed(DIST_FP);}
-
-// ═══ CAMERA ═══
-const VY=H*0.48,TB=H*1.05,VHW=W*0.06;
-const TL0=W*0.03,TR0=W*0.97;
-const DUCK_Y=H*0.62,DUCK_SZ=W*0.24;
-
-// ═══ SCALE ═══
-let sc=1,ox=0,oy=0;
-function resize(){
-  const w=innerWidth,h=innerHeight;
-  sc=Math.min(w/W,h/H);
-  C.width=W*sc;C.height=H*sc;
-  ox=(w-C.width)/2;oy=(h-C.height)/2;
-  C.style.cssText=`position:absolute;left:${ox}px;top:${oy}px`;
-}
-resize();window.addEventListener('resize',resize);
-
-// ═══ SPRITES ═══
-const sprites={};
-function loadSprite(n,s){const i=new Image();i.onload=()=>{sprites[n]=i};i.onerror=()=>{};i.src=s}
-loadSprite('body', new URL('../assets/sprites/ari_body.png', import.meta.url).href);
-loadSprite('head', new URL('../assets/sprites/ari_head.png', import.meta.url).href);
-loadSprite('leg', new URL('../assets/sprites/ari_leg.png', import.meta.url).href);
 
 // ═══ AUDIO ═══
 let ac=null;
@@ -540,10 +441,6 @@ function blendServerDucks(dt){
 }
 
 // ═══ HELPERS ═══
-function trackX(t,f){
-  const l=(W/2-VHW)*(1-t)+TL0*t, r=(W/2+VHW)*(1-t)+TR0*t;
-  return l+f*(r-l);
-}
 function lerp(a,b,t){return a+(b-a)*t}
 
 // ═══ UPDATE ═══
@@ -789,538 +686,55 @@ function updAnim(p,dt){
   }
 }
 
-// ═══ DRAW ═══
-function draw(){
-  X.clearRect(0,0,W,H);
-  drawSky();drawGrass();drawTrack();
-  // Ducks
-  [P,CPU].sort((a,b)=>a.dist-b.dist).forEach(d=>drawDuck(d));
-  drawHUD();
-  if(state==='countdown')drawCD();
-  if(state==='ready'&&!EMBED_APP)drawReady();
-  if(state==='ending')drawTimeUp();
-  if(state==='result')drawResult();
-  drawTouchPads();
-}
+// ═══ 3D sync + HTML HUD ═══
+let _r3PrevState = '';
+function syncRace3D() {
+  if (state === 'ready' && _r3PrevState !== 'ready') {
+    renderer3D.setCountdown(null);
+  }
+  if (state === 'countdown') {
+    if (cdVal >= 1 && cdVal <= 3) renderer3D.setCountdown(cdVal);
+    else if (cdVal === 0) renderer3D.setCountdown(0);
+  } else if (_r3PrevState === 'countdown') {
+    renderer3D.setCountdown(null);
+  }
+  if (state === 'racing' && _r3PrevState !== 'racing') {
+    renderer3D.setRacing();
+  }
+  if (state === 'ending' && _r3PrevState !== 'ending') {
+    const myWin = winner === 'YOU';
+    const oppWin = winner === 'CPU';
+    renderer3D.setEnding({
+      winner: myWin ? 'win' : oppWin ? 'lose' : 'draw',
+      myDist: P.dist,
+      oppDist: CPU.dist,
+    });
+  }
+  _r3PrevState = state;
 
-// ═══ SKY ═══
-function drawSky(){
-  // Bright vivid sky like reference
-  const g=X.createLinearGradient(0,0,0,VY);
-  g.addColorStop(0,'#3B8FD9');g.addColorStop(.4,'#5AABEE');
-  g.addColorStop(.8,'#8ECDF5');g.addColorStop(1,'#C5E8C0');
-  X.fillStyle=g;X.fillRect(0,0,W,VY+5);
-  
-  // Big fluffy clouds
-  X.fillStyle='#fff';
-  [[50,VY*.18,30,1],[170,VY*.28,24,.9],[280,VY*.15,22,.85],[100,VY*.4,18,.8]].forEach(([cx,cy,r,a])=>{
-    X.globalAlpha=a;
-    const x=((cx+flowAcc*0.3)%(W+100))-50;
-    X.beginPath();
-    X.arc(x,cy,r,0,Math.PI*2);
-    X.arc(x+r*.9,cy-r*.2,r*.75,0,Math.PI*2);
-    X.arc(x-r*.5,cy+r*.15,r*.6,0,Math.PI*2);
-    X.arc(x+r*.4,cy+r*.25,r*.55,0,Math.PI*2);
-    X.arc(x+r*1.4,cy+r*.1,r*.5,0,Math.PI*2);
-    X.fill();
+  renderer3D.updatePlayer({
+    dist: P.dist,
+    lateral: P.lateral || 0,
+    dirA: P.dirA || 0,
+    v: P.v || P.spd || 0,
+    lastFoot: P.lastFoot,
+    runPhase: P.wc,
   });
-  X.globalAlpha=1;
-  
-  // Trees at horizon (lush green like reference)
-  for(let layer=0;layer<2;layer++){
-    X.fillStyle=layer===0?'#2B7A25':'#3D9635';
-    const count=layer===0?22:16;
-    for(let i=0;i<count;i++){
-      const x=((i*(W/(count-1))+flowAcc*(layer===0?0.5:0.8))%W);
-      const sz=layer===0?8+Math.sin(i*1.7)*3:5+Math.sin(i*2.3)*2;
-      const y0=VY-sz*(layer===0?.15:.05);
-      X.beginPath();X.arc(x,y0,sz,Math.PI,0);X.fill();
-    }
-  }
-  // Flags between trees
-  for(let i=0;i<8;i++){
-    const x=((20+i*(W-40)/7+flowAcc*0.6)%W);
-    const colors=['#D32F2F','#1565C0','#F9A825','#2E7D32'];
-    X.strokeStyle='#795548';X.lineWidth=1.5;
-    X.beginPath();X.moveTo(x,VY-2);X.lineTo(x,VY-16);X.stroke();
-    X.fillStyle=colors[i%4];
-    X.beginPath();X.moveTo(x,VY-16);X.lineTo(x+7,VY-13);X.lineTo(x,VY-10);X.fill();
-  }
-}
+  renderer3D.updateOpponent({
+    dist: CPU.dist,
+    lateral: CPU.lateral || 0,
+    dirA: CPU.dirA || 0,
+    v: CPU.v || CPU.spd || 0,
+    lastFoot: CPU.lastFoot,
+    runPhase: CPU.wc,
+  });
 
-// ═══ GRASS ═══
-function drawGrass(){
-  // Bright green like reference
-  const g=X.createLinearGradient(0,VY,0,TB+40);
-  g.addColorStop(0,'#5EC44A');g.addColorStop(.5,'#4DB83E');g.addColorStop(1,'#40A833');
-  X.fillStyle=g;X.fillRect(0,VY,W,H-VY);
-  
-  // Grass highlights
-  for(let i=0;i<30;i++){
-    const gy=VY+5+((i*41)%(TB-VY+30));
-    const depthG=(gy-VY)/Math.max(1e-6,TB-VY);
-    const gx=((i*53+flowAcc*2+flowAcc*depthG*1.5)%W);
-    X.fillStyle='rgba(120,220,80,.35)';
-    X.beginPath();X.arc(gx,gy,1.5+Math.sin(i)*.5,0,Math.PI*2);X.fill();
+  const rem = Math.max(0, TIME_LIMIT - raceT);
+  if (state === 'racing' || state === 'ending' || state === 'result') {
+    hudEl.innerHTML = `<div style="font-size:24px;font-weight:bold">${rem.toFixed(1)}초</div><div style="font-size:13px">나: ${P.dist.toFixed(1)}m | 상대: ${CPU.dist.toFixed(1)}m</div>`;
+  } else {
+    hudEl.innerHTML = '';
   }
-  
-  // Colorful wildflowers (like reference)
-  const fColors=['#FF5252','#FFD740','#FF4081','#E040FB','#FF6E40','#7C4DFF','#40C4FF'];
-  for(let i=0;i<35;i++){
-    const fy=VY+8+((i*43)%(TB-VY+20));
-    const depthF=(fy-VY)/Math.max(1e-6,TB-VY);
-    const fx=((i*67+flowAcc*2+flowAcc*depthF*1.2)%(W*.4));
-    const side=i%2===0?1:-1;
-    const bx=side>0?W-fx-3:fx+3;
-    // Only draw on grass (not on track)
-    const tAtY=(fy-VY)/(TB-VY);
-    const tl=trackX(tAtY>1?1:tAtY<0?0:tAtY,0);
-    const tr=trackX(tAtY>1?1:tAtY<0?0:tAtY,1);
-    if(bx>tl-5&&bx<tr+5)continue;
-    X.fillStyle=fColors[i%7];
-    const sz=2+Math.sin(i*1.3)*.8;
-    X.beginPath();X.arc(bx,fy,sz,0,Math.PI*2);X.fill();
-    // White center
-    X.fillStyle='rgba(255,255,255,.6)';
-    X.beginPath();X.arc(bx,fy,sz*.4,0,Math.PI*2);X.fill();
-  }
-
-  // ── 트랙 양옆 말뚝 (속도감 핵심) ──
-  if(raceTerrainKey==='normal'||!raceTerrainKey){
-    for(let i=0;i<12;i++){
-      const phase=((i*8-flowAcc*1.8)%96+96)%96;
-      const t=phase/96;
-      if(t<0.03||t>0.97) continue;
-      const y=VY+(TB-VY)*t;
-      const scale=0.3+0.7*t;
-      const postH=Math.max(4,18*scale);
-      const postW=Math.max(1.5,3*scale);
-      const lx=trackX(t,0)-postW*2;
-      X.fillStyle=`rgba(140,100,60,${0.3+0.6*t})`;
-      X.fillRect(lx-postW/2,y-postH,postW,postH);
-      const rx=trackX(t,1)+postW*2;
-      X.fillRect(rx-postW/2,y-postH,postW,postH);
-    }
-  }
-}
-
-// ═══ TRACK ═══
-function drawTrack(){
-  const terr=getTerrain();
-  const isIce=raceTerrainKey==='ice'||raceTerrainKey==='iceCliff';
-  const isCliff=raceTerrainKey==='cliff'||raceTerrainKey==='iceCliff';
-  const th=terr.fallThreshold;
-  const edgeDanger=th!=null&&Number.isFinite(th)&&Math.abs(P.lateral)>th*0.72;
-  if(isCliff){
-    X.fillStyle='#1a120d';
-    X.beginPath();
-    X.moveTo(0,VY);X.lineTo(W/2-VHW-18,VY);X.lineTo(TL0-40,TB);X.lineTo(0,TB);X.closePath();
-    X.fill();
-    X.beginPath();
-    X.moveTo(W,VY);X.lineTo(W/2+VHW+18,VY);X.lineTo(TR0+40,TB);X.lineTo(W,TB);X.closePath();
-    X.fill();
-  }
-  const tg=X.createLinearGradient(0,VY,0,TB);
-  if(isIce){
-    tg.addColorStop(0,'#A8D8EA');tg.addColorStop(.5,'#7EC8E3');tg.addColorStop(1,'#5BA3C6');
-  }else{
-    tg.addColorStop(0,'#D4BE98');tg.addColorStop(.5,'#C8B088');tg.addColorStop(1,'#BCA478');
-  }
-  X.fillStyle=tg;
-  X.beginPath();
-  X.moveTo(W/2-VHW,VY);X.lineTo(TL0,TB);X.lineTo(TR0,TB);X.lineTo(W/2+VHW,VY);
-  X.closePath();X.fill();
-  
-  for(let i=0;i<18;i++){
-    const phase=((i*4.5-flowAcc*2.5)%81+81)%81;
-    const t=phase/81;if(t<.02||t>.98)continue;
-    const y=VY+(TB-VY)*t;
-    const lx=trackX(t,.01),rx=trackX(t,.99);
-    const h=Math.max(1.5,(TB-VY)/20*t);
-    X.fillStyle=isIce
-      ?(i%2===0?'rgba(255,255,255,.28)':'rgba(180,230,255,.12)')
-      :(i%2===0?'rgba(210,185,145,.45)':'rgba(180,155,110,.25)');
-    X.fillRect(lx,y,rx-lx,h);
-  }
-  
-  const edgeCol=edgeDanger?'rgba(255,60,60,.95)':'rgba(255,255,255,.7)';
-  X.strokeStyle=edgeCol;X.lineWidth=edgeDanger?3:2;
-  X.beginPath();X.moveTo(W/2-VHW,VY);X.lineTo(TL0,TB);X.stroke();
-  X.beginPath();X.moveTo(W/2+VHW,VY);X.lineTo(TR0,TB);X.stroke();
-  
-  // Center dashed line
-  X.strokeStyle='rgba(255,255,255,.6)';X.lineWidth=2.5;
-  X.setLineDash([10,15]);X.lineDashOffset=-(flowAcc*3);
-  X.beginPath();X.moveTo(W/2,VY);X.lineTo(W/2,TB);X.stroke();
-  X.setLineDash([]);
-  
-  // Start line (near bottom)
-  const startRel=0-((P.dist+CPU.dist)/2);
-  if(startRel>-5&&startRel<40){
-    const t2=1-Math.max(0,startRel)/40;
-    if(t2>.05&&t2<.95){
-      const sy=VY+(TB-VY)*t2;
-      const sl=trackX(t2,.05),sr=trackX(t2,.95);
-      X.strokeStyle=`rgba(255,255,255,${.5+.3*t2})`;X.lineWidth=3*t2;
-      X.beginPath();X.moveTo(sl,sy);X.lineTo(sr,sy);X.stroke();
-    }
-  }
-  
-  // Distance markers (10m 간격, 스크롤)
-  const avgD=(P.dist+CPU.dist)/2;
-  const mStart=Math.max(10,Math.floor(avgD/10)*10-30);
-  for(let m=mStart;m<=mStart+80;m+=10){
-    if(m<10)continue;
-    const rel=m-avgD;if(rel<1||rel>40)continue;
-    const t=1-rel/40;
-    const y=VY+(TB-VY)*t;
-    X.fillStyle=`rgba(255,255,255,${.2+.4*t})`;
-    X.font=`bold ${6+8*t}px sans-serif`;X.textAlign='center';
-    X.fillText(`${m}m`,W/2,y-2);
-  }
-
-  // ── 스피드 라인 (빠를 때만) ──
-  const avgV=(P.v+CPU.v)/2;
-  if(avgV>2){
-    const intensity=Math.min(1,(avgV-2)/6);
-    X.strokeStyle=`rgba(255,255,255,${intensity*0.15})`;
-    X.lineWidth=1;
-    for(let i=0;i<8;i++){
-      const sy=VY+(TB-VY)*(0.1+Math.random()*0.8);
-      const side=i%2===0?-1:1;
-      const sx=W/2+side*(W/2+10);
-      const ex=W/2+side*VHW;
-      X.beginPath();X.moveTo(sx,sy);X.lineTo(ex,VY+(sy-VY)*0.3);X.stroke();
-    }
-  }
-
-  // ── 먼지 (트랙 바닥 근처) ──
-  if(avgV>1.5&&(raceTerrainKey==='normal'||!raceTerrainKey)){
-    const dustCount=Math.min(10,Math.floor(avgV*2));
-    for(let i=0;i<dustCount;i++){
-      const dx=TL0+Math.random()*(TR0-TL0);
-      const dy=TB-Math.random()*30;
-      const r=1+Math.random()*2.5;
-      X.fillStyle=`rgba(200,180,140,${0.1+Math.random()*0.15})`;
-      X.beginPath();X.arc(dx,dy,r,0,Math.PI*2);X.fill();
-    }
-  }
-}
-
-// ═══ DUCK ═══
-function drawDuck(p){
-  const st=duckVisualState(p);
-  const avgD=(P.dist+CPU.dist)/2;
-  const relD=p.dist-avgD;
-  let screenY=DUCK_Y+p.by-(relD*3.5);
-  const lane=st.lane;
-  const tV=Math.min(1,Math.max(0,(TB-screenY)/(TB-VY)));
-  const latScale=isServerRaceConnected()?1:(p.isCpu?0.22:1);
-  const screenX=trackX(tV,lane)+p.lateral*LATERAL_PX_PER_M*latScale;
-  if(p===P)screenY+=playerFallAnim*40;
-  const bs=DUCK_SZ;
-  const dirShift=Math.sin(p.dirA)*bs*1.2;
-  const dirView=.12+0.88*Math.cos(Math.abs(p.dirA+p.spinAngle*0.2));
-  const dirYaw=p.dirA*0.68+p.spinAngle*0.55;
-  const legSprite=st.useSprites;
-  
-  X.save();
-  X.translate(screenX+dirShift,screenY);
-  const terr=getTerrain();
-  if(terr.slipOnSameFoot&&slipFxUntil>raceT&&p===P&&state==='racing'){
-    X.strokeStyle='rgba(255,255,255,.45)';
-    X.lineWidth=2;
-    for(let k=0;k<3;k++){
-      X.beginPath();
-      X.moveTo(-20-k*8,bs*.5);X.lineTo(-32-k*12,bs*.65);X.stroke();
-    }
-  }
-  X.rotate(dirYaw);
-  X.rotate(p.tilt);
-  X.scale(p.scX,p.scY);
-  
-  // ═══ SHADOW ═══
-  X.fillStyle='rgba(0,0,0,.12)';
-  X.beginPath();X.ellipse(0,bs*.44,bs*.38,bs*.06,0,0,Math.PI*2);X.fill();
-  
-  // ═══ LEGS (behind body = drawn first, but we want BACK leg behind, FRONT leg in front) ═══
-  // Determine which leg is "back" (showing sole) vs "front"
-  const leftBack=p.leftLegA>p.rightLegA;
-  
-  // Draw back leg first (behind body)
-  if(leftBack){
-    drawLeg(p,-bs*.15*dirView,bs*.22,bs,p.leftLegA,legSprite,dirView);
-  }else{
-    drawLeg(p,bs*.15*dirView,bs*.22,bs,p.rightLegA,legSprite,dirView);
-  }
-  
-  // ═══ BODY ═══
-  if(sprites.body&&st.useSprites){
-    const bw=bs*1.05*dirView,bh=bs*.95;
-    X.drawImage(sprites.body,-bw/2,-bh/2+bs*.08,bw,bh);
-  }else if(st.duriDark){
-    const col='#2C2C2C';
-    const dk='#1A1A1A';
-    const bg=X.createRadialGradient(0,bs*.02,bs*.08,0,bs*.05,bs*.43);
-    bg.addColorStop(0,col);bg.addColorStop(1,dk);
-    X.fillStyle=bg;
-    X.beginPath();X.ellipse(0,bs*.05,bs*.42*dirView,bs*.4,0,0,Math.PI*2);X.fill();
-    X.fillStyle=dk;
-    X.beginPath();X.ellipse(-bs*.36*dirView,bs*.02,bs*.08,bs*.18,.1,0,Math.PI*2);X.fill();
-    X.beginPath();X.ellipse(bs*.36*dirView,bs*.02,bs*.08,bs*.18,-.1,0,Math.PI*2);X.fill();
-  }else{
-    const col=st.colLight||'#F5F5F0';
-    const mid=st.col||'#F5F5F0';
-    const dk=st.colDark||'#E0DDD5';
-    const bg=X.createRadialGradient(0,bs*.02,bs*.08,0,bs*.05,bs*.43);
-    bg.addColorStop(0,col);bg.addColorStop(0.5,mid);bg.addColorStop(1,dk);
-    X.fillStyle=bg;
-    X.beginPath();X.ellipse(0,bs*.05,bs*.42*dirView,bs*.4,0,0,Math.PI*2);X.fill();
-    X.fillStyle=dk;
-    X.beginPath();X.ellipse(-bs*.36*dirView,bs*.02,bs*.08,bs*.18,.1,0,Math.PI*2);X.fill();
-    X.beginPath();X.ellipse(bs*.36*dirView,bs*.02,bs*.08,bs*.18,-.1,0,Math.PI*2);X.fill();
-  }
-  
-  // ═══ FRONT LEG (in front of body) ═══
-  if(leftBack){
-    drawLeg(p,bs*.15*dirView,bs*.22,bs,p.rightLegA,legSprite,dirView);
-  }else{
-    drawLeg(p,-bs*.15*dirView,bs*.22,bs,p.leftLegA,legSprite,dirView);
-  }
-  
-  // ═══ TAIL ═══
-  X.save();X.rotate(-p.tLag*.5);
-  const tailY=-bs*.33-p.lean*bs*.07;
-  X.fillStyle=st.duriDark?'#3A3A3A':(st.tailFill||'#FFFDE7');
-  X.beginPath();
-  X.moveTo(-bs*.04,tailY);
-  X.quadraticCurveTo(0,tailY-bs*.2,bs*.05,tailY-bs*.13);
-  X.quadraticCurveTo(bs*.02,tailY-bs*.05,bs*.03,tailY);
-  X.closePath();X.fill();
-  X.restore();
-  
-  // ═══ HEAD ═══
-  X.save();
-  const hx=p.hLag*bs*.14;
-  const hy=-bs*.47-p.lean*bs*.05;
-  const hr=bs*.19*(1-p.lean*.1);
-  X.translate(hx,0);
-  if(sprites.head&&st.useSprites){
-    const hw=hr*2.8,hh=hr*2.8;
-    X.drawImage(sprites.head,-hw/2,hy-hh/2,hw,hh);
-  }else if(st.duriDark){
-    X.fillStyle='#2C2C2C';
-    X.beginPath();X.arc(0,hy,hr,0,Math.PI*2);X.fill();
-    X.fillStyle='#1A1A1A';
-    X.beginPath();
-    X.moveTo(-2,hy-hr);X.quadraticCurveTo(1,hy-hr-10,4,hy-hr-3);
-    X.quadraticCurveTo(2,hy-hr+1,0,hy-hr);X.fill();
-  }else{
-    X.fillStyle=st.colLight||'#F5F5F0';
-    X.beginPath();X.arc(0,hy,hr,0,Math.PI*2);X.fill();
-    X.fillStyle=st.colDark||'#E0DDD5';
-    X.beginPath();
-    X.moveTo(-2,hy-hr);X.quadraticCurveTo(1,hy-hr-10,4,hy-hr-3);
-    X.quadraticCurveTo(2,hy-hr+1,0,hy-hr);X.fill();
-  }
-  X.restore();
-  
-  // ═══ NECK BAND ═══
-  X.fillStyle=st.neckBand;
-  X.fillRect(-bs*.12,-bs*.25,bs*.24,bs*.05);
-  X.fillStyle='#fff';X.font=`bold ${bs*.035}px sans-serif`;X.textAlign='center';
-  X.fillText(st.glyph,0,-bs*.225);
-  
-  // ═══ LABEL ═══
-  X.fillStyle='rgba(255,255,255,.85)';
-  X.font=`bold ${bs*.13}px sans-serif`;X.textAlign='center';
-  X.fillText(st.displayName,0,-bs*.68);
-  
-  X.restore();
-}
-
-// ═══ DRAW LEG ═══
-function drawLeg(p,lx,ly,bs,angle,useAriLegSprites,dirView){
-  X.save();
-  X.translate(lx,ly); // hip joint position
-  X.rotate(angle);     // swing around hip
-  
-  const legLen=bs*.35;
-  const footW=bs*.16;
-  const footH=bs*.08;
-  
-  if(sprites.leg&&useAriLegSprites){
-    // Use sprite: top = hip, bottom = foot
-    const sw=bs*.22*dirView,sh=bs*.42;
-    // Scale based on angle: back leg appears bigger (closer), front leg smaller
-    const depthScale=1+angle*.15;
-    X.scale(depthScale,depthScale);
-    X.drawImage(sprites.leg,-sw/2,0,sw,sh);
-    X.scale(1/depthScale,1/depthScale);
-  }else{
-    // Code-drawn leg
-    const legCol='#E8600A';
-    const footCol='#E8600A';
-    
-    // Leg bone
-    X.strokeStyle=legCol;X.lineWidth=bs*.055;X.lineCap='round';
-    X.beginPath();X.moveTo(0,0);X.lineTo(0,legLen);X.stroke();
-    
-    // Foot (webbed)
-    X.fillStyle=footCol;
-    X.beginPath();
-    X.ellipse(0,legLen+footH*.3,footW,footH,0,0,Math.PI);
-    X.fill();
-    
-    // Web lines
-    X.strokeStyle='#C04808';X.lineWidth=1;
-    X.beginPath();
-    X.moveTo(-footW*.6,legLen+footH*.3);X.lineTo(0,legLen+footH*1.2);
-    X.moveTo(0,legLen+footH*.3);X.lineTo(0,legLen+footH*1.2);
-    X.moveTo(footW*.6,legLen+footH*.3);X.lineTo(0,legLen+footH*1.2);
-    X.stroke();
-    
-    // Sole highlight when leg is back (showing sole)
-    if(angle>0.2){
-      const soleAlpha=Math.min(1,(angle-.2)*2);
-      X.fillStyle=`rgba(255,200,100,${soleAlpha*.3})`;
-      X.beginPath();
-      X.ellipse(0,legLen+footH*.5,footW*.8,footH*.7,0,0,Math.PI*2);
-      X.fill();
-    }
-  }
-  X.restore();
-}
-
-// ═══ HUD ═══
-function drawHUD(){
-  X.fillStyle='rgba(0,0,0,.58)';X.fillRect(0,0,W,72);
-  const rem=Math.max(0,TIME_LIMIT-raceT);
-  if(state==='racing'||state==='ending'||state==='result'){
-    const pulse=rem<=3&&state==='racing'?Math.sin(raceT*12)*.5+.5:0;
-    X.fillStyle=rem<=3&&state==='racing'?`rgba(255,${Math.round(200+pulse*55)},100,.98)`:'#fff';
-    X.font='bold 38px sans-serif';X.textAlign='center';X.textBaseline='middle';
-    X.fillText(rem.toFixed(1),W/2,22);
-    X.textBaseline='alphabetic';
-    X.fillStyle='rgba(255,255,255,.45)';X.font='10px sans-serif';
-    X.fillText('남은 시간 (초)',W/2,38);
-  }
-  X.fillStyle='#9cf';X.font='10px sans-serif';X.textAlign='left';
-  X.fillText(getTerrain().name,10,44);
-  X.fillStyle='#FFD700';X.font='bold 12px sans-serif';
-  X.fillText(`${hudLabelMe()} ${fmtDist(P.dist)}m`,10,56);
-  X.fillStyle='rgba(255,255,255,.45)';X.font='10px sans-serif';
-  X.fillText(`${P.taps} tap`,10,68);
-  X.fillStyle='#ccc';X.font='bold 12px sans-serif';X.textAlign='right';
-  X.fillText(`${hudLabelOpp()} ${fmtDist(CPU.dist)}m`,W-10,56);
-  const bx=10,bw=W-20,by2=62,bh=4;
-  X.fillStyle='rgba(255,255,255,.12)';X.beginPath();X.roundRect(bx,by2,bw,bh,2);X.fill();
-  X.fillStyle='rgba(79,195,247,.85)';X.beginPath();X.roundRect(bx,by2,bw*Math.min(1,raceT/TIME_LIMIT),bh,2);X.fill();
-}
-
-function drawTimeUp(){
-  X.fillStyle='rgba(0,0,0,.45)';X.fillRect(0,0,W,H);
-  X.fillStyle='#FFEB3B';X.font='bold 56px sans-serif';X.textAlign='center';X.textBaseline='middle';
-  X.shadowColor='rgba(0,0,0,.5)';X.shadowBlur=12;
-  X.fillText('TIME UP!',W/2,H*.4);
-  X.shadowBlur=0;X.textBaseline='alphabetic';
-  X.fillStyle='rgba(255,255,255,.75)';X.font='bold 18px sans-serif';
-  X.fillText('거리로 승부!',W/2,H*.48);
-  X.fillStyle='rgba(255,255,255,.6)';X.font='bold 14px sans-serif';
-  X.fillText(`${hudLabelMe()} ${fmtDist(P.dist)}m  ·  ${hudLabelOpp()} ${fmtDist(CPU.dist)}m`,W/2,H*.56);
-}
-
-// ═══ TOUCH PADS (원형, 화면 최하단 · 오버레이보다 위) ═══
-function drawTouchPads(){
-  if(state==='result'||state==='ending')return;
-  const r=TOUCH_PAD_R;
-  const g=TOUCH_PAD_EDGE_GAP;
-  const padY=H-36;
-  const cxL=W/2-r-g/2;
-  const cxR=W/2+r+g/2;
-  function one(cx,k,label){
-    X.save();
-    const t=Math.min(1,Math.max(0,k));
-    const rg=X.createRadialGradient(cx-r*.35,padY-r*.35,r*.15,cx,padY,r*1.15);
-    if(t<0.05){
-      rg.addColorStop(0,'rgba(200,225,255,0.35)');
-      rg.addColorStop(0.55,'rgba(70,130,210,0.5)');
-      rg.addColorStop(1,'rgba(30,70,130,0.65)');
-    }else{
-      rg.addColorStop(0,`rgba(255,255,255,${0.55+0.35*t})`);
-      rg.addColorStop(0.45,`rgba(180,230,255,${0.75+0.2*t})`);
-      rg.addColorStop(1,`rgba(100,180,240,${0.7+0.25*t})`);
-    }
-    X.fillStyle=rg;
-    X.beginPath();
-    X.arc(cx,padY,r,0,Math.PI*2);
-    X.fill();
-    X.strokeStyle=`rgba(255,255,255,${0.45+0.45*t})`;
-    X.lineWidth=2;
-    X.stroke();
-    X.fillStyle=`rgba(255,255,255,${0.85+0.15*t})`;
-    X.font='bold 12px sans-serif';
-    X.textAlign='center';
-    X.textBaseline='middle';
-    X.shadowColor='rgba(0,0,0,0.35)';
-    X.shadowBlur=4;
-    X.fillText(label,cx,padY);
-    X.shadowBlur=0;
-    X.textBaseline='alphabetic';
-    X.restore();
-  }
-  one(cxL,padGlowL,'왼');
-  one(cxR,padGlowR,'오');
-}
-
-// ═══ COUNTDOWN ═══
-function drawCD(){
-  X.fillStyle='rgba(0,0,0,.35)';X.fillRect(0,0,W,H);
-  const txt=cdVal>0?String(cdVal):'GO!';
-  const shk=cdVal<=0?Math.sin(cdT*40)*4*(1-cdT*2):0;
-  X.save();X.translate(shk,0);
-  X.fillStyle='rgba(0,0,0,.25)';
-  X.font=`bold ${cdVal>0?80:60}px sans-serif`;X.textAlign='center';X.textBaseline='middle';
-  X.fillText(txt,W/2+2,H*.36+2);
-  X.fillStyle=cdVal>0?'#fff':'#FFD700';
-  X.fillText(txt,W/2,H*.36);
-  X.textBaseline='alphabetic';X.restore();
-}
-
-// ═══ READY ═══
-function drawReady(){
-  X.fillStyle='rgba(0,0,0,.4)';X.fillRect(0,0,W,H);
-  X.fillStyle='#FFD700';X.font='bold 32px sans-serif';X.textAlign='center';
-  X.fillText('🦆 달려오리',W/2,H*.30);
-  X.fillStyle='#ddd';X.font='12px sans-serif';
-  X.fillText(`${TIME_LIMIT}초 동안 더 멀리! (결승선 없음)`,W/2,H*.37);
-  X.fillText('왼발 / 오른발 번갈아 탭!',W/2,H*.41);
-  X.fillStyle='#aaa';X.font='11px sans-serif';
-  X.fillText('같은 발 연속 = 방향 틀어짐!',W/2,H*.45);
-  X.fillText('PC: ← →',W/2,H*.49);
-  const p=.85+Math.sin(Date.now()/350)*.15;
-  X.globalAlpha=p;X.fillStyle='#FFB300';
-  X.beginPath();X.roundRect(W/2-80,H*.53,160,48,24);X.fill();
-  X.fillStyle='#333';X.font='bold 20px sans-serif';X.fillText('START 🏁',W/2,H*.53+31);
-  X.globalAlpha=1;
-}
-
-// ═══ RESULT ═══
-function drawResult(){
-  X.fillStyle='rgba(0,0,0,.55)';X.fillRect(0,0,W,H);
-  const line=`${hudLabelMe()} ${fmtDist(P.dist)}m vs ${hudLabelOpp()} ${fmtDist(CPU.dist)}m`;
-  let head,headCol;
-  if(winner==='YOU'){head='🏆 승리! 🏆';headCol='#FFD700'}
-  else if(winner==='CPU'){head='😢 패배...';headCol='#FF6B6B'}
-  else{head='무승부';headCol='#B0BEC5'}
-  X.fillStyle=headCol;X.font='bold 30px sans-serif';X.textAlign='center';
-  X.fillText(head,W/2,H*.30);
-  X.fillStyle='#fff';X.font='bold 17px sans-serif';
-  X.fillText(line,W/2,H*.40);
-  X.fillStyle='rgba(255,255,255,.75)';X.font='14px sans-serif';
-  X.fillText(`${TIME_LIMIT.toFixed(1)}초 종료 · ${P.taps} taps`,W/2,H*.47);
-  X.fillStyle='rgba(255,255,255,.5)';X.font='12px sans-serif';
-  X.fillText(EMBED_APP?'':'탭하면 다시 시작',W/2,H*.55);
 }
 
 // ═══ LOOP ═══
@@ -1328,7 +742,8 @@ let rafId=0;
 let lt=0;
 function loop(t){
   const dt=Math.min((t-lt)/1000,.05);lt=t;
-  X.save();X.scale(sc,sc);update(dt);draw();X.restore();
+  update(dt);
+  syncRace3D();
   rafId=requestAnimationFrame(loop);
 }
 rafId=requestAnimationFrame(loop);
@@ -1418,6 +833,8 @@ if(EMBED_APP&&!serverRaceOpt){
     window.removeEventListener('resize', resize);
     hostEl.removeEventListener('pointerdown', racePointerDown, { capture: true });
     hostEl.removeEventListener('keydown', raceKeyDown);
+    renderer3D.dispose();
+    hudEl.remove();
     hostEl.remove();
   }
   return stop;
