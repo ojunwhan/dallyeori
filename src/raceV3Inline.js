@@ -849,12 +849,14 @@ if(EMBED_APP&&!serverRaceOpt){
     hostEl.remove();
   }
 
-  function cleanupAndFinish() {
+  function cleanupAndFinish(overridePayload) {
     if (raceFinishPosted) return;
     raceFinishPosted = true;
-    const pl = makeFinishPayload();
+    const pl =
+      overridePayload != null && typeof overridePayload === 'object'
+        ? overridePayload
+        : makeFinishPayload();
     serverFinishPayload = null;
-    stop();
     if (typeof onFinish === 'function') {
       try {
         onFinish(pl);
@@ -862,6 +864,9 @@ if(EMBED_APP&&!serverRaceOpt){
         console.error(e);
       }
     }
+    window.setTimeout(() => {
+      stop();
+    }, 100);
   }
 
   return stop;
