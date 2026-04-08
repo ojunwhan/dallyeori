@@ -78,7 +78,7 @@ export function mountRaceV3Game(hostEl, options) {
   const tapPadsWrap = document.createElement('div');
   tapPadsWrap.className = 'race-tap-pads';
   tapPadsWrap.style.cssText =
-    'position:fixed;left:0;right:0;bottom:0;z-index:24;display:none;flex-direction:row;' +
+    'position:fixed;left:0;right:0;bottom:0;z-index:24;display:flex;flex-direction:row;' +
     'align-items:flex-end;justify-content:center;gap:1.5cm;pointer-events:none;box-sizing:border-box;' +
     'padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));touch-action:manipulation;';
   function makeTapPad(footLR) {
@@ -100,12 +100,15 @@ export function mountRaceV3Game(hostEl, options) {
   tapPadsWrap.appendChild(leftTapPadBtn);
   tapPadsWrap.appendChild(rightTapPadBtn);
   hostEl.appendChild(tapPadsWrap);
+  /** PC는 (pointer: fine) 이라 패드가 숨겨지고 화면 절반 탭만 쓰는데, 그때 window.innerWidth 기준이면 넓은 창·레터박스에서 발이 뒤집혀 느껴짐 → 항상 패드 표시 + 아래 footFromPointerClientX 로 보조 */
   function updateTapPadsVisibility() {
-    const coarse =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(pointer: coarse)').matches;
-    const narrow = window.innerWidth <= 900;
-    tapPadsWrap.style.display = coarse || narrow ? 'flex' : 'none';
+    tapPadsWrap.style.display = 'flex';
+  }
+  function footFromPointerClientX(clientX) {
+    const r = hostEl.getBoundingClientRect();
+    if (!(r.width > 0)) return clientX < window.innerWidth * 0.5 ? 'L' : 'R';
+    const mid = r.left + r.width * 0.5;
+    return clientX < mid ? 'L' : 'R';
   }
   function resize() {
     renderer3D.resize();
@@ -404,7 +407,7 @@ function racePointerDown(e){
   if(state==='countdown'){
     e.preventDefault();
     if(isNonPrimaryMouseButton(e)){console.log('[input] countdown: 마우스 보조 버튼, 무시');return}
-    const foot=(e.clientX<window.innerWidth/2)?'L':'R';
+    const foot = footFromPointerClientX(e.clientX);
     console.log('[input] countdown 제자리, tap 직전 foot:',foot);
     tap(foot);
     console.log('[input] countdown 제자리 tap 완료');
@@ -413,7 +416,7 @@ function racePointerDown(e){
   if(state!=='racing'){console.log('[input] state가 racing이 아님, 무시');return}
   e.preventDefault();
   if(isNonPrimaryMouseButton(e)){console.log('[input] 마우스 button 0 아님, 무시 button:',e.button);return}
-  const foot=(e.clientX<window.innerWidth/2)?'L':'R';
+  const foot = footFromPointerClientX(e.clientX);
   console.log('[input] tap 호출 직전, foot:',foot);
   tap(foot);
   console.log('[input] tap 호출 완료, P.dist:',P.dist.toFixed(1));
