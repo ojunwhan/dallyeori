@@ -220,6 +220,14 @@ function createDuck(bodyColor, collarColor) {
   const L = makeLeg(-1);
   const R = makeLeg(1);
 
+  const leftLeg = L.leg;
+  console.log('[DUCK-TREE]', {
+    leftLegParent: leftLeg.parent?.uuid,
+    leftLegInScene: leftLeg.parent !== null,
+    rootChildren: root.children.length,
+    rootChildTypes: root.children.map((c) => c.constructor.name + ':' + (c.uuid?.slice(0, 4))),
+  });
+
   return {
     root,
     body: bodySquash,
@@ -707,17 +715,12 @@ export function createRace3DRenderer(hostEl, options = {}) {
       if (_vP > 0.01) playerRunPhase += _vP * 0.016 * 8;
       if (_vO > 0.01) oppRunPhase += _vO * 0.016 * 8;
 
-      // 플레이어 다리 — leg Group에 직접 (프로토타입과 동일)
-      if (playerDuck.leftLeg && playerDuck.rightLeg) {
-        playerDuck.leftLeg.rotation.x = Math.sin(playerRunPhase) * 0.8 * _sP;
-        playerDuck.rightLeg.rotation.x = Math.sin(playerRunPhase + Math.PI) * 0.8 * _sP;
-      }
+      // 테스트: 다리를 극단적으로 벌려서 보이는지 확인
+      playerDuck.leftLeg.rotation.x = 1.5; // 약 86도 — 앞으로 뻗기
+      playerDuck.rightLeg.rotation.x = -1.5; // 약 86도 — 뒤로 뻗기
 
-      // 상대 다리
-      if (oppDuck.leftLeg && oppDuck.rightLeg) {
-        oppDuck.leftLeg.rotation.x = Math.sin(oppRunPhase) * 0.8 * _sO;
-        oppDuck.rightLeg.rotation.x = Math.sin(oppRunPhase + Math.PI) * 0.8 * _sO;
-      }
+      oppDuck.leftLeg.rotation.x = 1.5;
+      oppDuck.rightLeg.rotation.x = -1.5;
 
       // 플레이어 뒤뚱거림
       if (playerDuck.body) {
@@ -735,6 +738,9 @@ export function createRace3DRenderer(hostEl, options = {}) {
     }
     // ====== FORCE LEG ANIMATION END ======
 
+    if (Math.random() < 0.02) {
+      console.log('[LEG-PRE-RENDER]', { leftLegRotX: playerDuck.leftLeg?.rotation?.x });
+    }
     renderer.render(scene, camera);
   }
 
