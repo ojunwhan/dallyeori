@@ -53,6 +53,19 @@ export const DUCKS_NINE = Object.freeze(
   ]),
 );
 
+/** 3D 레이스 렌더러용 몸/목걸이 색 (hex) — DUCKS_NINE과 별도 */
+export const DUCK_3D_COLORS = Object.freeze({
+  tori: { body: 0xc62828, collar: 0xffd700 },
+  sori: { body: 0xf57c00, collar: 0xc62828 },
+  mari: { body: 0xfdd835, collar: 0x43a047 },
+  nuri: { body: 0x43a047, collar: 0xfdd835 },
+  bori: { body: 0x1e88e5, collar: 0xffffff },
+  yuri: { body: 0x1a237e, collar: 0xffd700 },
+  nari: { body: 0x8e24aa, collar: 0xffffff },
+  duri: { body: 0x212121, collar: 0xff6b00 },
+  ari: { body: 0xfafafa, collar: 0xe91e63 },
+});
+
 /** 8마리 오리 — 성능 동일, 색만 다름 */
 export const DUCKS = Object.freeze([
   { id: 'mori', name: '모리', color: '#FF3B30' },
