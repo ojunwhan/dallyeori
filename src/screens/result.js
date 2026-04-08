@@ -276,6 +276,8 @@ export function mountResult(root, api) {
     oppUserId: opp?.userId,
     jwtUid: jwtUidRaw || null,
     appUid: api.state.user?.uid ?? null,
+    /** 예전 번들엔 없음 — 이게 true인데도 결과에「한판 더」가 보이면 브라우저/서버가 옛 JS 캐시 */
+    uiNoRematchOnResult: true,
   });
 
   const wrap = document.createElement('div');
