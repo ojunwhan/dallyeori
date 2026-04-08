@@ -402,9 +402,13 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
   let wobbleImpulse = 0;
   let oppWobbleImpulse = 0;
-  let playerPhaseAccum = 0;
-  let oppPhaseAccum = 0;
+  let playerRunPhase = 0;
   let oppRunPhase = 0;
+  let playerTapSquashEnd = 0;
+  let oppTapSquashEnd = 0;
+  let endingBtnTimer = 0;
+  /** @type {HTMLElement | null} */
+  let endingBtnWrap = null;
 
   let internalRacing = false;
   let boostTimer = 0;
@@ -412,15 +416,36 @@ export function createRace3DRenderer(hostEl, options = {}) {
   const clock = new THREE.Clock();
 
   function updatePlayer(state) {
-    Object.assign(playerState, state);
+    if (!state || typeof state !== 'object') return;
+    if (state.squash) playerTapSquashEnd = performance.now() + 80;
+    const { squash, runPhase: _rp, ...rest } = state;
+    void _rp;
+    Object.assign(playerState, rest);
   }
 
   function updateOpponent(state) {
-    Object.assign(oppState, state);
+    if (!state || typeof state !== 'object') return;
+    if (state.squash) oppTapSquashEnd = performance.now() + 80;
+    const { squash, runPhase: _ro, ...rest } = state;
+    void _ro;
+    Object.assign(oppState, rest);
+  }
+
+  function clearEndingButtons() {
+    if (endingBtnTimer) {
+      clearTimeout(endingBtnTimer);
+      endingBtnTimer = 0;
+    }
+    if (endingBtnWrap && endingBtnWrap.parentNode) {
+      endingBtnWrap.remove();
+    }
+    endingBtnWrap = null;
   }
 
   function setCountdown(val) {
+    clearEndingButtons();
     resultOverlayEl.style.display = 'none';
+    resultOverlayEl.style.pointerEvents = 'none';
     if (val === 0) {
       cdOverlayEl.textContent = 'GO!';
     } else if (val >= 1 && val <= 3) {
@@ -431,12 +456,18 @@ export function createRace3DRenderer(hostEl, options = {}) {
   }
 
   function setRacing() {
+    clearEndingButtons();
     internalRacing = true;
     cdOverlayEl.textContent = '';
     boostTimer = 0.3;
   }
 
-  function setEnding(result) {
+  /**
+   * @param {{ winner?: string, myDist?: number, oppDist?: number }} result
+   * @param {{ onRematch?: () => void, onViewRecord?: () => void }} [callbacks]
+   */
+  function setEnding(result, callbacks) {
+    clearEndingButtons();
     internalRacing = false;
     const w = result && result.winner;
     let main = 'DRAW!';
@@ -455,6 +486,37 @@ export function createRace3DRenderer(hostEl, options = {}) {
       `<div style="font-size:min(5vw,28px);font-weight:600;opacity:0.95;margin-top:12px;color:#fff">` +
       `나: ${myD.toFixed(1)}m | 상대: ${opD.toFixed(1)}m</div>`;
     resultOverlayEl.style.display = 'flex';
+    resultOverlayEl.style.pointerEvents = 'auto';
+
+    endingBtnTimer = window.setTimeout(() => {
+      endingBtnTimer = 0;
+      const btnContainer = document.createElement('div');
+      btnContainer.style.cssText =
+        'position:absolute;bottom:25%;left:50%;transform:translateX(-50%);display:flex;gap:16px;z-index:26;pointer-events:auto;';
+
+      const rematchBtn = document.createElement('button');
+      rematchBtn.type = 'button';
+      rematchBtn.textContent = '한판더';
+      rematchBtn.style.cssText =
+        'padding:14px 32px;font-size:18px;font-weight:bold;border:none;border-radius:12px;background:#4CAF50;color:#fff;cursor:pointer;font-family:system-ui;';
+      rematchBtn.onclick = () => {
+        if (callbacks && typeof callbacks.onRematch === 'function') callbacks.onRematch();
+      };
+
+      const recordBtn = document.createElement('button');
+      recordBtn.type = 'button';
+      recordBtn.textContent = '기록보기';
+      recordBtn.style.cssText =
+        'padding:14px 32px;font-size:18px;font-weight:bold;border:none;border-radius:12px;background:rgba(255,255,255,0.2);color:#fff;cursor:pointer;font-family:system-ui;border:1px solid rgba(255,255,255,0.4);';
+      recordBtn.onclick = () => {
+        if (callbacks && typeof callbacks.onViewRecord === 'function') callbacks.onViewRecord();
+      };
+
+      btnContainer.appendChild(rematchBtn);
+      btnContainer.appendChild(recordBtn);
+      resultOverlayEl.appendChild(btnContainer);
+      endingBtnWrap = btnContainer;
+    }, 2000);
   }
 
   function resize() {
@@ -487,6 +549,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
   }
 
   function dispose() {
+    clearEndingButtons();
     if (animId) cancelAnimationFrame(animId);
     animId = 0;
     renderer.dispose();
@@ -536,29 +599,18 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
     const speedNP = Math.min(1, vP / MAX_SPEED);
     const speedNO = Math.min(1, vO / MAX_SPEED);
-    const cadenceP = 6 + speedNP * 14;
-    const cadenceO = 6 + speedNO * 14;
 
-    if (playerState.runPhase != null && Number.isFinite(playerState.runPhase)) {
-      playerPhaseAccum = playerState.runPhase;
-    } else if (runningP) {
-      playerPhaseAccum += dt * cadenceP;
-    }
-    if (oppState.runPhase != null && Number.isFinite(oppState.runPhase)) {
-      oppRunPhase = oppState.runPhase;
-    } else if (runningO) {
-      oppRunPhase += vO * dt * 8;
-    }
-
-    const ph = playerState.runPhase != null ? playerState.runPhase : playerPhaseAccum;
-    const bph = oppState.runPhase != null ? oppState.runPhase : oppRunPhase;
+    playerRunPhase += vP * dt * 8;
+    oppRunPhase += vO * dt * 8;
 
     wobbleImpulse *= Math.pow(0.88, dt * 60);
     oppWobbleImpulse *= Math.pow(0.88, dt * 60);
 
     run.squashT = Math.max(0, run.squashT - dt * 5);
     const sq = run.squashT;
-    playerDuck.body.scale.set(1 + sq * 0.22, 1 - sq * 0.28, 1 + sq * 0.12);
+    const nowT = performance.now();
+    const playerBodyY = nowT < playerTapSquashEnd ? 0.78 : 1 - sq * 0.28;
+    playerDuck.body.scale.set(1 + sq * 0.22, playerBodyY, 1 + sq * 0.12);
 
     const bodySquashGroup = playerDuck.body;
     const headGroup = playerDuck.head;
@@ -571,25 +623,22 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const legRL = playerDuck.rightLeg.lower;
 
     if (runningP) {
-      const swing = 0.85 + speedNP * 0.55;
-      const thighAmp = 0.95 + speedNP * 0.5;
-      const leftPhase = ph;
-      const rightPhase = ph + Math.PI;
-      legLU.rotation.x = Math.sin(leftPhase) * thighAmp;
-      legLL.rotation.x = Math.max(0, -Math.sin(leftPhase + 0.4) * swing * 0.9);
-      legRU.rotation.x = Math.sin(rightPhase) * thighAmp;
-      legRL.rotation.x = Math.max(0, -Math.sin(rightPhase + 0.4) * swing * 0.9);
+      const speedLeg = speedNP;
+      legLU.rotation.x = Math.sin(playerRunPhase) * 0.8 * speedLeg;
+      legRU.rotation.x = Math.sin(playerRunPhase + Math.PI) * 0.8 * speedLeg;
+      legLL.rotation.x = 0.05;
+      legRL.rotation.x = 0.05;
       const waddleAmp = (0.12 + speedNP * 0.38) * 1.85;
-      const waddle = waddleAmp * Math.sin(ph) + wobbleImpulse;
+      const waddle = waddleAmp * Math.sin(playerRunPhase) + wobbleImpulse;
       bodySquashGroup.rotation.z = waddle + dirP * 1.5;
-      bodySquashGroup.position.x = Math.sin(ph) * (0.07 + speedNP * 0.22) * 1.85;
+      bodySquashGroup.position.x = Math.sin(playerRunPhase) * (0.07 + speedNP * 0.22) * 1.85;
       const leanF = speedNP * 0.38;
-      bodySquashGroup.rotation.x = leanF + Math.sin(ph * 2) * 0.04 * speedNP;
-      headGroup.rotation.x = Math.sin(ph * 2) * (0.18 + speedNP * 0.2) * 2.0;
-      headGroup.rotation.y = Math.sin(ph) * (0.08 + speedNP * 0.06) * 2.0 * speedNP;
-      tailPivot.rotation.y = Math.sin(ph + 0.5) * (0.55 + speedNP * 0.65);
-      tailPivot.rotation.x = Math.sin(ph * 2) * 0.12 * speedNP;
-      const stepWave = Math.abs(Math.cos(ph * 2));
+      bodySquashGroup.rotation.x = leanF + Math.sin(playerRunPhase * 2) * 0.04 * speedNP;
+      headGroup.rotation.x = Math.sin(playerRunPhase * 2) * (0.18 + speedNP * 0.2) * 2.0;
+      headGroup.rotation.y = Math.sin(playerRunPhase) * (0.08 + speedNP * 0.06) * 2.0 * speedNP;
+      tailPivot.rotation.y = Math.sin(playerRunPhase + 0.5) * (0.55 + speedNP * 0.65);
+      tailPivot.rotation.x = Math.sin(playerRunPhase * 2) * 0.12 * speedNP;
+      const stepWave = Math.abs(Math.cos(playerRunPhase * 2));
       const contact = stepWave < 0.11;
       if (contact && !run.wasContact) {
         run.dipImpulse = 0.16 + speedNP * 0.12;
@@ -600,8 +649,8 @@ export function createRace3DRenderer(hostEl, options = {}) {
       const wingOpen = speedNP * 0.55;
       wingL.rotation.y = -0.15 - wingOpen * 0.35;
       wingR.rotation.y = 0.15 + wingOpen * 0.35;
-      wingL.rotation.z = 0.25 + Math.sin(ph * 2) * 0.06 * speedNP;
-      wingR.rotation.z = -0.25 - Math.sin(ph * 2) * 0.06 * speedNP;
+      wingL.rotation.z = 0.25 + Math.sin(playerRunPhase * 2) * 0.06 * speedNP;
+      wingR.rotation.z = -0.25 - Math.sin(playerRunPhase * 2) * 0.06 * speedNP;
     } else {
       const id = run.idleT;
       headGroup.rotation.y = Math.sin(id * 1.1) * 0.35;
@@ -620,34 +669,31 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
     oppAnim.squashT = Math.max(0, oppAnim.squashT - dt * 5);
     const bsq = oppAnim.squashT;
-    oppDuck.body.scale.set(1 + bsq * 0.22, 1 - bsq * 0.28, 1 + bsq * 0.12);
+    const oppBodyY = nowT < oppTapSquashEnd ? 0.78 : 1 - bsq * 0.28;
+    oppDuck.body.scale.set(1 + bsq * 0.22, oppBodyY, 1 + bsq * 0.12);
 
     if (runningO) {
-      const bswing = 0.85 + speedNO * 0.55;
-      const bthigh = 0.95 + speedNO * 0.5;
-      oppDuck.leftLeg.hip.rotation.x = Math.sin(bph) * bthigh;
-      oppDuck.leftLeg.lower.rotation.x = Math.max(0, -Math.sin(bph + 0.4) * bswing * 0.9);
-      oppDuck.rightLeg.hip.rotation.x = Math.sin(bph + Math.PI) * bthigh;
-      oppDuck.rightLeg.lower.rotation.x = Math.max(
-        0,
-        -Math.sin(bph + Math.PI + 0.4) * bswing * 0.9,
-      );
+      const speedLegO = speedNO;
+      oppDuck.leftLeg.hip.rotation.x = Math.sin(oppRunPhase) * 0.8 * speedLegO;
+      oppDuck.rightLeg.hip.rotation.x = Math.sin(oppRunPhase + Math.PI) * 0.8 * speedLegO;
+      oppDuck.leftLeg.lower.rotation.x = 0.05;
+      oppDuck.rightLeg.lower.rotation.x = 0.05;
       const bwad = (0.12 + speedNO * 0.38) * 1.85;
-      const bwaddle = bwad * Math.sin(bph) + oppWobbleImpulse;
+      const bwaddle = bwad * Math.sin(oppRunPhase) + oppWobbleImpulse;
       oppDuck.body.rotation.z = bwaddle + dirO * 1.5;
-      oppDuck.body.position.x = Math.sin(bph) * (0.07 + speedNO * 0.22) * 1.85;
+      oppDuck.body.position.x = Math.sin(oppRunPhase) * (0.07 + speedNO * 0.22) * 1.85;
       const blev = speedNO * 0.38;
-      oppDuck.body.rotation.x = blev + Math.sin(bph * 2) * 0.04 * speedNO;
-      oppDuck.head.rotation.x = Math.sin(bph * 2) * (0.18 + speedNO * 0.2) * 2.0;
-      oppDuck.head.rotation.y = Math.sin(bph) * (0.08 + speedNO * 0.06) * 2.0 * speedNO;
-      oppDuck.tail.rotation.y = Math.sin(bph + 0.5) * (0.55 + speedNO * 0.65);
-      oppDuck.tail.rotation.x = Math.sin(bph * 2) * 0.12 * speedNO;
+      oppDuck.body.rotation.x = blev + Math.sin(oppRunPhase * 2) * 0.04 * speedNO;
+      oppDuck.head.rotation.x = Math.sin(oppRunPhase * 2) * (0.18 + speedNO * 0.2) * 2.0;
+      oppDuck.head.rotation.y = Math.sin(oppRunPhase) * (0.08 + speedNO * 0.06) * 2.0 * speedNO;
+      oppDuck.tail.rotation.y = Math.sin(oppRunPhase + 0.5) * (0.55 + speedNO * 0.65);
+      oppDuck.tail.rotation.x = Math.sin(oppRunPhase * 2) * 0.12 * speedNO;
       const bwingO = speedNO * 0.55;
       oppDuck.leftWing.rotation.y = -0.15 - bwingO * 0.35;
       oppDuck.rightWing.rotation.y = 0.15 + bwingO * 0.35;
-      oppDuck.leftWing.rotation.z = 0.25 + Math.sin(bph * 2) * 0.06 * speedNO;
-      oppDuck.rightWing.rotation.z = -0.25 - Math.sin(bph * 2) * 0.06 * speedNO;
-      const bstepWave = Math.abs(Math.cos(bph * 2));
+      oppDuck.leftWing.rotation.z = 0.25 + Math.sin(oppRunPhase * 2) * 0.06 * speedNO;
+      oppDuck.rightWing.rotation.z = -0.25 - Math.sin(oppRunPhase * 2) * 0.06 * speedNO;
+      const bstepWave = Math.abs(Math.cos(oppRunPhase * 2));
       const bcontact = bstepWave < 0.11;
       if (bcontact && !oppAnim.wasContact) {
         oppAnim.dipImpulse = 0.16 + speedNO * 0.12;

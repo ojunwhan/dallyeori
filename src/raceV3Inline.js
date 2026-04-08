@@ -124,6 +124,8 @@ let serverRaceSnap=null;
 let serverFinishPayload=null;
 let _raceTickLogCounter=0;
 let _blendLogCounter=0;
+let playerSquash=false;
+let oppSquash=false;
 
 // ═══ PLAYERS ═══
 function mk(cpu){return{
@@ -234,6 +236,7 @@ function applyPeerTapVisual(foot){
   const bodySw=0.68*0.7;
   CPU.bodySwTgt=f==='L'?bodySw:-bodySw;
   CPU.forcedMovingTimer=0.3;
+  oppSquash=true;
 }
 function tap(foot){
   if(state==='countdown'){
@@ -251,6 +254,7 @@ function tap(foot){
     if(navigator.vibrate)navigator.vibrate(15);
     bumpPadGlow(foot);
     P.bodySwTgt=foot==='L'?0.68:-0.68;
+    playerSquash=true;
     return;
   }
   if(state!=='racing')return;
@@ -309,6 +313,7 @@ function tap(foot){
     console.log('[race] sendTap',tapFoot);
     serverRaceOpt.emitTap(tapFoot);
   }
+  playerSquash=true;
 }
 
 function isNonPrimaryMouseButton(e){
@@ -349,29 +354,30 @@ function reset(){
   padGlowL=0;padGlowR=0;
   fallPaused=false;playerFallAnim=0;slipFxUntil=0;removeFallOverlay();
 }
-function postRaceFinishToParent(){if(raceFinishPosted)return;
-  raceFinishPosted=true;
+function makeFinishPayload(){
   let result='draw';
   if(winner==='YOU')result='win';
   else if(winner==='CPU')result='lose';
-  const pl=serverFinishPayload?{
-    type:'raceFinish',
-    result: serverFinishPayload.result,
-    time: serverFinishPayload.time,
-    myDistance: serverFinishPayload.myDistance,
-    oppDistance: serverFinishPayload.oppDistance,
-    taps: serverFinishPayload.taps,
-    ...(serverFinishPayload.hearts&&typeof serverFinishPayload.hearts==='object'?{hearts:serverFinishPayload.hearts}:{})
-  }:{
+  if(serverFinishPayload){
+    const p=serverFinishPayload;
+    return{
+      type:'raceFinish',
+      result: p.result,
+      time: p.time,
+      myDistance: p.myDistance,
+      oppDistance: p.oppDistance,
+      taps: p.taps,
+      ...(p.hearts&&typeof p.hearts==='object'?{hearts:p.hearts}:{}),
+    };
+  }
+  return{
     type:'raceFinish',
     result,
-    time:TIME_LIMIT,
-    myDistance:P.dist,
-    oppDistance:CPU.dist,
-    taps:P.taps
+    time: TIME_LIMIT,
+    myDistance: P.dist,
+    oppDistance: CPU.dist,
+    taps: P.taps,
   };
-  serverFinishPayload=null;
-  if(typeof onFinish==='function'){try{onFinish(pl);}catch(e){console.error(e);}}
 }
 
 function onServerRaceResult(r){
@@ -518,6 +524,7 @@ function update(dt){
         CPU.bodySwTgt=f==='L'?0.68:-0.68;
         if(f==='L'){CPU.leftLegTarget=.7;CPU.rightLegTarget=-.3}
         else{CPU.rightLegTarget=.7;CPU.leftLegTarget=-.3}
+        oppSquash=true;
       }
       updDuck(CPU,dt);
       flowAcc+=((P.v+CPU.v)/2)*55*dt;
@@ -526,10 +533,6 @@ function update(dt){
   if(state==='ending'){
     endT+=dt;
     updAnim(P,dt);updAnim(CPU,dt);
-    if(endT>5.0){
-      state='result';
-      postRaceFinishToParent();
-    }
   }
 }
 
@@ -704,11 +707,17 @@ function syncRace3D() {
   if (state === 'ending' && _r3PrevState !== 'ending') {
     const myWin = winner === 'YOU';
     const oppWin = winner === 'CPU';
-    renderer3D.setEnding({
-      winner: myWin ? 'win' : oppWin ? 'lose' : 'draw',
-      myDist: P.dist,
-      oppDist: CPU.dist,
-    });
+    renderer3D.setEnding(
+      {
+        winner: myWin ? 'win' : oppWin ? 'lose' : 'draw',
+        myDist: P.dist,
+        oppDist: CPU.dist,
+      },
+      {
+        onRematch: () => cleanupAndFinish(),
+        onViewRecord: () => cleanupAndFinish(),
+      },
+    );
   }
   _r3PrevState = state;
 
@@ -718,16 +727,18 @@ function syncRace3D() {
     dirA: P.dirA || 0,
     v: P.v || P.spd || 0,
     lastFoot: P.lastFoot,
-    runPhase: P.wc,
+    squash: playerSquash,
   });
+  playerSquash = false;
   renderer3D.updateOpponent({
     dist: CPU.dist,
     lateral: CPU.lateral || 0,
     dirA: CPU.dirA || 0,
     v: CPU.v || CPU.spd || 0,
     lastFoot: CPU.lastFoot,
-    runPhase: CPU.wc,
+    squash: oppSquash,
   });
+  oppSquash = false;
 
   const rem = Math.max(0, TIME_LIMIT - raceT);
   if (state === 'racing' || state === 'ending' || state === 'result') {
@@ -837,5 +848,21 @@ if(EMBED_APP&&!serverRaceOpt){
     hudEl.remove();
     hostEl.remove();
   }
+
+  function cleanupAndFinish() {
+    if (raceFinishPosted) return;
+    raceFinishPosted = true;
+    const pl = makeFinishPayload();
+    serverFinishPayload = null;
+    stop();
+    if (typeof onFinish === 'function') {
+      try {
+        onFinish(pl);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+
   return stop;
 }
