@@ -549,16 +549,17 @@ export function createRace3DRenderer(hostEl, options = {}) {
   }
 
   /**
-   * 프로토타입 스타일 달리기 애니메이션 (runPhase + speed 0~1).
+   * 프로토타입 스타일 달리기 애니메이션 (runPhase + speed 0~1, v 기반 증폭).
    * @param {typeof playerDuck} duck
    * @param {number} runPhase
-   * @param {number} speed
+   * @param {number} v 선형 속도 (서버 보정값 대응 증폭용)
    */
-  function applyRunAnimation(duck, runPhase, speed) {
+  function applyRunAnimation(duck, runPhase, v) {
+    const speed = Math.min((Math.max(0, v) / MAX_SPEED) * 2.5, 1);
     const { body, head, hairGroup, leftLeg, rightLeg, leftWing, rightWing, tail, root } = duck;
-    leftLeg.rotation.x = Math.sin(runPhase) * 0.8 * speed;
-    rightLeg.rotation.x = Math.sin(runPhase + Math.PI) * 0.8 * speed;
-    body.rotation.z = Math.sin(runPhase * 2) * 0.08 * speed;
+    leftLeg.rotation.x = Math.sin(runPhase) * 1.2 * speed;
+    rightLeg.rotation.x = Math.sin(runPhase + Math.PI) * 1.2 * speed;
+    body.rotation.z = Math.sin(runPhase * 2) * 0.15 * speed;
     body.position.x = Math.sin(runPhase) * 0.06 * speed;
     body.rotation.x = -speed * 0.15;
     head.rotation.z = Math.sin(runPhase * 2 + 0.5) * 0.06 * speed;
@@ -566,10 +567,10 @@ export function createRace3DRenderer(hostEl, options = {}) {
     head.position.z = 0.1 + Math.sin(runPhase * 2) * 0.04 * speed;
     hairGroup.rotation.z = Math.sin(runPhase * 3) * 0.15 * speed;
     hairGroup.rotation.x = -0.1 + Math.sin(runPhase * 2) * 0.1 * speed;
-    leftWing.rotation.z = Math.sin(runPhase * 2) * 0.2 * speed;
-    rightWing.rotation.z = -Math.sin(runPhase * 2) * 0.2 * speed;
-    tail.rotation.y = Math.sin(runPhase * 3) * 0.3 * speed;
-    root.position.y = Math.abs(Math.sin(runPhase)) * 0.15 * speed;
+    leftWing.rotation.z = Math.sin(runPhase * 2) * 0.3 * speed;
+    rightWing.rotation.z = -Math.sin(runPhase * 2) * 0.3 * speed;
+    tail.rotation.y = Math.sin(runPhase * 3) * 0.4 * speed;
+    root.position.y = Math.abs(Math.sin(runPhase)) * 0.25 * speed;
   }
 
   function renderLoop() {
@@ -594,11 +595,8 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const vO = oppState.spd != null ? oppState.spd : oppState.v;
     const vOv = typeof vO === 'number' && Number.isFinite(vO) ? vO : 0;
 
-    if (vPv > 0.01) playerRunPhase += vPv * dt * 8;
-    if (vOv > 0.01) oppRunPhase += vOv * dt * 8;
-
-    const speedP = Math.min(Math.max(0, vPv) / MAX_SPEED, 1);
-    const speedO = Math.min(Math.max(0, vOv) / MAX_SPEED, 1);
+    if (vPv > 0.01) playerRunPhase += vPv * dt * 14;
+    if (vOv > 0.01) oppRunPhase += vOv * dt * 14;
 
     const nowT = performance.now();
     const playerBodyY = nowT < playerTapSquashEnd ? 0.78 : 1;
@@ -606,8 +604,8 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const oppBodyY = nowT < oppTapSquashEnd ? 0.78 : 1;
     oppDuck.body.scale.set(1, oppBodyY, 1);
 
-    applyRunAnimation(playerDuck, playerRunPhase, speedP);
-    applyRunAnimation(oppDuck, oppRunPhase, speedO);
+    applyRunAnimation(playerDuck, playerRunPhase, vPv);
+    applyRunAnimation(oppDuck, oppRunPhase, vOv);
 
     const midDist = distP * 0.6 + distO * 0.4;
     const camTargetPos = new THREE.Vector3(0, 1.5, -midDist);
