@@ -146,6 +146,18 @@
   /** 트랙 진행 방향 줄무늬 간격(m) — 고정 메시 위에서 오리 z 이동으로 발 밑으로 지나감 */
   const TRACK_STRIPE_SPACING_M = 0.3;
 
+  const DUCK_CHARACTERS = {
+    TORI: { name: '토리', body: 0xc62828, collar: 0xffd700 },
+    SORI: { name: '소리', body: 0xf57c00, collar: 0xc62828 },
+    MARI: { name: '마리', body: 0xfdd835, collar: 0x43a047 },
+    NURI: { name: '누리', body: 0x43a047, collar: 0xfdd835 },
+    BORI: { name: '보리', body: 0x1e88e5, collar: 0xffffff },
+    YURI: { name: '유리', body: 0x1a237e, collar: 0xffd700 },
+    NARI: { name: '나리', body: 0x8e24aa, collar: 0xffffff },
+    DURI: { name: '두리', body: 0x212121, collar: 0xff6b00 },
+    ARI: { name: '아리', body: 0xfafafa, collar: 0xe91e63 },
+  };
+
   let renderer, scene, camera;
   let duckRoot, bodySquashGroup, torsoMesh, headGroup, tailPivot, wingL, wingR;
   let legLU, legLL, footL, legRU, legRL, footR;
@@ -341,9 +353,16 @@
     dirA = Math.max(-DIR_A_LIMIT, Math.min(DIR_A_LIMIT, dirA));
   }
 
-  function createDuck(collarColor) {
-    const black = clayMat(0x1c1c1e);
-    const orange = clayMat(0xff6a2d, 0.82);
+  function createDuck(bodyColor, collarColor) {
+    const bodyMat = clayMat(bodyColor);
+    const bellyCol = new THREE.Color(bodyColor);
+    bellyCol.lerp(new THREE.Color(0xffffff), 0.1);
+    const bellyMat = clayMat(bellyCol.getHex());
+    const hsl = { h: 0, s: 0, l: 0 };
+    new THREE.Color(bodyColor).getHSL(hsl);
+    const browHex = hsl.l > 0.5 ? 0x333333 : bodyColor;
+    const browMat = clayMat(browHex);
+    const orange = clayMat(0xff6b00, 0.82);
     const white = clayMat(0xf5f5f5, 0.9);
     const pupil = clayMat(0x0a0a0a, 0.75);
     const collarMat = clayMat(collarColor, 0.82);
@@ -357,7 +376,7 @@
 
     const bodyGeo = new THREE.SphereGeometry(0.52, 48, 40);
     bodyGeo.scale(1.05, 1.18, 0.92);
-    const belly = new THREE.Mesh(bodyGeo, black);
+    const belly = new THREE.Mesh(bodyGeo, bellyMat);
     belly.position.y = 0.62;
     belly.castShadow = true;
     bodySquash.add(belly);
@@ -394,12 +413,12 @@
     }
 
     const browGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.22, 8, 1);
-    const browL = new THREE.Mesh(browGeo, black);
+    const browL = new THREE.Mesh(browGeo, browMat);
     browL.rotation.z = 0.55;
     browL.rotation.x = 0.2;
     browL.position.set(-0.16, 0.08, 0.38);
     head.add(browL);
-    const browR = new THREE.Mesh(browGeo, black);
+    const browR = new THREE.Mesh(browGeo, browMat);
     browR.rotation.z = -0.55;
     browR.rotation.x = 0.2;
     browR.position.set(0.16, 0.08, 0.38);
@@ -425,7 +444,7 @@
 
     const wingGeo = new THREE.SphereGeometry(0.22, 16, 12);
     wingGeo.scale(0.35, 0.75, 1);
-    const leftWing = new THREE.Mesh(wingGeo, black);
+    const leftWing = new THREE.Mesh(wingGeo, bodyMat);
     leftWing.position.set(-0.52, 0.75, -0.02);
     leftWing.rotation.z = 0.25;
     leftWing.rotation.y = -0.15;
@@ -440,7 +459,7 @@
     const tail = new THREE.Group();
     tail.position.set(0, 0.72, -0.48);
     bodySquash.add(tail);
-    const tailMesh = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 12), black);
+    const tailMesh = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 12), bodyMat);
     tailMesh.rotation.x = -Math.PI / 2 + 0.35;
     tailMesh.position.set(0, 0.05, -0.12);
     tailMesh.castShadow = true;
@@ -661,8 +680,8 @@
       decorGroup.add(leaf);
     }
 
-    playerDuck = createDuck(0xff6b00);
-    botDuck = createDuck(0xff0000);
+    playerDuck = createDuck(DUCK_CHARACTERS.DURI.body, DUCK_CHARACTERS.DURI.collar);
+    botDuck = createDuck(DUCK_CHARACTERS.TORI.body, DUCK_CHARACTERS.TORI.collar);
     assignPlayerRefsFromDuck(playerDuck);
     botRoot = botDuck.root;
     duckRoot.position.set(PLAYER_LANE_X, 0, 0);
