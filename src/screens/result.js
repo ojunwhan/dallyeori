@@ -11,7 +11,6 @@ import { decodeJWT, getToken } from '../services/auth.js';
 import { recordRaceOutcome } from '../services/profileViewModel.js';
 import {
   emitFriendRequestSent,
-  emitSendRematch,
   endGuestQrFlow,
   ensureSocket,
 } from '../services/socket.js';
@@ -440,20 +439,6 @@ export function mountResult(root, api) {
   } else {
     const peerId = resolveOpponentUserId(opp);
 
-    const btnRematch = document.createElement('button');
-    btnRematch.type = 'button';
-    btnRematch.className = 'app-btn app-btn--primary result-btn-rematch';
-    btnRematch.textContent = '한판 더';
-    if (last && opp?.nickname) {
-      btnRematch.addEventListener('click', () => {
-        console.log('[DEBUG-REMATCH-RESULT] 한판더 clicked, peerId:', peerId, 'opp:', JSON.stringify(opp || {}));
-        if (peerId) emitSendRematch(peerId);
-        api.navigate('rematchWait');
-      });
-    } else {
-      btnRematch.disabled = true;
-      btnRematch.title = '재대전할 상대 정보가 없습니다.';
-    }
     const uid = api.state.user?.uid;
 
     const btnFriend = document.createElement('button');
@@ -591,7 +576,6 @@ export function mountResult(root, api) {
     btnLobby.textContent = '로비로';
     btnLobby.addEventListener('click', () => api.navigate('lobby'));
 
-    actions.appendChild(btnRematch);
     actions.appendChild(btnFriend);
     actions.appendChild(btnHeart);
     actions.appendChild(btnMsg);

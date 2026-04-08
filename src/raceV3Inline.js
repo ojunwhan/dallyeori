@@ -31,6 +31,8 @@ export function mountRaceV3Game(hostEl, options) {
   function isServerRaceConnected() {
     return !!(serverRaceOpt && serverRaceOpt.socket);
   }
+  /** 한판더 대기 중 matchFound 리스너·타이머 정리 */
+  const rematchListenCtx = { matchFoundFn: /** @type {(() => void) | null} */ (null), waitTid: 0 };
   function duckDefById(id) {
     const sid = (id && String(id)) || 'bori';
     return DUCKS_NINE.find((d) => d.id === sid) || DUCKS_NINE[0];
@@ -716,6 +718,13 @@ function syncRace3D() {
     renderer3D.setRacing();
   }
   if (state === 'ending' && _r3PrevState !== 'ending') {
+    if (serverRaceOpt?.socket?.connected && serverRaceOpt?.roomId) {
+      try {
+        serverRaceOpt.socket.emit('raceEndingEntered', { roomId: serverRaceOpt.roomId });
+      } catch (e) {
+        console.warn('[race] raceEndingEntered emit', e);
+      }
+    }
     const myWin = winner === 'YOU';
     const oppWin = winner === 'CPU';
     renderer3D.setEnding(
@@ -747,17 +756,22 @@ function syncRace3D() {
           console.log('[DEBUG-REMATCH] onRematch clicked, screen:', typeof getAppState === 'function' ? getAppState()?.screen : 'unknown');
           sock.emit('sendRematch', {
             targetUid,
+            roomId: serverRaceOpt.roomId,
             profile: serverRaceOpt?.myProfile || {},
           });
-          let rematchWaitTimeoutId = 0;
           function onRematchMatchFound() {
-            clearTimeout(rematchWaitTimeoutId);
+            clearTimeout(rematchListenCtx.waitTid);
+            rematchListenCtx.waitTid = 0;
+            rematchListenCtx.matchFoundFn = null;
             console.log('[DEBUG-REMATCH] matchFound received, calling cleanupAndFinish rematch');
             cleanupAndFinish({ type: 'rematch' });
           }
+          rematchListenCtx.matchFoundFn = onRematchMatchFound;
           sock.once('matchFound', onRematchMatchFound);
-          rematchWaitTimeoutId = window.setTimeout(() => {
+          rematchListenCtx.waitTid = window.setTimeout(() => {
+            rematchListenCtx.waitTid = 0;
             sock.off('matchFound', onRematchMatchFound);
+            rematchListenCtx.matchFoundFn = null;
             const st = typeof getAppState === 'function' ? getAppState() : null;
             if (st && typeof st === 'object') st.rematchFromRacePending = false;
             showAppToast('상대방이 응답하지 않습니다.');
@@ -857,10 +871,27 @@ function showRematchRequest(name, onAccept, onDecline) {
   }, 15000);
 }
 
-/** @type {{ sock: import('socket.io-client').Socket, onCountdown: (d: object) => void, onRaceStart: () => void, onTick: (p: object) => void, onRace: (r: object) => void, onPeerTap: (d: object) => void, onReceiveRematch: (d: object) => void, onRaceAborted: (p: object) => void } | null} */
+/** @type {{ sock: import('socket.io-client').Socket, onCountdown: (d: object) => void, onRaceStart: () => void, onTick: (p: object) => void, onRace: (r: object) => void, onPeerTap: (d: object) => void, onReceiveRematch: (d: object) => void, onRaceAborted: (p: object) => void, onRematchUnavailable: (p: object) => void } | null} */
 let srvHandlers=null;
 if(serverRaceOpt&&serverRaceOpt.socket){
   const sock=serverRaceOpt.socket;
+  const onRematchUnavailable=(p)=>{
+    if(!p||typeof p!=='object')return;
+    const reason=typeof p.reason==='string'?p.reason:'';
+    if(rematchListenCtx.matchFoundFn){
+      try{sock.off('matchFound',rematchListenCtx.matchFoundFn);}catch(e){console.warn(e);}
+      rematchListenCtx.matchFoundFn=null;
+    }
+    if(rematchListenCtx.waitTid){
+      clearTimeout(rematchListenCtx.waitTid);
+      rematchListenCtx.waitTid=0;
+    }
+    const st=typeof getAppState==='function'?getAppState():null;
+    if(st&&typeof st==='object')st.rematchFromRacePending=false;
+    if(reason==='peer_left')showAppToast('상대방이 경기장을 나갔어요.');
+    else if(reason==='not_in_ending'||reason==='no_room')showAppToast('지금은 재대전을 요청할 수 없어요.');
+  };
+  sock.on('rematchUnavailable',onRematchUnavailable);
   const onCountdown=(d)=>{
     ensureAudio();
     state='countdown';
@@ -917,7 +948,7 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     },()=>{});
   };
   sock.on('receiveRematch',onReceiveRematch);
-  srvHandlers={sock,onCountdown,onRaceStart,onTick,onRace:onServerRaceResult,onPeerTap,onReceiveRematch,onRaceAborted};
+  srvHandlers={sock,onCountdown,onRaceStart,onTick,onRace:onServerRaceResult,onPeerTap,onReceiveRematch,onRaceAborted,onRematchUnavailable};
   console.log('[race] serverRace active', { roomId: serverRaceOpt.roomId, mySlot: serverRaceOpt.mySlot, socketConnected: sock.connected });
 }
 
@@ -945,6 +976,9 @@ if(EMBED_APP&&!serverRaceOpt){
     if (raceStopped) return;
     raceStopped = true;
     if(srvHandlers){
+      if(srvHandlers.sock?.connected&&serverRaceOpt?.roomId){
+        try{srvHandlers.sock.emit('raceEndingLeft',{roomId:serverRaceOpt.roomId});}catch(e){console.warn('[race] raceEndingLeft',e);}
+      }
       srvHandlers.sock.off('countdown',srvHandlers.onCountdown);
       srvHandlers.sock.off('race-start',srvHandlers.onRaceStart);
       srvHandlers.sock.off('raceGo',srvHandlers.onRaceStart);
@@ -953,6 +987,7 @@ if(EMBED_APP&&!serverRaceOpt){
       srvHandlers.sock.off('raceResult',srvHandlers.onRace);
       srvHandlers.sock.off('raceAborted',srvHandlers.onRaceAborted);
       srvHandlers.sock.off('receiveRematch',srvHandlers.onReceiveRematch);
+      srvHandlers.sock.off('rematchUnavailable',srvHandlers.onRematchUnavailable);
       srvHandlers=null;
     }
     cancelAnimationFrame(rafId);

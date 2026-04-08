@@ -250,58 +250,9 @@ function receiveRematchRelayHandler(data) {
 
   if (globalThis.__dallyeoriAppScreen === 'result') {
     removeRematchInviteOverlay();
-    const backdrop = document.createElement('div');
-    backdrop.id = 'dallyeori-rematch-invite';
-    backdrop.className = 'rematch-invite-overlay';
-    backdrop.setAttribute('role', 'dialog');
-    backdrop.setAttribute('aria-modal', 'true');
-    backdrop.setAttribute('aria-label', '재대전');
-
-    const panel = document.createElement('div');
-    panel.className = 'rematch-invite-panel app-box';
-
-    const msg = document.createElement('p');
-    msg.className = 'rematch-invite-msg';
-    msg.textContent = `🏁 ${senderName}님이 한판 더 하자고 해요!`;
-
-    const row = document.createElement('div');
-    row.className = 'rematch-invite-btns';
-
-    const btnAcc = document.createElement('button');
-    btnAcc.type = 'button';
-    btnAcc.className = 'app-btn app-btn--primary';
-    btnAcc.textContent = '수락';
-    btnAcc.addEventListener('click', () => {
-      removeRematchInviteOverlay();
-      const s = ensureSocket();
-      if (!s?.connected) {
-        showAppToast('연결이 끊겼어요. 잠시 후 다시 시도해 주세요.');
-        return;
-      }
-      emitSyncMatchProfileToServer();
-      const terrain = globalThis.__dallyeoriTerrain || 'normal';
-      s.emit('acceptRematch', {
-        peerUid: senderUid,
-        terrain,
-        profile: buildLocalMatchProfilePayload(),
-      });
-    });
-
-    const btnNo = document.createElement('button');
-    btnNo.type = 'button';
-    btnNo.className = 'app-btn';
-    btnNo.textContent = '거절';
-    btnNo.addEventListener('click', () => removeRematchInviteOverlay());
-
-    row.appendChild(btnAcc);
-    row.appendChild(btnNo);
-    panel.appendChild(msg);
-    panel.appendChild(row);
-    backdrop.appendChild(panel);
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop) removeRematchInviteOverlay();
-    });
-    document.body.appendChild(backdrop);
+    showAppToast(
+      `🏁 ${senderName}님이 한판 더를 요청했어요. 경기 엔딩 화면에 있을 때만 수락할 수 있어요.`,
+    );
   } else {
     showAppToast(`🏁 ${senderName}님이 한판 더 하자고 해요.`);
   }
