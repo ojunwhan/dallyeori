@@ -857,6 +857,7 @@ if(EMBED_APP&&!serverRaceOpt){
         ? overridePayload
         : makeFinishPayload();
     serverFinishPayload = null;
+    renderer3D.dispose();
     if (typeof onFinish === 'function') {
       try {
         onFinish(pl);
@@ -864,9 +865,7 @@ if(EMBED_APP&&!serverRaceOpt){
         console.error(e);
       }
     }
-    window.setTimeout(() => {
-      stop();
-    }, 100);
+    stop();
   }
 
   return stop;

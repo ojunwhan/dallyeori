@@ -413,11 +413,15 @@ export function createRace3DRenderer(hostEl, options = {}) {
   let internalRacing = false;
   let boostTimer = 0;
   let animId = 0;
+  let disposed = false;
   const clock = new THREE.Clock();
 
   function updatePlayer(state) {
     if (!state || typeof state !== 'object') return;
-    if (state.squash) playerTapSquashEnd = performance.now() + 80;
+    if (state.squash) {
+      playerRunPhase += Math.PI;
+      playerTapSquashEnd = performance.now() + 80;
+    }
     const { squash, runPhase: _rp, ...rest } = state;
     void _rp;
     Object.assign(playerState, rest);
@@ -425,7 +429,10 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
   function updateOpponent(state) {
     if (!state || typeof state !== 'object') return;
-    if (state.squash) oppTapSquashEnd = performance.now() + 80;
+    if (state.squash) {
+      oppRunPhase += Math.PI;
+      oppTapSquashEnd = performance.now() + 80;
+    }
     const { squash, runPhase: _ro, ...rest } = state;
     void _ro;
     Object.assign(oppState, rest);
@@ -549,17 +556,14 @@ export function createRace3DRenderer(hostEl, options = {}) {
   }
 
   function dispose() {
+    if (disposed) return;
+    disposed = true;
     clearEndingButtons();
     if (animId) cancelAnimationFrame(animId);
     animId = 0;
     renderer.dispose();
     disposeObject3D(scene);
     trackStripeTex.dispose();
-    if (renderer.domElement.parentNode) {
-      renderer.domElement.parentNode.removeChild(renderer.domElement);
-    }
-    if (cdOverlayEl.parentNode) cdOverlayEl.parentNode.removeChild(cdOverlayEl);
-    if (resultOverlayEl.parentNode) resultOverlayEl.parentNode.removeChild(resultOverlayEl);
     if (!prevHostPos || prevHostPos === 'static') hostEl.style.position = '';
   }
 
@@ -600,15 +604,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const speedNP = Math.min(1, vP / MAX_SPEED);
     const speedNO = Math.min(1, vO / MAX_SPEED);
 
-    // 프로토타입 maduck_run_test.html 과 동일: 플레이어는 cadence 기반 위상, 봇은 v*8*dt
-    if (runningP) {
-      const cadenceP = 6 + speedNP * 14;
-      playerRunPhase += dt * cadenceP;
-    }
-    if (runningO) {
-      oppRunPhase += vO * dt * 8;
-    }
-
     wobbleImpulse *= Math.pow(0.88, dt * 60);
     oppWobbleImpulse *= Math.pow(0.88, dt * 60);
 
@@ -629,45 +624,46 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const legRL = playerDuck.rightLeg.lower;
     const hairGroup = playerDuck.hairGroup;
 
-    if (runningP) {
+    if (internalRacing) {
       const ph = playerRunPhase;
-      const swing = 0.85 + speedNP * 0.55;
-      const thighAmp = 0.95 + speedNP * 0.5;
-      const leftPhase = ph;
-      const rightPhase = ph + Math.PI;
-      legLU.rotation.x = Math.sin(leftPhase) * thighAmp;
-      legLL.rotation.x = Math.max(0, -Math.sin(leftPhase + 0.4) * swing * 0.9);
-      legRU.rotation.x = Math.sin(rightPhase) * thighAmp;
-      legRL.rotation.x = Math.max(0, -Math.sin(rightPhase + 0.4) * swing * 0.9);
-      const waddleAmp = (0.12 + speedNP * 0.38) * 1.85;
-      const waddle = waddleAmp * Math.sin(ph) + wobbleImpulse;
+      const s = speedNP;
+      const phaseSin = Math.sin(ph);
+      const shinSwing = 0.85 + s * 0.55;
+      const thighAmp = 0.95 + s * 0.5;
+      legLU.rotation.x = phaseSin * thighAmp * s;
+      legRU.rotation.x = -phaseSin * thighAmp * s;
+      legLL.rotation.x = Math.max(0, -Math.sin(ph + 0.4) * shinSwing * 0.9 * s);
+      legRL.rotation.x = Math.max(0, -Math.sin(ph + Math.PI + 0.4) * shinSwing * 0.9 * s);
+      const waddleAmp = (0.12 + s * 0.38) * 1.85;
+      const waddle = (waddleAmp * Math.sin(ph) + wobbleImpulse) * s;
       bodySquashGroup.rotation.z = waddle;
       bodySquashGroup.rotation.z += dirP * 1.5;
-      bodySquashGroup.position.x = Math.sin(ph) * (0.07 + speedNP * 0.22) * 1.85;
-      const leanF = speedNP * 0.38;
-      bodySquashGroup.rotation.x = leanF + Math.sin(ph * 2) * 0.04 * speedNP;
-      headGroup.rotation.x = Math.sin(ph * 2) * (0.18 + speedNP * 0.2) * 2.0;
-      headGroup.rotation.y = Math.sin(ph) * (0.08 + speedNP * 0.06) * 2.0 * speedNP;
-      headGroup.rotation.z = Math.sin(ph * 2 + 0.5) * 0.06 * speedNP;
-      headGroup.position.x = Math.sin(ph) * 0.04 * speedNP;
-      headGroup.position.z = 0.06 + Math.sin(ph * 2) * 0.04 * speedNP;
-      hairGroup.rotation.z = Math.sin(ph * 3) * 0.15 * speedNP;
-      hairGroup.rotation.x = -0.1 + Math.sin(ph * 2) * 0.1 * speedNP;
-      tailPivot.rotation.y = Math.sin(ph + 0.5) * (0.55 + speedNP * 0.65);
-      tailPivot.rotation.x = Math.sin(ph * 2) * 0.12 * speedNP;
+      bodySquashGroup.position.x = Math.sin(ph) * (0.07 + s * 0.22) * 1.85 * s;
+      const leanF = s * 0.38;
+      bodySquashGroup.rotation.x = leanF + Math.sin(ph * 2) * 0.04 * s;
+      headGroup.rotation.x = Math.sin(ph * 2) * (0.18 + s * 0.2) * 2.0 * s;
+      headGroup.rotation.y = Math.sin(ph) * (0.08 + s * 0.06) * 2.0 * s;
+      headGroup.rotation.z = Math.sin(ph * 2 + 0.5) * 0.06 * s;
+      headGroup.position.x = Math.sin(ph) * 0.04 * s;
+      headGroup.position.z = 0.06 + Math.sin(ph * 2) * 0.04 * s;
+      hairGroup.rotation.z = Math.sin(ph * 3) * 0.15 * s;
+      hairGroup.rotation.x = (-0.1 + Math.sin(ph * 2) * 0.1) * s;
+      tailPivot.rotation.y = Math.sin(ph + 0.5) * (0.55 + s * 0.65) * s;
+      tailPivot.rotation.x = Math.sin(ph * 2) * 0.12 * s;
       const stepWave = Math.abs(Math.cos(ph * 2));
       const contact = stepWave < 0.11;
       if (contact && !run.wasContact) {
-        run.dipImpulse = 0.16 + speedNP * 0.12;
+        run.dipImpulse = 0.16 + s * 0.12;
       }
       run.wasContact = contact;
       run.dipImpulse *= Math.pow(0.82, dt * 60);
-      duckRoot.position.y = -run.dipImpulse * 0.35;
-      const wingOpen = speedNP * 0.55;
+      duckRoot.position.y =
+        Math.abs(Math.sin(ph)) * 0.15 * s - run.dipImpulse * 0.35 * Math.min(1, s * 2 + 0.02);
+      const wingOpen = s * 0.55;
       wingL.rotation.y = -0.15 - wingOpen * 0.35;
       wingR.rotation.y = 0.15 + wingOpen * 0.35;
-      wingL.rotation.z = 0.25 + Math.sin(ph * 2) * 0.06 * speedNP;
-      wingR.rotation.z = -0.25 - Math.sin(ph * 2) * 0.06 * speedNP;
+      wingL.rotation.z = 0.25 + Math.sin(ph * 2) * 0.06 * s;
+      wingR.rotation.z = -0.25 - Math.sin(ph * 2) * 0.06 * s;
     } else {
       const id = run.idleT;
       headGroup.rotation.y = Math.sin(id * 1.1) * 0.35;
@@ -695,46 +691,49 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const oppBodyY = nowT < oppTapSquashEnd ? 0.78 : 1 - bsq * 0.28;
     oppDuck.body.scale.set(1 + bsq * 0.22, oppBodyY, 1 + bsq * 0.12);
 
-    if (runningO) {
+    if (internalRacing) {
       const bph = oppRunPhase;
-      const bswing = 0.85 + speedNO * 0.55;
-      const bthigh = 0.95 + speedNO * 0.5;
-      oppDuck.leftLeg.hip.rotation.x = Math.sin(bph) * bthigh;
-      oppDuck.leftLeg.lower.rotation.x = Math.max(0, -Math.sin(bph + 0.4) * bswing * 0.9);
-      oppDuck.rightLeg.hip.rotation.x = Math.sin(bph + Math.PI) * bthigh;
+      const s = speedNO;
+      const phaseSinO = Math.sin(bph);
+      const bshin = 0.85 + s * 0.55;
+      const bthigh = 0.95 + s * 0.5;
+      oppDuck.leftLeg.hip.rotation.x = phaseSinO * bthigh * s;
+      oppDuck.rightLeg.hip.rotation.x = -phaseSinO * bthigh * s;
+      oppDuck.leftLeg.lower.rotation.x = Math.max(0, -Math.sin(bph + 0.4) * bshin * 0.9 * s);
       oppDuck.rightLeg.lower.rotation.x = Math.max(
         0,
-        -Math.sin(bph + Math.PI + 0.4) * bswing * 0.9,
+        -Math.sin(bph + Math.PI + 0.4) * bshin * 0.9 * s,
       );
-      const bwad = (0.12 + speedNO * 0.38) * 1.85;
-      const bwaddle = bwad * Math.sin(bph) + oppWobbleImpulse;
+      const bwad = (0.12 + s * 0.38) * 1.85;
+      const bwaddle = (bwad * Math.sin(bph) + oppWobbleImpulse) * s;
       oppDuck.body.rotation.z = bwaddle;
       oppDuck.body.rotation.z += dirO * 1.5;
-      oppDuck.body.position.x = Math.sin(bph) * (0.07 + speedNO * 0.22) * 1.85;
-      const blev = speedNO * 0.38;
-      oppDuck.body.rotation.x = blev + Math.sin(bph * 2) * 0.04 * speedNO;
-      oppDuck.head.rotation.x = Math.sin(bph * 2) * (0.18 + speedNO * 0.2) * 2.0;
-      oppDuck.head.rotation.y = Math.sin(bph) * (0.08 + speedNO * 0.06) * 2.0 * speedNO;
-      oppDuck.head.rotation.z = Math.sin(bph * 2 + 0.5) * 0.06 * speedNO;
-      oppDuck.head.position.x = Math.sin(bph) * 0.04 * speedNO;
-      oppDuck.head.position.z = 0.06 + Math.sin(bph * 2) * 0.04 * speedNO;
-      oppDuck.hairGroup.rotation.z = Math.sin(bph * 3) * 0.15 * speedNO;
-      oppDuck.hairGroup.rotation.x = -0.1 + Math.sin(bph * 2) * 0.1 * speedNO;
-      oppDuck.tail.rotation.y = Math.sin(bph + 0.5) * (0.55 + speedNO * 0.65);
-      oppDuck.tail.rotation.x = Math.sin(bph * 2) * 0.12 * speedNO;
-      const bwingO = speedNO * 0.55;
+      oppDuck.body.position.x = Math.sin(bph) * (0.07 + s * 0.22) * 1.85 * s;
+      const blev = s * 0.38;
+      oppDuck.body.rotation.x = blev + Math.sin(bph * 2) * 0.04 * s;
+      oppDuck.head.rotation.x = Math.sin(bph * 2) * (0.18 + s * 0.2) * 2.0 * s;
+      oppDuck.head.rotation.y = Math.sin(bph) * (0.08 + s * 0.06) * 2.0 * s;
+      oppDuck.head.rotation.z = Math.sin(bph * 2 + 0.5) * 0.06 * s;
+      oppDuck.head.position.x = Math.sin(bph) * 0.04 * s;
+      oppDuck.head.position.z = 0.06 + Math.sin(bph * 2) * 0.04 * s;
+      oppDuck.hairGroup.rotation.z = Math.sin(bph * 3) * 0.15 * s;
+      oppDuck.hairGroup.rotation.x = (-0.1 + Math.sin(bph * 2) * 0.1) * s;
+      oppDuck.tail.rotation.y = Math.sin(bph + 0.5) * (0.55 + s * 0.65) * s;
+      oppDuck.tail.rotation.x = Math.sin(bph * 2) * 0.12 * s;
+      const bwingO = s * 0.55;
       oppDuck.leftWing.rotation.y = -0.15 - bwingO * 0.35;
       oppDuck.rightWing.rotation.y = 0.15 + bwingO * 0.35;
-      oppDuck.leftWing.rotation.z = 0.25 + Math.sin(bph * 2) * 0.06 * speedNO;
-      oppDuck.rightWing.rotation.z = -0.25 - Math.sin(bph * 2) * 0.06 * speedNO;
+      oppDuck.leftWing.rotation.z = 0.25 + Math.sin(bph * 2) * 0.06 * s;
+      oppDuck.rightWing.rotation.z = -0.25 - Math.sin(bph * 2) * 0.06 * s;
       const bstepWave = Math.abs(Math.cos(bph * 2));
       const bcontact = bstepWave < 0.11;
       if (bcontact && !oppAnim.wasContact) {
-        oppAnim.dipImpulse = 0.16 + speedNO * 0.12;
+        oppAnim.dipImpulse = 0.16 + s * 0.12;
       }
       oppAnim.wasContact = bcontact;
       oppAnim.dipImpulse *= Math.pow(0.82, dt * 60);
-      oppRoot.position.y = -oppAnim.dipImpulse * 0.35;
+      oppRoot.position.y =
+        Math.abs(Math.sin(bph)) * 0.15 * s - oppAnim.dipImpulse * 0.35 * Math.min(1, s * 2 + 0.02);
     } else {
       const bid = oppAnim.idleT;
       oppDuck.head.rotation.y = Math.sin(bid * 1.1) * 0.35;
