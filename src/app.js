@@ -187,10 +187,14 @@ setServerMatchFoundNavigate((data) => {
   };
   if (data.terrain) appState.terrain = data.terrain;
   const scr = appState.screen;
-  // matching 화면은 startMockRandomMatch 쪽에서 race 로 네비게이트함.
-  // race 화면에서는 raceV3Inline.js의 rematch 핸들러가 자체 처리함.
-  // false 반환 → socket.js에서 __dallyeoriPendingRace 제거 (재매칭 중 잘못된 경주 진입·결과 화면 유발 방지)
-  if (scr === 'matching' || scr === 'race') return false;
+  // matching: startMockRandomMatch 의 onFound 가 이어서 pendingRace 를 다시 세팅함 → false 로 브리지가 넣은 중복 pending 제거
+  if (scr === 'matching') return false;
+  // race(엔딩 포함): 한판더 수락 후 matchFound → 곧바로 새 경주(예전엔 rematch 페이로드로 matching 으로 보내 버림)
+  if (scr === 'race') {
+    navigate('race', { opponentName: appState.lastOpponent.nickname });
+    appState.rematchFromRacePending = false;
+    return;
+  }
   navigate('race', { opponentName: appState.lastOpponent.nickname });
 });
 
@@ -589,7 +593,7 @@ function boot() {
   }
   window.__dallyeoriAppBooted = true;
   /** 배포 확인: 콘솔에 `__DALLYEORI_CLIENT_TAG` 치면 문자열이 나와야 최신 클라(결과창 한판더 없음). undefined면 예전 JS. */
-  globalThis.__DALLYEORI_CLIENT_TAG = '2026-03-31-noResultRematch';
+  globalThis.__DALLYEORI_CLIENT_TAG = '2026-03-31-rematchGoesRace';
   console.log('[dallyeori] CLIENT_TAG', globalThis.__DALLYEORI_CLIENT_TAG);
   consumeOAuthReturn();
   const qr = consumeQrGuestParams();

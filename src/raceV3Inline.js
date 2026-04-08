@@ -763,8 +763,9 @@ function syncRace3D() {
             clearTimeout(rematchListenCtx.waitTid);
             rematchListenCtx.waitTid = 0;
             rematchListenCtx.matchFoundFn = null;
-            console.log('[DEBUG-REMATCH] matchFound received, calling cleanupAndFinish rematch');
-            cleanupAndFinish({ type: 'rematch' });
+            const st = typeof getAppState === 'function' ? getAppState() : null;
+            if (st && typeof st === 'object') st.rematchFromRacePending = false;
+            console.log('[DEBUG-REMATCH] matchFound after rematch — app.js globalBridge 가 navigate(race) 처리, 여기서는 정리만');
           }
           rematchListenCtx.matchFoundFn = onRematchMatchFound;
           sock.once('matchFound', onRematchMatchFound);
