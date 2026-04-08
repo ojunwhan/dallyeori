@@ -419,7 +419,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
   function updatePlayer(state) {
     if (!state || typeof state !== 'object') return;
     if (state.squash) {
-      playerRunPhase += Math.PI;
       playerTapSquashEnd = performance.now() + 80;
     }
     const { squash, runPhase: _rp, ...rest } = state;
@@ -430,7 +429,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
   function updateOpponent(state) {
     if (!state || typeof state !== 'object') return;
     if (state.squash) {
-      oppRunPhase += Math.PI;
       oppTapSquashEnd = performance.now() + 80;
     }
     const { squash, runPhase: _ro, ...rest } = state;
@@ -580,29 +578,15 @@ export function createRace3DRenderer(hostEl, options = {}) {
     oppRoot.position.z = -distO;
     oppRoot.position.x = BOT_LANE_X + latO;
 
-    const dirP = playerState.dirA;
-    const dirO = oppState.dirA;
-    duckRoot.rotation.y = Math.PI + dirP;
-    oppRoot.rotation.y = Math.PI + dirO;
+    duckRoot.rotation.y = Math.PI + (playerState.dirA || 0);
+    oppRoot.rotation.y = Math.PI + (oppState.dirA || 0);
 
-    const vP = playerState.v;
-    const vO = oppState.v;
-    const runningP = internalRacing && vP >= IDLE_ENTER;
-    const runningO = internalRacing && vO >= IDLE_ENTER;
-
-    if (runningP) {
-      run.idleT = 0;
-    } else {
-      run.idleT += dt;
-    }
-    if (runningO) {
-      oppAnim.idleT = 0;
-    } else {
-      oppAnim.idleT += dt;
-    }
-
-    const speedNP = Math.min(1, vP / MAX_SPEED);
-    const speedNO = Math.min(1, vO / MAX_SPEED);
+    const vP = playerState.v || 0;
+    const vO = oppState.v || 0;
+    const speedP = vP / MAX_SPEED;
+    const speedO = vO / MAX_SPEED;
+    if (vP > 0.01) playerRunPhase += vP * dt * 8;
+    if (vO > 0.01) oppRunPhase += vO * dt * 8;
 
     wobbleImpulse *= Math.pow(0.88, dt * 60);
     oppWobbleImpulse *= Math.pow(0.88, dt * 60);
@@ -624,137 +608,57 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const legRL = playerDuck.rightLeg.lower;
     const hairGroup = playerDuck.hairGroup;
 
-    if (internalRacing) {
-      const ph = playerRunPhase;
-      const s = speedNP;
-      const phaseSin = Math.sin(ph);
-      const shinSwing = 0.85 + s * 0.55;
-      const thighAmp = 0.95 + s * 0.5;
-      legLU.rotation.x = phaseSin * thighAmp * s;
-      legRU.rotation.x = -phaseSin * thighAmp * s;
-      legLL.rotation.x = Math.max(0, -Math.sin(ph + 0.4) * shinSwing * 0.9 * s);
-      legRL.rotation.x = Math.max(0, -Math.sin(ph + Math.PI + 0.4) * shinSwing * 0.9 * s);
-      const waddleAmp = (0.12 + s * 0.38) * 1.85;
-      const waddle = (waddleAmp * Math.sin(ph) + wobbleImpulse) * s;
-      bodySquashGroup.rotation.z = waddle;
-      bodySquashGroup.rotation.z += dirP * 1.5;
-      bodySquashGroup.position.x = Math.sin(ph) * (0.07 + s * 0.22) * 1.85 * s;
-      const leanF = s * 0.38;
-      bodySquashGroup.rotation.x = leanF + Math.sin(ph * 2) * 0.04 * s;
-      headGroup.rotation.x = Math.sin(ph * 2) * (0.18 + s * 0.2) * 2.0 * s;
-      headGroup.rotation.y = Math.sin(ph) * (0.08 + s * 0.06) * 2.0 * s;
-      headGroup.rotation.z = Math.sin(ph * 2 + 0.5) * 0.06 * s;
-      headGroup.position.x = Math.sin(ph) * 0.04 * s;
-      headGroup.position.z = 0.06 + Math.sin(ph * 2) * 0.04 * s;
-      hairGroup.rotation.z = Math.sin(ph * 3) * 0.15 * s;
-      hairGroup.rotation.x = (-0.1 + Math.sin(ph * 2) * 0.1) * s;
-      tailPivot.rotation.y = Math.sin(ph + 0.5) * (0.55 + s * 0.65) * s;
-      tailPivot.rotation.x = Math.sin(ph * 2) * 0.12 * s;
-      const stepWave = Math.abs(Math.cos(ph * 2));
-      const contact = stepWave < 0.11;
-      if (contact && !run.wasContact) {
-        run.dipImpulse = 0.16 + s * 0.12;
-      }
-      run.wasContact = contact;
-      run.dipImpulse *= Math.pow(0.82, dt * 60);
-      duckRoot.position.y =
-        Math.abs(Math.sin(ph)) * 0.15 * s - run.dipImpulse * 0.35 * Math.min(1, s * 2 + 0.02);
-      const wingOpen = s * 0.55;
-      wingL.rotation.y = -0.15 - wingOpen * 0.35;
-      wingR.rotation.y = 0.15 + wingOpen * 0.35;
-      wingL.rotation.z = 0.25 + Math.sin(ph * 2) * 0.06 * s;
-      wingR.rotation.z = -0.25 - Math.sin(ph * 2) * 0.06 * s;
-    } else {
-      const id = run.idleT;
-      headGroup.rotation.y = Math.sin(id * 1.1) * 0.35;
-      headGroup.rotation.x = Math.sin(id * 0.7) * 0.06;
-      headGroup.rotation.z = 0;
-      headGroup.position.x = 0;
-      headGroup.position.z = 0.06;
-      playerDuck.hairGroup.rotation.z = 0;
-      playerDuck.hairGroup.rotation.x = 0;
-      bodySquashGroup.rotation.z = Math.sin(id * 0.9) * 0.06 + dirP * 1.5;
-      bodySquashGroup.position.x = 0;
-      bodySquashGroup.rotation.x = Math.sin(id * 0.5) * 0.03;
-      legLU.rotation.x = Math.sin(id * 2.2) * 0.12;
-      legRU.rotation.x = Math.sin(id * 2.2 + Math.PI) * 0.12;
-      legLL.rotation.x = 0.05;
-      legRL.rotation.x = 0.05;
-      tailPivot.rotation.y = Math.sin(id * 1.3) * 0.15;
-      wingL.rotation.y = -0.15;
-      wingR.rotation.y = 0.15;
-      duckRoot.position.y = duckRoot.position.y * (1 - dt * 6);
-    }
+    const ph = playerRunPhase;
+    legLU.rotation.x = Math.sin(ph) * 0.8 * speedP;
+    legRU.rotation.x = Math.sin(ph + Math.PI) * 0.8 * speedP;
+    legLL.rotation.x = Math.max(0, -Math.sin(ph + 0.4)) * 0.5 * speedP;
+    legRL.rotation.x = Math.max(0, -Math.sin(ph + Math.PI + 0.4)) * 0.5 * speedP;
+    bodySquashGroup.rotation.z = Math.sin(ph * 2) * 0.08 * speedP;
+    bodySquashGroup.position.x = Math.sin(ph) * 0.06 * speedP;
+    bodySquashGroup.rotation.x = -speedP * 0.15;
+    headGroup.rotation.z = Math.sin(ph * 2 + 0.5) * 0.06 * speedP;
+    headGroup.rotation.x = 0;
+    headGroup.rotation.y = 0;
+    headGroup.position.x = Math.sin(ph) * 0.04 * speedP;
+    headGroup.position.z = 0.06;
+    hairGroup.rotation.z = Math.sin(ph * 3) * 0.15 * speedP;
+    hairGroup.rotation.x = 0;
+    wingL.rotation.y = -0.15;
+    wingR.rotation.y = 0.15;
+    wingL.rotation.z = Math.sin(ph * 2) * 0.2 * speedP;
+    wingR.rotation.z = -Math.sin(ph * 2) * 0.2 * speedP;
+    tailPivot.rotation.y = Math.sin(ph * 3) * 0.3 * speedP;
+    tailPivot.rotation.x = 0;
+    duckRoot.position.y = Math.abs(Math.sin(ph)) * 0.15 * speedP;
 
     oppAnim.squashT = Math.max(0, oppAnim.squashT - dt * 5);
     const bsq = oppAnim.squashT;
     const oppBodyY = nowT < oppTapSquashEnd ? 0.78 : 1 - bsq * 0.28;
     oppDuck.body.scale.set(1 + bsq * 0.22, oppBodyY, 1 + bsq * 0.12);
 
-    if (internalRacing) {
-      const bph = oppRunPhase;
-      const s = speedNO;
-      const phaseSinO = Math.sin(bph);
-      const bshin = 0.85 + s * 0.55;
-      const bthigh = 0.95 + s * 0.5;
-      oppDuck.leftLeg.hip.rotation.x = phaseSinO * bthigh * s;
-      oppDuck.rightLeg.hip.rotation.x = -phaseSinO * bthigh * s;
-      oppDuck.leftLeg.lower.rotation.x = Math.max(0, -Math.sin(bph + 0.4) * bshin * 0.9 * s);
-      oppDuck.rightLeg.lower.rotation.x = Math.max(
-        0,
-        -Math.sin(bph + Math.PI + 0.4) * bshin * 0.9 * s,
-      );
-      const bwad = (0.12 + s * 0.38) * 1.85;
-      const bwaddle = (bwad * Math.sin(bph) + oppWobbleImpulse) * s;
-      oppDuck.body.rotation.z = bwaddle;
-      oppDuck.body.rotation.z += dirO * 1.5;
-      oppDuck.body.position.x = Math.sin(bph) * (0.07 + s * 0.22) * 1.85 * s;
-      const blev = s * 0.38;
-      oppDuck.body.rotation.x = blev + Math.sin(bph * 2) * 0.04 * s;
-      oppDuck.head.rotation.x = Math.sin(bph * 2) * (0.18 + s * 0.2) * 2.0 * s;
-      oppDuck.head.rotation.y = Math.sin(bph) * (0.08 + s * 0.06) * 2.0 * s;
-      oppDuck.head.rotation.z = Math.sin(bph * 2 + 0.5) * 0.06 * s;
-      oppDuck.head.position.x = Math.sin(bph) * 0.04 * s;
-      oppDuck.head.position.z = 0.06 + Math.sin(bph * 2) * 0.04 * s;
-      oppDuck.hairGroup.rotation.z = Math.sin(bph * 3) * 0.15 * s;
-      oppDuck.hairGroup.rotation.x = (-0.1 + Math.sin(bph * 2) * 0.1) * s;
-      oppDuck.tail.rotation.y = Math.sin(bph + 0.5) * (0.55 + s * 0.65) * s;
-      oppDuck.tail.rotation.x = Math.sin(bph * 2) * 0.12 * s;
-      const bwingO = s * 0.55;
-      oppDuck.leftWing.rotation.y = -0.15 - bwingO * 0.35;
-      oppDuck.rightWing.rotation.y = 0.15 + bwingO * 0.35;
-      oppDuck.leftWing.rotation.z = 0.25 + Math.sin(bph * 2) * 0.06 * s;
-      oppDuck.rightWing.rotation.z = -0.25 - Math.sin(bph * 2) * 0.06 * s;
-      const bstepWave = Math.abs(Math.cos(bph * 2));
-      const bcontact = bstepWave < 0.11;
-      if (bcontact && !oppAnim.wasContact) {
-        oppAnim.dipImpulse = 0.16 + s * 0.12;
-      }
-      oppAnim.wasContact = bcontact;
-      oppAnim.dipImpulse *= Math.pow(0.82, dt * 60);
-      oppRoot.position.y =
-        Math.abs(Math.sin(bph)) * 0.15 * s - oppAnim.dipImpulse * 0.35 * Math.min(1, s * 2 + 0.02);
-    } else {
-      const bid = oppAnim.idleT;
-      oppDuck.head.rotation.y = Math.sin(bid * 1.1) * 0.35;
-      oppDuck.head.rotation.x = Math.sin(bid * 0.7) * 0.06;
-      oppDuck.head.rotation.z = 0;
-      oppDuck.head.position.x = 0;
-      oppDuck.head.position.z = 0.06;
-      oppDuck.hairGroup.rotation.z = 0;
-      oppDuck.hairGroup.rotation.x = 0;
-      oppDuck.body.rotation.z = Math.sin(bid * 0.9) * 0.06 + dirO * 1.5;
-      oppDuck.body.position.x = 0;
-      oppDuck.body.rotation.x = Math.sin(bid * 0.5) * 0.03;
-      oppDuck.leftLeg.hip.rotation.x = Math.sin(bid * 2.2) * 0.12;
-      oppDuck.rightLeg.hip.rotation.x = Math.sin(bid * 2.2 + Math.PI) * 0.12;
-      oppDuck.leftLeg.lower.rotation.x = 0.05;
-      oppDuck.rightLeg.lower.rotation.x = 0.05;
-      oppDuck.tail.rotation.y = Math.sin(bid * 1.3) * 0.15;
-      oppDuck.leftWing.rotation.y = -0.15;
-      oppDuck.rightWing.rotation.y = 0.15;
-      oppRoot.position.y = oppRoot.position.y * (1 - dt * 6);
-    }
+    const bph = oppRunPhase;
+    oppDuck.leftLeg.hip.rotation.x = Math.sin(bph) * 0.8 * speedO;
+    oppDuck.rightLeg.hip.rotation.x = Math.sin(bph + Math.PI) * 0.8 * speedO;
+    oppDuck.leftLeg.lower.rotation.x = Math.max(0, -Math.sin(bph + 0.4)) * 0.5 * speedO;
+    oppDuck.rightLeg.lower.rotation.x =
+      Math.max(0, -Math.sin(bph + Math.PI + 0.4)) * 0.5 * speedO;
+    oppDuck.body.rotation.z = Math.sin(bph * 2) * 0.08 * speedO;
+    oppDuck.body.position.x = Math.sin(bph) * 0.06 * speedO;
+    oppDuck.body.rotation.x = -speedO * 0.15;
+    oppDuck.head.rotation.z = Math.sin(bph * 2 + 0.5) * 0.06 * speedO;
+    oppDuck.head.rotation.x = 0;
+    oppDuck.head.rotation.y = 0;
+    oppDuck.head.position.x = Math.sin(bph) * 0.04 * speedO;
+    oppDuck.head.position.z = 0.06;
+    oppDuck.hairGroup.rotation.z = Math.sin(bph * 3) * 0.15 * speedO;
+    oppDuck.hairGroup.rotation.x = 0;
+    oppDuck.leftWing.rotation.y = -0.15;
+    oppDuck.rightWing.rotation.y = 0.15;
+    oppDuck.leftWing.rotation.z = Math.sin(bph * 2) * 0.2 * speedO;
+    oppDuck.rightWing.rotation.z = -Math.sin(bph * 2) * 0.2 * speedO;
+    oppDuck.tail.rotation.y = Math.sin(bph * 3) * 0.3 * speedO;
+    oppDuck.tail.rotation.x = 0;
+    oppRoot.position.y = Math.abs(Math.sin(bph)) * 0.15 * speedO;
 
     const midDist = distP * 0.6 + distO * 0.4;
     const camTargetPos = new THREE.Vector3(0, 1.5, -midDist);
