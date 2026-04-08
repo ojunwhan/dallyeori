@@ -11,7 +11,6 @@ const LANE_LATERAL_MAX = 1.25;
 const TRACK_WORLD_LEN = 400;
 const TRACK_STRIPE_SPACING_M = 0.5;
 const BASE_CAMERA_FOV = 63;
-const IDLE_ENTER = 0.15;
 const MAX_SPEED = RACE_ENGINE_PHYSICS.MAX_SPEED;
 
 function clayMat(hex, r = 0.88, m = 0.04) {
@@ -82,8 +81,12 @@ function makeDashedStripeGroup(x) {
 }
 
 /**
+ * 오리: duck(root)에 body·leftLeg·rightLeg를 직접 추가 (bodySquash 중간 그룹 없음).
+ * 다리는 THREE.Group 하나에 상·하체 메시만 넣고 rotation.x는 leg Group에만 적용.
+ *
  * @param {number} bodyColor
  * @param {number} collarColor
+ * @returns {{ root: THREE.Group, body: THREE.Group, head: THREE.Group, hairGroup: THREE.Group, leftLeg: THREE.Group, rightLeg: THREE.Group, leftWing: THREE.Mesh, rightWing: THREE.Mesh, tail: THREE.Group }}
  */
 function createDuck(bodyColor, collarColor) {
   const bodyMat = clayMat(bodyColor);
@@ -100,33 +103,33 @@ function createDuck(bodyColor, collarColor) {
   const collarMat = clayMat(collarColor, 0.82);
   const emblemMat = clayMat(collarColor, 0.82);
 
-  const root = new THREE.Group();
-  root.position.set(0, 0, 0);
+  const duck = new THREE.Group();
+  duck.position.set(0, 0, 0);
 
-  const bodySquash = new THREE.Group();
-  root.add(bodySquash);
+  const body = new THREE.Group();
+  duck.add(body);
 
   const bodyGeo = new THREE.SphereGeometry(0.52, 48, 40);
   bodyGeo.scale(1.05, 1.18, 0.92);
   const belly = new THREE.Mesh(bodyGeo, bellyMat);
   belly.position.y = 0.62;
   belly.castShadow = true;
-  bodySquash.add(belly);
+  body.add(belly);
 
   const collar = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.09, 16, 48), collarMat);
   collar.rotation.x = Math.PI / 2;
   collar.position.set(0, 1.12, 0);
   collar.castShadow = true;
-  bodySquash.add(collar);
+  body.add(collar);
 
   const logo = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.018, 12, 24), emblemMat);
   logo.position.set(0, 1.12, 0.36);
   logo.rotation.y = 0;
-  bodySquash.add(logo);
+  body.add(logo);
 
   const head = new THREE.Group();
   head.position.set(0, 1.38, 0.06);
-  bodySquash.add(head);
+  body.add(head);
 
   const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.44, 40, 32), bodyMat);
   headMesh.castShadow = true;
@@ -178,16 +181,16 @@ function createDuck(bodyColor, collarColor) {
   leftWing.rotation.z = 0.25;
   leftWing.rotation.y = -0.15;
   leftWing.castShadow = true;
-  bodySquash.add(leftWing);
+  body.add(leftWing);
   const rightWing = leftWing.clone();
   rightWing.position.x = 0.52;
   rightWing.rotation.z = -0.25;
   rightWing.rotation.y = 0.15;
-  bodySquash.add(rightWing);
+  body.add(rightWing);
 
   const tail = new THREE.Group();
   tail.position.set(0, 0.72, -0.48);
-  bodySquash.add(tail);
+  body.add(tail);
   const tailMesh = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 12), bodyMat);
   tailMesh.rotation.x = -Math.PI / 2 + 0.35;
   tailMesh.position.set(0, 0.05, -0.12);
@@ -195,10 +198,9 @@ function createDuck(bodyColor, collarColor) {
   tail.add(tailMesh);
 
   function makeLeg(side) {
-    // 프로토타입과 동일: 씬에 붙는 최상위 leg Group에 rotation.x를 건다.
     const leg = new THREE.Group();
     leg.position.set(side * 0.22, 0.38, 0);
-    bodySquash.add(leg);
+    duck.add(leg);
     const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.24, 12, 1), orange);
     upper.position.y = -0.12;
     upper.castShadow = true;
@@ -215,30 +217,21 @@ function createDuck(bodyColor, collarColor) {
     foot.position.y = -0.22;
     foot.castShadow = true;
     lower.add(foot);
-    return { leg, lower, foot };
+    return leg;
   }
-  const L = makeLeg(-1);
-  const R = makeLeg(1);
-
-  const leftLeg = L.leg;
-  console.log('[DUCK-TREE]', {
-    leftLegParent: leftLeg.parent?.uuid,
-    leftLegInScene: leftLeg.parent !== null,
-    rootChildren: root.children.length,
-    rootChildTypes: root.children.map((c) => c.constructor.name + ':' + (c.uuid?.slice(0, 4))),
-  });
+  const leftLeg = makeLeg(-1);
+  const rightLeg = makeLeg(1);
 
   return {
-    root,
-    body: bodySquash,
+    root: duck,
+    body,
     head,
     hairGroup,
-    leftLeg: L.leg,
-    rightLeg: R.leg,
+    leftLeg,
+    rightLeg,
     leftWing,
     rightWing,
     tail,
-    belly,
   };
 }
 
@@ -395,22 +388,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
   let playerState = defaultDuckState();
   let oppState = defaultDuckState();
 
-  const run = {
-    phase: 0,
-    idleT: 0,
-    squashT: 0,
-    dipImpulse: 0,
-    wasContact: false,
-  };
-  const oppAnim = {
-    idleT: 0,
-    squashT: 0,
-    dipImpulse: 0,
-    wasContact: false,
-  };
-
-  let wobbleImpulse = 0;
-  let oppWobbleImpulse = 0;
   let playerRunPhase = 0;
   let oppRunPhase = 0;
   let playerTapSquashEnd = 0;
@@ -419,7 +396,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
   /** @type {HTMLElement | null} */
   let endingBtnWrap = null;
 
-  let internalRacing = false;
   let boostTimer = 0;
   let animId = 0;
   let disposed = false;
@@ -471,7 +447,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
   function setRacing() {
     clearEndingButtons();
-    internalRacing = true;
     cdOverlayEl.textContent = '';
     boostTimer = 0.3;
   }
@@ -482,7 +457,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
    */
   function setEnding(result, callbacks) {
     clearEndingButtons();
-    internalRacing = false;
     const w = result && result.winner;
     let main = 'DRAW!';
     let col = '#FFD700';
@@ -574,18 +548,32 @@ export function createRace3DRenderer(hostEl, options = {}) {
     if (!prevHostPos || prevHostPos === 'static') hostEl.style.position = '';
   }
 
+  /**
+   * 프로토타입 스타일 달리기 애니메이션 (runPhase + speed 0~1).
+   * @param {typeof playerDuck} duck
+   * @param {number} runPhase
+   * @param {number} speed
+   */
+  function applyRunAnimation(duck, runPhase, speed) {
+    const { body, head, hairGroup, leftLeg, rightLeg, leftWing, rightWing, tail, root } = duck;
+    leftLeg.rotation.x = Math.sin(runPhase) * 0.8 * speed;
+    rightLeg.rotation.x = Math.sin(runPhase + Math.PI) * 0.8 * speed;
+    body.rotation.z = Math.sin(runPhase * 2) * 0.08 * speed;
+    body.position.x = Math.sin(runPhase) * 0.06 * speed;
+    body.rotation.x = -speed * 0.15;
+    head.rotation.z = Math.sin(runPhase * 2 + 0.5) * 0.06 * speed;
+    head.position.x = Math.sin(runPhase) * 0.04 * speed;
+    head.position.z = 0.1 + Math.sin(runPhase * 2) * 0.04 * speed;
+    hairGroup.rotation.z = Math.sin(runPhase * 3) * 0.15 * speed;
+    hairGroup.rotation.x = -0.1 + Math.sin(runPhase * 2) * 0.1 * speed;
+    leftWing.rotation.z = Math.sin(runPhase * 2) * 0.2 * speed;
+    rightWing.rotation.z = -Math.sin(runPhase * 2) * 0.2 * speed;
+    tail.rotation.y = Math.sin(runPhase * 3) * 0.3 * speed;
+    root.position.y = Math.abs(Math.sin(runPhase)) * 0.15 * speed;
+  }
+
   function renderLoop() {
-    if (Math.random() < 0.01) {
-      console.log('[3D-DBG]', {
-        vP: playerState.v,
-        vO: oppState.v,
-        speedP: (playerState.v || 0) / 4.5,
-        pPhase: playerRunPhase,
-        hasLeftHip: !!playerDuck?.leftLeg?.hip,
-        hasLeftLeg: !!playerDuck?.leftLeg,
-        bodyType: typeof playerDuck?.body,
-      });
-    }
+    if (disposed) return;
     animId = requestAnimationFrame(renderLoop);
     const dt = Math.min(clock.getDelta(), 0.05);
 
@@ -601,78 +589,25 @@ export function createRace3DRenderer(hostEl, options = {}) {
     duckRoot.rotation.y = Math.PI + (playerState.dirA || 0);
     oppRoot.rotation.y = Math.PI + (oppState.dirA || 0);
 
-    const vP = playerState.v || 0;
-    const vO = oppState.v || 0;
-    const speedP = vP / MAX_SPEED;
-    const speedO = vO / MAX_SPEED;
-    // runPhase 증가: renderer.render 직전 FORCE LEG 블록에서 처리 (디버그/강제 경로)
-    // if (vP > 0.01) playerRunPhase += vP * dt * 8;
-    // if (vO > 0.01) oppRunPhase += vO * dt * 8;
+    const vP = playerState.spd != null ? playerState.spd : playerState.v;
+    const vPv = typeof vP === 'number' && Number.isFinite(vP) ? vP : 0;
+    const vO = oppState.spd != null ? oppState.spd : oppState.v;
+    const vOv = typeof vO === 'number' && Number.isFinite(vO) ? vO : 0;
 
-    wobbleImpulse *= Math.pow(0.88, dt * 60);
-    oppWobbleImpulse *= Math.pow(0.88, dt * 60);
+    if (vPv > 0.01) playerRunPhase += vPv * dt * 8;
+    if (vOv > 0.01) oppRunPhase += vOv * dt * 8;
 
-    run.squashT = Math.max(0, run.squashT - dt * 5);
-    const sq = run.squashT;
+    const speedP = Math.min(Math.max(0, vPv) / MAX_SPEED, 1);
+    const speedO = Math.min(Math.max(0, vOv) / MAX_SPEED, 1);
+
     const nowT = performance.now();
-    const playerBodyY = nowT < playerTapSquashEnd ? 0.78 : 1 - sq * 0.28;
-    playerDuck.body.scale.set(1 + sq * 0.22, playerBodyY, 1 + sq * 0.12);
+    const playerBodyY = nowT < playerTapSquashEnd ? 0.78 : 1;
+    playerDuck.body.scale.set(1, playerBodyY, 1);
+    const oppBodyY = nowT < oppTapSquashEnd ? 0.78 : 1;
+    oppDuck.body.scale.set(1, oppBodyY, 1);
 
-    const bodySquashGroup = playerDuck.body;
-    const headGroup = playerDuck.head;
-    const tailPivot = playerDuck.tail;
-    const wingL = playerDuck.leftWing;
-    const wingR = playerDuck.rightWing;
-    const hairGroup = playerDuck.hairGroup;
-
-    const ph = playerRunPhase;
-    // 다리: renderer.render 직전 FORCE LEG 블록이 최종 적용 (leftLeg/rightLeg = Group)
-    // playerDuck.leftLeg.rotation.x = Math.sin(ph) * 0.8 * speedP;
-    // playerDuck.rightLeg.rotation.x = Math.sin(ph + Math.PI) * 0.8 * speedP;
-    bodySquashGroup.rotation.z = Math.sin(ph * 2) * 0.08 * speedP;
-    bodySquashGroup.position.x = Math.sin(ph) * 0.06 * speedP;
-    bodySquashGroup.rotation.x = -speedP * 0.15;
-    headGroup.rotation.z = Math.sin(ph * 2 + 0.5) * 0.06 * speedP;
-    headGroup.rotation.x = 0;
-    headGroup.rotation.y = 0;
-    headGroup.position.x = Math.sin(ph) * 0.04 * speedP;
-    headGroup.position.z = 0.06;
-    hairGroup.rotation.z = Math.sin(ph * 3) * 0.15 * speedP;
-    hairGroup.rotation.x = 0;
-    wingL.rotation.y = -0.15;
-    wingR.rotation.y = 0.15;
-    wingL.rotation.z = Math.sin(ph * 2) * 0.2 * speedP;
-    wingR.rotation.z = -Math.sin(ph * 2) * 0.2 * speedP;
-    tailPivot.rotation.y = Math.sin(ph * 3) * 0.3 * speedP;
-    tailPivot.rotation.x = 0;
-    duckRoot.position.y = Math.abs(Math.sin(ph)) * 0.15 * speedP;
-
-    oppAnim.squashT = Math.max(0, oppAnim.squashT - dt * 5);
-    const bsq = oppAnim.squashT;
-    const oppBodyY = nowT < oppTapSquashEnd ? 0.78 : 1 - bsq * 0.28;
-    oppDuck.body.scale.set(1 + bsq * 0.22, oppBodyY, 1 + bsq * 0.12);
-
-    const bph = oppRunPhase;
-    // 다리: renderer.render 직전 FORCE LEG 블록이 최종 적용 (leftLeg/rightLeg = Group)
-    // oppDuck.leftLeg.rotation.x = Math.sin(bph) * 0.8 * speedO;
-    // oppDuck.rightLeg.rotation.x = Math.sin(bph + Math.PI) * 0.8 * speedO;
-    oppDuck.body.rotation.z = Math.sin(bph * 2) * 0.08 * speedO;
-    oppDuck.body.position.x = Math.sin(bph) * 0.06 * speedO;
-    oppDuck.body.rotation.x = -speedO * 0.15;
-    oppDuck.head.rotation.z = Math.sin(bph * 2 + 0.5) * 0.06 * speedO;
-    oppDuck.head.rotation.x = 0;
-    oppDuck.head.rotation.y = 0;
-    oppDuck.head.position.x = Math.sin(bph) * 0.04 * speedO;
-    oppDuck.head.position.z = 0.06;
-    oppDuck.hairGroup.rotation.z = Math.sin(bph * 3) * 0.15 * speedO;
-    oppDuck.hairGroup.rotation.x = 0;
-    oppDuck.leftWing.rotation.y = -0.15;
-    oppDuck.rightWing.rotation.y = 0.15;
-    oppDuck.leftWing.rotation.z = Math.sin(bph * 2) * 0.2 * speedO;
-    oppDuck.rightWing.rotation.z = -Math.sin(bph * 2) * 0.2 * speedO;
-    oppDuck.tail.rotation.y = Math.sin(bph * 3) * 0.3 * speedO;
-    oppDuck.tail.rotation.x = 0;
-    oppRoot.position.y = Math.abs(Math.sin(bph)) * 0.15 * speedO;
+    applyRunAnimation(playerDuck, playerRunPhase, speedP);
+    applyRunAnimation(oppDuck, oppRunPhase, speedO);
 
     const midDist = distP * 0.6 + distO * 0.4;
     const camTargetPos = new THREE.Vector3(0, 1.5, -midDist);
@@ -690,57 +625,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
       camera.updateProjectionMatrix();
     }
 
-    // ====== FORCE LEG ANIMATION START ======
-    {
-      if (Math.random() < 0.005) {
-        const hip = playerDuck.leftLeg.hip || playerDuck.leftLeg;
-        console.log('[LEG-DBG]', {
-          legKeys: Object.keys(playerDuck.leftLeg),
-          hipIsObject3D: hip instanceof THREE.Object3D,
-          hipType: hip?.constructor?.name,
-          hipParent: hip?.parent?.constructor?.name,
-          currentRotX: hip?.rotation?.x,
-          targetRotX:
-            Math.sin(playerRunPhase) * 0.8 * Math.min((playerState.spd || playerState.v || 0) / 4.5, 1),
-          oppV: oppState.spd || oppState.v || 0,
-          oppPhase: oppRunPhase,
-        });
-      }
-      const _dt = clock.getDelta ? 0.016 : 0.016; // 대략 60fps
-      const _vP = playerState.v || playerState.spd || 0;
-      const _vO = oppState.v || oppState.spd || 0;
-      const _sP = Math.min(_vP / 4.5, 1);
-      const _sO = Math.min(_vO / 4.5, 1);
-
-      if (_vP > 0.01) playerRunPhase += _vP * 0.016 * 8;
-      if (_vO > 0.01) oppRunPhase += _vO * 0.016 * 8;
-
-      // 테스트: 다리를 극단적으로 벌려서 보이는지 확인
-      playerDuck.leftLeg.rotation.x = 1.5; // 약 86도 — 앞으로 뻗기
-      playerDuck.rightLeg.rotation.x = -1.5; // 약 86도 — 뒤로 뻗기
-
-      oppDuck.leftLeg.rotation.x = 1.5;
-      oppDuck.rightLeg.rotation.x = -1.5;
-
-      // 플레이어 뒤뚱거림
-      if (playerDuck.body) {
-        playerDuck.body.rotation.z = Math.sin(playerRunPhase * 2) * 0.08 * _sP;
-        playerDuck.body.rotation.x = -_sP * 0.15;
-      }
-
-      // 수직 바운스
-      if (playerDuck.root) {
-        playerDuck.root.position.y = Math.abs(Math.sin(playerRunPhase)) * 0.15 * _sP;
-      }
-      if (oppDuck.root) {
-        oppDuck.root.position.y = Math.abs(Math.sin(oppRunPhase)) * 0.15 * _sO;
-      }
-    }
-    // ====== FORCE LEG ANIMATION END ======
-
-    if (Math.random() < 0.02) {
-      console.log('[LEG-PRE-RENDER]', { leftLegRotX: playerDuck.leftLeg?.rotation?.x });
-    }
     renderer.render(scene, camera);
   }
 
