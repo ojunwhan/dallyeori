@@ -725,7 +725,7 @@ function syncRace3D() {
     dist: P.dist,
     lateral: P.lateral || 0,
     dirA: P.dirA || 0,
-    v: P.v || P.spd || 0,
+    v: P.spd || P.v || 0,
     lastFoot: P.lastFoot,
     squash: playerSquash,
   });
@@ -734,7 +734,7 @@ function syncRace3D() {
     dist: CPU.dist,
     lateral: CPU.lateral || 0,
     dirA: CPU.dirA || 0,
-    v: CPU.v || CPU.spd || 0,
+    v: CPU.spd || CPU.v || 0,
     lastFoot: CPU.lastFoot,
     squash: oppSquash,
   });
