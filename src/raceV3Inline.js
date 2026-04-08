@@ -526,7 +526,7 @@ function update(dt){
   if(state==='ending'){
     endT+=dt;
     updAnim(P,dt);updAnim(CPU,dt);
-    if(endT>2.5){
+    if(endT>5.0){
       state='result';
       postRaceFinishToParent();
     }

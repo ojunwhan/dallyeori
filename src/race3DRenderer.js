@@ -9,7 +9,7 @@ const PLAYER_LANE_X = -1.25;
 const BOT_LANE_X = 1.25;
 const LANE_LATERAL_MAX = 1.25;
 const TRACK_WORLD_LEN = 400;
-const TRACK_STRIPE_SPACING_M = 0.3;
+const TRACK_STRIPE_SPACING_M = 0.5;
 const BASE_CAMERA_FOV = 63;
 const IDLE_ENTER = 0.15;
 const MAX_SPEED = RACE_ENGINE_PHYSICS.MAX_SPEED;
@@ -268,15 +268,16 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87c5ff);
-  scene.fog = new THREE.Fog(0xa8dcff, 15, 120);
+  scene.fog = new THREE.Fog(0x87ceeb, 30, 80);
 
   const camera = new THREE.PerspectiveCamera(BASE_CAMERA_FOV, w0 / h0, 0.1, 650);
   camera.position.set(0, 4.5, 8);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+  const renderer = new THREE.WebGLRenderer({ antialias: !isMobile });
   renderer.setSize(w0, h0);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.shadowMap.enabled = true;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.shadowMap.enabled = false;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   hostEl.appendChild(renderer.domElement);
 
@@ -284,7 +285,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffffff, 1.05);
   sun.position.set(4, 14, 6);
-  sun.castShadow = true;
+  sun.castShadow = false;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.near = 0.5;
   sun.shadow.camera.far = 220;
@@ -341,7 +342,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
   scene.add(decorGroup);
   const trunkMat = clayMat(0x5d4037);
   const leafMat = clayMat(0x2e7d32, 0.9);
-  for (let i = -70; i <= 70; i++) {
+  for (let i = -30; i <= 30; i += 2) {
     if (i === 0) continue;
     const z = i * 2.8 - 1.4;
     const side = i % 2 === 0 ? -1 : 1;
