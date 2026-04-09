@@ -1,7 +1,7 @@
 import { DUCKS_NINE, RACE_ENGINE_PHYSICS } from './constants.js';
 import { spend } from './services/hearts.js';
 import { showAppToast } from './services/toast.js';
-import { normalizeRaceSlot } from './services/socket.js';
+import { emitRaceJoin, normalizeRaceSlot } from './services/socket.js';
 import { createRace3DRenderer } from './race3DRenderer.js';
 
 /**
@@ -11,7 +11,7 @@ import { createRace3DRenderer } from './race3DRenderer.js';
  *   onFinish?: (payload: object) => void,
  *   terrainKey?: string,
  *   getAppState?: () => object,
- *   serverRace?: { socket: import('socket.io-client').Socket, roomId: string, mySlot: 0|1, myDuckId?: string, oppDuckId?: string, myDuckName?: string, oppDuckName?: string, oppUid?: string, myProfile?: Record<string, unknown>, emitTap?: (foot: 'left'|'right') => void },
+ *   serverRace?: { socket: import('socket.io-client').Socket, roomId: string, mySlot: 0|1, myUid?: string, myDuckId?: string, oppDuckId?: string, myDuckName?: string, oppDuckName?: string, oppUid?: string, myProfile?: Record<string, unknown>, emitTap?: (foot: 'left'|'right') => void },
  *   embedMode?: boolean,
  * }} options
  * @returns {() => void} stop — 리스너·rAF 정리
@@ -217,6 +217,9 @@ let playerFallAnim=0;
 let slipFxUntil=0;
 let serverRaceSnap=null;
 let serverFinishPayload=null;
+/** 서버 카운트다운 기준 시각(ms) — 이벤트 유실 시에도 로컬에서 숫자·GO 진행 */
+let serverCdStartAt=/** @type {number|null} */(null);
+let _cdGoRecoverAcc=0;
 let _raceTickLogCounter=0;
 let _blendLogCounter=0;
 let playerSquash=false;
@@ -611,7 +614,27 @@ function update(dt){
     updAnim(P,dt);
     updAnim(CPU,dt);
     const srvCd=serverRaceOpt&&serverRaceOpt.socket;
-    if(!srvCd&&cdT>=CD_STEP_SEC){
+    if(srvCd&&serverCdStartAt!=null&&Number.isFinite(serverCdStartAt)){
+      const elapsed=Date.now()-serverCdStartAt;
+      const idx=Math.min(3,Math.floor(Math.max(0,elapsed)/1000));
+      const counts=[3,2,1,0];
+      cdVal=counts[idx];
+      /** GO(0) 이후 ~250ms에 서버가 레이싱 시작 — race-start 유실 시 requestRaceSync로 복구 */
+      if(elapsed>=3100){
+        _cdGoRecoverAcc+=dt;
+        if(_cdGoRecoverAcc>=0.4){
+          _cdGoRecoverAcc=0;
+          const sk=serverRaceOpt.socket;
+          if(sk&&sk.connected){
+            try{
+              sk.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
+            }catch(e){/* ignore */}
+          }
+        }
+      }else{
+        _cdGoRecoverAcc=0;
+      }
+    }else if(!srvCd&&cdT>=CD_STEP_SEC){
       cdT=0;
       cdVal--;
       if(cdVal<0)state='racing';
@@ -1056,6 +1079,9 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     const c=d&&typeof d.count==='number'?d.count:3;
     cdVal=Math.max(0,Math.min(3,c));
     cdT=0;
+    if(d&&typeof d.startAt==='number'&&Number.isFinite(d.startAt)&&d.startAt>0){
+      serverCdStartAt=d.startAt;
+    }
     if(countdownResyncIntervalId){
       clearInterval(countdownResyncIntervalId);
       countdownResyncIntervalId=0;
@@ -1069,7 +1095,7 @@ if(serverRaceOpt&&serverRaceOpt.socket){
         return;
       }
       try{
-        sock.emit('requestRaceSync',{roomId:serverRaceOpt.roomId});
+        sock.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
       }catch(e){
         console.warn('[race] requestRaceSync',e);
       }
@@ -1088,6 +1114,8 @@ if(serverRaceOpt&&serverRaceOpt.socket){
       console.log('[race] race-start/raceGo 중복 무시(이미 레이싱)');
       return;
     }
+    serverCdStartAt=null;
+    _cdGoRecoverAcc=0;
     state='racing';
     cdVal=-1;
     raceT=0;
@@ -1109,6 +1137,8 @@ if(serverRaceOpt&&serverRaceOpt.socket){
       p.players.length>=2
     ){
       const wasCd = state === 'countdown';
+      serverCdStartAt=null;
+      _cdGoRecoverAcc=0;
       state='racing';
       cdVal=-1;
       console.warn(
@@ -1155,7 +1185,58 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     },()=>{});
   };
   sock.on('receiveRematch',onReceiveRematch);
-  srvHandlers={sock,onCountdown,onRaceStart,onTick,onRace:onServerRaceResult,onPeerTap,onReceiveRematch,onRaceAborted,onRematchUnavailable};
+  const getRaceMyUid=()=>{
+    if(serverRaceOpt&&typeof serverRaceOpt.myUid==='string'&&serverRaceOpt.myUid)return serverRaceOpt.myUid;
+    if(getAppState){
+      try{
+        const st=getAppState();
+        const u=st&&st.user&&typeof st.user.uid==='string'?st.user.uid:'';
+        if(u)return u;
+      }catch(e){/* ignore */}
+    }
+    return '';
+  };
+  const raceReconnectOv=document.createElement('div');
+  raceReconnectOv.setAttribute('aria-live','polite');
+  raceReconnectOv.textContent='재연결 중…';
+  raceReconnectOv.style.cssText=[
+    'display:none','position:absolute','inset:0','z-index:300',
+    'align-items:center','justify-content:center','background:rgba(0,0,0,0.45)',
+    'color:#fff','font-size:16px','font-weight:600','pointer-events:auto',
+  ].join(';');
+  hostEl.appendChild(raceReconnectOv);
+  const onSockDisconnect=()=>{
+    raceReconnectOv.style.display='flex';
+  };
+  const onSockConnect=()=>{
+    raceReconnectOv.style.display='none';
+    const ru=getRaceMyUid();
+    console.log('[RECONNECT] raceJoin 재전송 roomId='+serverRaceOpt.roomId+' uid='+ru+' slot='+myServerSlot);
+    emitRaceJoin(serverRaceOpt.roomId,myServerSlot,sock,ru);
+    try{
+      sock.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
+    }catch(e){
+      console.warn('[race] connect resync',e);
+    }
+  };
+  sock.on('connect',onSockConnect);
+  sock.on('disconnect',onSockDisconnect);
+  if(sock.connected){
+    queueMicrotask(onSockConnect);
+  }
+  srvHandlers={
+    sock,
+    onCountdown,
+    onRaceStart,
+    onTick,
+    onRace:onServerRaceResult,
+    onPeerTap,
+    onReceiveRematch,
+    onRaceAborted,
+    onRematchUnavailable,
+    onSockConnect,
+    onSockDisconnect,
+  };
   console.log('[race] serverRace active', { roomId: serverRaceOpt.roomId, mySlot: serverRaceOpt.mySlot, socketConnected: sock.connected });
 }
 
@@ -1187,6 +1268,8 @@ if(EMBED_APP&&!serverRaceOpt){
         clearInterval(countdownResyncIntervalId);
         countdownResyncIntervalId=0;
       }
+      serverCdStartAt=null;
+      _cdGoRecoverAcc=0;
       if(srvHandlers.sock?.connected&&serverRaceOpt?.roomId){
         try{srvHandlers.sock.emit('raceEndingLeft',{roomId:serverRaceOpt.roomId});}catch(e){console.warn('[race] raceEndingLeft',e);}
       }
@@ -1199,6 +1282,8 @@ if(EMBED_APP&&!serverRaceOpt){
       srvHandlers.sock.off('raceAborted',srvHandlers.onRaceAborted);
       srvHandlers.sock.off('receiveRematch',srvHandlers.onReceiveRematch);
       srvHandlers.sock.off('rematchUnavailable',srvHandlers.onRematchUnavailable);
+      srvHandlers.sock.off('connect',srvHandlers.onSockConnect);
+      srvHandlers.sock.off('disconnect',srvHandlers.onSockDisconnect);
       srvHandlers=null;
     }
     cancelAnimationFrame(rafId);

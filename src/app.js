@@ -540,7 +540,7 @@ function runRace(_payload) {
   const pr = globalThis.__dallyeoriPendingRace;
   const slotNum = pr && pr.slot != null ? Number(pr.slot) : NaN;
   const raceSlot = slotNum === 0 || slotNum === 1 ? /** @type {0|1} */ (slotNum) : null;
-  /** @type {{ socket: import('socket.io-client').Socket, roomId: string, mySlot: 0|1, myDuckId: string, oppDuckId: string, myDuckName: string, oppDuckName: string, oppUid?: string, myProfile?: Record<string, unknown>, emitTap?: (foot: 'left'|'right') => void } | undefined} */
+  /** @type {{ socket: import('socket.io-client').Socket, roomId: string, mySlot: 0|1, myUid?: string, myDuckId: string, oppDuckId: string, myDuckName: string, oppDuckName: string, oppUid?: string, myProfile?: Record<string, unknown>, emitTap?: (foot: 'left'|'right') => void } | undefined} */
   let serverRace;
   if (pr && pr.roomId != null && raceSlot != null && pr.socket) {
     const roomId = pr.roomId;
@@ -554,6 +554,7 @@ function runRace(_payload) {
       socket: raceSock,
       roomId,
       mySlot: slot,
+      myUid: typeof appState.user?.uid === 'string' ? appState.user.uid : '',
       myDuckId: myId,
       oppDuckId: oppId,
       myDuckName: duckDisplayNameById(myId),
@@ -582,7 +583,12 @@ function runRace(_payload) {
   });
 
   if (pr && raceSlot != null && pr.roomId && pr.socket) {
-    emitRaceJoin(pr.roomId, raceSlot, pr.socket);
+    emitRaceJoin(
+      pr.roomId,
+      raceSlot,
+      pr.socket,
+      typeof appState.user?.uid === 'string' ? appState.user.uid : '',
+    );
     delete globalThis.__dallyeoriPendingRace;
   }
 }
@@ -594,7 +600,7 @@ function boot() {
   }
   window.__dallyeoriAppBooted = true;
   /** 배포 확인: 콘솔에 `__DALLYEORI_CLIENT_TAG` 치면 문자열이 나와야 최신 클라(결과창 한판더 없음). undefined면 예전 JS. */
-  globalThis.__DALLYEORI_CLIENT_TAG = '2026-04-08-raceResultCountdownGuard-resync';
+  globalThis.__DALLYEORI_CLIENT_TAG = '2026-03-30-raceJoin-uid-reconnect-overlay';
   console.log('[dallyeori] CLIENT_TAG', globalThis.__DALLYEORI_CLIENT_TAG);
   consumeOAuthReturn();
   const qr = consumeQrGuestParams();

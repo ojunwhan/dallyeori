@@ -558,12 +558,18 @@ export function emitAcceptRematch(peerUid, terrain) {
  * @param {string} roomId
  * @param {0|1} slot
  * @param {import('socket.io-client').Socket | null} [socketOverride] 매칭 직후 소켓 — 전역 gameSocket 과 불일치 시 raceJoin 누락 방지
+ * @param {string} [myUid] 재연결 시 서버에서 room 슬롯 uid 와 교차 검증
  */
-export function emitRaceJoin(roomId, slot, socketOverride) {
+export function emitRaceJoin(roomId, slot, socketOverride, myUid) {
   const s = socketOverride ?? gameSocket;
   if (!s) return;
+  const buildPayload = () => {
+    const p = { roomId, slot };
+    if (typeof myUid === 'string' && myUid) p.uid = myUid;
+    return p;
+  };
   const emit = () => {
-    s.emit('raceJoin', { roomId, slot });
+    s.emit('raceJoin', buildPayload());
   };
   if (s.connected) emit();
   else s.once('connect', emit);
