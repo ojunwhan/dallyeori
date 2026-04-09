@@ -355,7 +355,8 @@ export function connectQrGuestSocket(token) {
     reconnection: true,
     reconnectionAttempts: 2,
     reconnectionDelay: 800,
-    transports: ['websocket', 'polling'],
+    /** polling 먼저 — PC 프록시/방화벽에서 wss 실패 시에도 경주 유지(websocket 우선이면 끊김·재연결 루프 빈번) */
+    transports: ['polling', 'websocket'],
   });
 
   const onFound = (data) => {
@@ -463,7 +464,8 @@ export function ensureSocket() {
     reconnection: true,
     reconnectionAttempts: 3,
     reconnectionDelay: 800,
-    transports: ['websocket', 'polling'],
+    /** polling 먼저 — 동일 출처 wss 핸드셰이크 실패 환경에서 안정적 */
+    transports: ['polling', 'websocket'],
   });
   console.log('[socket] new socket created');
   gameSocket.on('connect_error', () => {
