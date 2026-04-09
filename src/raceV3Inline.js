@@ -869,6 +869,8 @@ function updAnim(p,dt){
 let _r3PrevState = '';
 /** 카운트다운 숫자 바뀔 때만 정각식 비프 1회 */
 let _cdStationBeepKey = /** @type {string | null} */ (null);
+/** PC 등에서 transport 업그레이드로 disconnect→connect 순서가 꼬여도 connected 기준으로 오버레이 동기화 */
+let raceReconnectOvRef = /** @type {HTMLDivElement | null} */ (null);
 function syncRace3D() {
   tapPadsWrap.style.display = state === 'ending' || state === 'result' ? 'none' : 'flex';
   if (state === 'ready' && _r3PrevState !== 'ready') {
@@ -993,6 +995,9 @@ function syncRace3D() {
       `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나: ${P.dist.toFixed(4)}m | 상대: ${CPU.dist.toFixed(4)}m</div>`;
   } else {
     hudEl.innerHTML = '';
+  }
+  if (raceReconnectOvRef && serverRaceOpt?.socket) {
+    raceReconnectOvRef.style.display = serverRaceOpt.socket.connected ? 'none' : 'flex';
   }
 }
 
@@ -1205,11 +1210,8 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     'color:#fff','font-size:16px','font-weight:600','pointer-events:auto',
   ].join(';');
   hostEl.appendChild(raceReconnectOv);
-  const onSockDisconnect=()=>{
-    raceReconnectOv.style.display='flex';
-  };
+  raceReconnectOvRef=raceReconnectOv;
   const onSockConnect=()=>{
-    raceReconnectOv.style.display='none';
     const ru=getRaceMyUid();
     console.log('[RECONNECT] raceJoin 재전송 roomId='+serverRaceOpt.roomId+' uid='+ru+' slot='+myServerSlot);
     emitRaceJoin(serverRaceOpt.roomId,myServerSlot,sock,ru);
@@ -1220,7 +1222,6 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     }
   };
   sock.on('connect',onSockConnect);
-  sock.on('disconnect',onSockDisconnect);
   if(sock.connected){
     queueMicrotask(onSockConnect);
   }
@@ -1235,7 +1236,6 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     onRaceAborted,
     onRematchUnavailable,
     onSockConnect,
-    onSockDisconnect,
   };
   console.log('[race] serverRace active', { roomId: serverRaceOpt.roomId, mySlot: serverRaceOpt.mySlot, socketConnected: sock.connected });
 }
@@ -1270,6 +1270,7 @@ if(EMBED_APP&&!serverRaceOpt){
       }
       serverCdStartAt=null;
       _cdGoRecoverAcc=0;
+      raceReconnectOvRef=null;
       if(srvHandlers.sock?.connected&&serverRaceOpt?.roomId){
         try{srvHandlers.sock.emit('raceEndingLeft',{roomId:serverRaceOpt.roomId});}catch(e){console.warn('[race] raceEndingLeft',e);}
       }
@@ -1283,7 +1284,6 @@ if(EMBED_APP&&!serverRaceOpt){
       srvHandlers.sock.off('receiveRematch',srvHandlers.onReceiveRematch);
       srvHandlers.sock.off('rematchUnavailable',srvHandlers.onRematchUnavailable);
       srvHandlers.sock.off('connect',srvHandlers.onSockConnect);
-      srvHandlers.sock.off('disconnect',srvHandlers.onSockDisconnect);
       srvHandlers=null;
     }
     cancelAnimationFrame(rafId);
