@@ -309,7 +309,8 @@ function globalMatchFoundBridge(data) {
   const d = /** @type {Record<string, unknown>} */ (data);
   const slotNorm = normalizeRaceSlot(d.slot);
   if (typeof d.roomId !== 'string' || slotNorm == null) return;
-  const s = ensureSocket();
+  /** QR 게스트: localStorage 는 구글 JWT 일 수 있음 — ensureSocket 이 게스트 소켓을 끊고 구글로 갈아타면 uid mismatch */
+  const s = guestQrFlowActive ? gameSocket : ensureSocket();
   if (!s) return;
   const opp = d.opponent && typeof d.opponent === 'object' ? d.opponent : {};
   const mp = globalThis.__dallyeoriMatchProfile || {};
@@ -438,13 +439,49 @@ export function endGuestQrFlow() {
   }
 }
 
+/**
+ * raceJoin payload.uid — 소켓 handshake 토큰과 반드시 동일 계열이어야 함.
+ * QR 게스트는 localStorage JWT(호스트 구글 등)와 무관하게 게스트 토큰 uid 사용.
+ */
+export function getRaceJoinPayloadUid() {
+  if (guestQrFlowActive && lastSocketToken) {
+    const p = decodeJWT(lastSocketToken);
+    if (p && typeof p.uid === 'string' && p.uid) return p.uid;
+  }
+  return getJwtUid();
+}
+
 export function ensureSocket() {
   console.log('[socket] ensureSocket called, token:', !!getToken(), 'existing:', !!gameSocket, 'connected:', gameSocket?.connected);
+  if (guestQrFlowActive) {
+    if (gameSocket?.connected) {
+      attachReceiveChatRelay(gameSocket);
+      attachReceiveHeartRelay(gameSocket);
+      attachHeartEconomyRelay(gameSocket);
+      attachReceiveFriendRematchRelay(gameSocket);
+      attachGlobalMatchFoundBridge(gameSocket);
+      return gameSocket;
+    }
+    return null;
+  }
+
   const token = getToken();
   if (!token) {
     showAppToast('로그인이 필요해요.');
     return null;
   }
+
+  /** 이전 연결이 게스트 JWT 등 다른 토큰이면 끊고 로그인 토큰으로 재수립 — raceJoin uid / socketUid mismatch 방지 */
+  if (gameSocket && lastSocketToken !== token) {
+    try {
+      gameSocket.disconnect();
+    } catch {
+      /* ignore */
+    }
+    gameSocket = null;
+    lastSocketToken = null;
+  }
+
   if (gameSocket?.connected && lastSocketToken === token) {
     console.log('[socket] reusing existing socket, connected:', gameSocket?.connected);
     attachReceiveChatRelay(gameSocket);
@@ -570,11 +607,20 @@ export function emitAcceptRematch(peerUid, terrain) {
  * @param {string} [myUid] 재연결 시 서버에서 room 슬롯 uid 와 교차 검증
  */
 export function emitRaceJoin(roomId, slot, socketOverride, myUid) {
-  const s = socketOverride ?? gameSocket;
+  let s;
+  if (guestQrFlowActive) {
+    s = socketOverride ?? gameSocket;
+  } else {
+    s = ensureSocket();
+  }
   if (!s) return;
   const buildPayload = () => {
     const p = { roomId, slot };
-    if (typeof myUid === 'string' && myUid) p.uid = myUid;
+    const uid =
+      typeof myUid === 'string' && myUid.trim()
+        ? myUid.trim()
+        : getRaceJoinPayloadUid();
+    if (uid) p.uid = uid;
     return p;
   };
   const emit = () => {
@@ -622,7 +668,7 @@ function _matchFoundHandler(data) {
  * @param {import('socket.io-client').Socket | null} [socketOverride] 경주 중 탭은 경주에 쓰인 소켓으로만 보냄
  */
 export function sendTap(foot, roomId, slot, socketOverride) {
-  const s = socketOverride ?? gameSocket;
+  const s = guestQrFlowActive ? (socketOverride ?? gameSocket) : ensureSocket() ?? socketOverride ?? gameSocket;
   console.log('[socket] emit tap', foot, 'connected:', s?.connected, 'roomId:', roomId, 'slot:', slot);
   s?.emit('tap', { foot, roomId, slot });
 }

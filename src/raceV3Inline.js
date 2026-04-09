@@ -1,7 +1,15 @@
 import { DUCKS_NINE, RACE_ENGINE_PHYSICS } from './constants.js';
 import { spend } from './services/hearts.js';
 import { showAppToast } from './services/toast.js';
-import { emitRaceJoin, getGameSocket, getJwtUid, normalizeRaceSlot } from './services/socket.js';
+import {
+  emitRaceJoin,
+  ensureSocket,
+  getGameSocket,
+  getJwtUid,
+  getRaceJoinPayloadUid,
+  isGuestQrFlowActive,
+  normalizeRaceSlot,
+} from './services/socket.js';
 import { createRace3DRenderer } from './race3DRenderer.js';
 
 /**
@@ -329,15 +337,22 @@ function bumpPadGlow(foot){
 }
 
 function tryRaceResyncFromReady(){
-  const sk=getRaceIoSocket();
-  if(!sk?.connected||!serverRaceOpt?.roomId)return;
+  if(!serverRaceOpt?.roomId)return;
   const now=Date.now();
   if(now-lastReadyRaceSyncAt<380)return;
   lastReadyRaceSyncAt=now;
   try{
-    const ru=getJwtUid()||(typeof serverRaceOpt.myUid==='string'?serverRaceOpt.myUid:'');
-    emitRaceJoin(serverRaceOpt.roomId,myServerSlot,sk,ru);
-    sk.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
+    const ru=getRaceJoinPayloadUid()||(typeof serverRaceOpt.myUid==='string'?serverRaceOpt.myUid:'');
+    if(isGuestQrFlowActive()){
+      const sk=getRaceIoSocket();
+      if(!sk?.connected)return;
+      emitRaceJoin(serverRaceOpt.roomId,myServerSlot,sk,ru);
+      sk.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
+      return;
+    }
+    if(!ensureSocket()?.connected)return;
+    emitRaceJoin(serverRaceOpt.roomId,myServerSlot,null,ru);
+    getGameSocket()?.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
   }catch(e){
     console.warn('[race] ready requestRaceSync',e);
   }
@@ -1184,7 +1199,7 @@ if(serverRaceOpt){
     touchServerRaceIo();
     void payload;
     try{
-      const ru=getJwtUid()||(typeof serverRaceOpt.myUid==='string'?serverRaceOpt.myUid:'');
+      const ru=getRaceJoinPayloadUid()||(typeof serverRaceOpt.myUid==='string'?serverRaceOpt.myUid:'');
       emitRaceJoin(serverRaceOpt.roomId,myServerSlot,sock,ru);
       sock.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
     }catch(e){
@@ -1395,6 +1410,10 @@ if(serverRaceOpt){
   };
   sock.on('receiveRematch',onReceiveRematch);
   const getRaceMyUid=()=>{
+    try{
+      const r=getRaceJoinPayloadUid();
+      if(r)return r;
+    }catch(e){/* ignore */}
     try{
       const j=getJwtUid();
       if(j)return j;
