@@ -619,6 +619,20 @@ function blendServerDucks(dt){
 function lerp(a,b,t){return a+(b-a)*t}
 
 // ═══ UPDATE ═══
+/**
+ * 서버 카운트다운 숫자 — 모바일 백그라운드에서 rAF 가 멈춰도 setInterval 과 동일 식으로 진행
+ * @returns {number|null} 경과 ms, 적용 불가면 null
+ */
+function applyServerCountdownWallClock(){
+  if(state!=='countdown')return null;
+  const srvCd=serverRaceOpt&&serverRaceOpt.socket;
+  if(!srvCd||serverCdStartAt==null||!Number.isFinite(serverCdStartAt))return null;
+  const elapsed=Date.now()-serverCdStartAt;
+  const idx=Math.min(3,Math.floor(Math.max(0,elapsed)/1000));
+  const counts=[3,2,1,0];
+  cdVal=counts[idx];
+  return elapsed;
+}
 function update(dt){
   padGlowL=Math.max(0,padGlowL-dt*7);
   padGlowR=Math.max(0,padGlowR-dt*7);
@@ -628,12 +642,9 @@ function update(dt){
     updAnim(CPU,dt);
     const srvCd=serverRaceOpt&&serverRaceOpt.socket;
     if(srvCd&&serverCdStartAt!=null&&Number.isFinite(serverCdStartAt)){
-      const elapsed=Date.now()-serverCdStartAt;
-      const idx=Math.min(3,Math.floor(Math.max(0,elapsed)/1000));
-      const counts=[3,2,1,0];
-      cdVal=counts[idx];
+      const elapsed=applyServerCountdownWallClock();
       /** GO(0) 이후 ~250ms에 서버가 레이싱 시작 — race-start 유실 시 requestRaceSync로 복구 */
-      if(elapsed>=3100){
+      if(elapsed!=null&&elapsed>=3100){
         _cdGoRecoverAcc+=dt;
         if(_cdGoRecoverAcc>=0.4){
           _cdGoRecoverAcc=0;
@@ -1082,6 +1093,8 @@ let srvHandlers=null;
 let countdownResyncIntervalId=0;
 /** 레이싱 중 raceTick 유실 시 requestRaceSync */
 let racingResyncIntervalId=0;
+/** 카운트다운 중 rAF 정지 대비 월클럭(ms) */
+let countdownWallMsIntervalId=0;
 if(serverRaceOpt&&serverRaceOpt.socket){
   const sock=serverRaceOpt.socket;
   function armRacingResyncInterval(){
@@ -1127,14 +1140,40 @@ if(serverRaceOpt&&serverRaceOpt.socket){
       clearInterval(racingResyncIntervalId);
       racingResyncIntervalId=0;
     }
+    if(countdownWallMsIntervalId){
+      clearInterval(countdownWallMsIntervalId);
+      countdownWallMsIntervalId=0;
+    }
     ensureAudio();
     state='countdown';
     const c=d&&typeof d.count==='number'?d.count:3;
-    cdVal=Math.max(0,Math.min(3,c));
+    const cNorm=Math.max(0,Math.min(3,c));
+    cdVal=cNorm;
     cdT=0;
-    if(d&&typeof d.startAt==='number'&&Number.isFinite(d.startAt)&&d.startAt>0){
-      serverCdStartAt=d.startAt;
+    const rawSa=d&&Object.prototype.hasOwnProperty.call(d,'startAt')?d.startAt:undefined;
+    let startMs=NaN;
+    if(typeof rawSa==='number'&&Number.isFinite(rawSa)&&rawSa>0){
+      startMs=rawSa;
+    }else if(typeof rawSa==='string'){
+      const n=Number(rawSa);
+      if(Number.isFinite(n)&&n>0)startMs=n;
     }
+    if(Number.isFinite(startMs)){
+      serverCdStartAt=startMs;
+    }else if(serverCdStartAt==null){
+      /** startAt 누락·구버전 서버: 수신 count 기준으로 가상 시작 시각 (이벤트만으로는 2에서 멈춤) */
+      serverCdStartAt=Date.now()-(3-cNorm)*1000;
+    }
+    countdownWallMsIntervalId=window.setInterval(()=>{
+      if(state!=='countdown'){
+        if(countdownWallMsIntervalId){
+          clearInterval(countdownWallMsIntervalId);
+          countdownWallMsIntervalId=0;
+        }
+        return;
+      }
+      applyServerCountdownWallClock();
+    },200);
     if(countdownResyncIntervalId){
       clearInterval(countdownResyncIntervalId);
       countdownResyncIntervalId=0;
@@ -1162,6 +1201,10 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     if(countdownResyncIntervalId){
       clearInterval(countdownResyncIntervalId);
       countdownResyncIntervalId=0;
+    }
+    if(countdownWallMsIntervalId){
+      clearInterval(countdownWallMsIntervalId);
+      countdownWallMsIntervalId=0;
     }
     if(state==='racing'){
       console.log('[race] race-start/raceGo 중복 무시(이미 레이싱)');
@@ -1201,6 +1244,10 @@ if(serverRaceOpt&&serverRaceOpt.socket){
       if(countdownResyncIntervalId){
         clearInterval(countdownResyncIntervalId);
         countdownResyncIntervalId=0;
+      }
+      if(countdownWallMsIntervalId){
+        clearInterval(countdownWallMsIntervalId);
+        countdownWallMsIntervalId=0;
       }
       state='racing';
       cdVal=-1;
@@ -1336,6 +1383,10 @@ if(EMBED_APP&&!serverRaceOpt){
       if(racingResyncIntervalId){
         clearInterval(racingResyncIntervalId);
         racingResyncIntervalId=0;
+      }
+      if(countdownWallMsIntervalId){
+        clearInterval(countdownWallMsIntervalId);
+        countdownWallMsIntervalId=0;
       }
       serverCdStartAt=null;
       _cdGoRecoverAcc=0;
