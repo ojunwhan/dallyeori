@@ -25,6 +25,120 @@
   <div id="game-root">
     <canvas id="game-canvas" class="is-hidden" aria-label="달려오리 게임 화면"></canvas>
     <div id="app-root"></div>
-  </div>
+  </div>
+  <!-- 인앱 웹뷰(카톡·라인 등) → 외부 브라우저. QR/일반 브라우저 UA는 여기 해당 없음 -->
+  <script>
+    (function () {
+      var ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+      var U = ua.toUpperCase();
+      var isMobile = /ANDROID|IPHONE|IPAD|IPOD|WEBOS|BLACKBERRY|MOBILE/i.test(U);
+
+      function isInAppWebView() {
+        if (U.indexOf('KAKAOTALK') !== -1) return true;
+        if (U.indexOf('FB_IAB') !== -1 || U.indexOf('FBAN') !== -1 || U.indexOf('FBIOS') !== -1) return true;
+        if (U.indexOf('INSTAGRAM') !== -1) return true;
+        if (U.indexOf('LINE/') !== -1) return true;
+        if (U.indexOf('DAUMAPP') !== -1) return true;
+        if (isMobile && U.indexOf('NAVER') !== -1) return true;
+        return false;
+      }
+
+      if (!isInAppWebView()) return;
+
+      var fullUrl = window.location.href;
+      var host = window.location.host;
+      var pathQs = window.location.pathname + window.location.search;
+
+      function tryAndroidChromeIntent() {
+        if (U.indexOf('ANDROID') === -1) return;
+        var fallback = encodeURIComponent(fullUrl);
+        var pathPart = pathQs.indexOf('#') === -1 ? pathQs : pathQs.split('#')[0];
+        var intent =
+          'intent://' +
+          host +
+          pathPart +
+          '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' +
+          fallback +
+          ';end';
+        window.location.href = intent;
+      }
+
+      function tryIosExternal() {
+        if (!/IPHONE|IPAD|IPOD/i.test(U)) return;
+        try {
+          window.open(fullUrl, '_blank', 'noopener,noreferrer');
+        } catch (e) {}
+        var rest = fullUrl.replace(/^https?:\/\//i, '');
+        try {
+          window.location.href = 'googlechrome://' + rest;
+        } catch (e2) {}
+        try {
+          var a = document.createElement('a');
+          a.href = fullUrl;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } catch (e3) {}
+      }
+
+      function showFallbackOverlay() {
+        if (document.getElementById('dallyeori-iab-fallback')) return;
+        var wrap = document.createElement('div');
+        wrap.id = 'dallyeori-iab-fallback';
+        wrap.setAttribute('role', 'dialog');
+        wrap.style.cssText =
+          'position:fixed;inset:0;z-index:2147483646;display:flex;flex-direction:column;' +
+          'align-items:center;justify-content:center;padding:24px;box-sizing:border-box;' +
+          'background:linear-gradient(180deg,#0d1117,#000);color:#fff;font-family:system-ui,sans-serif;text-align:center;';
+        var p = document.createElement('p');
+        p.textContent = '게임은 외부 브라우저에서 실행됩니다. 아래 버튼을 눌러 주세요.';
+        p.style.cssText = 'font-size:15px;line-height:1.5;opacity:0.92;max-width:320px;margin-bottom:20px;';
+        var btn = document.createElement('a');
+        btn.textContent = '게임 시작하기';
+        btn.href = fullUrl;
+        btn.target = '_blank';
+        btn.rel = 'noopener noreferrer';
+        btn.style.cssText =
+          'display:inline-block;padding:16px 36px;font-size:18px;font-weight:700;border-radius:14px;' +
+          'background:#4CAF50;color:#fff;text-decoration:none;box-shadow:0 4px 20px rgba(76,175,80,0.35);';
+        btn.addEventListener('click', function () {
+          if (U.indexOf('ANDROID') !== -1) {
+            tryAndroidChromeIntent();
+          } else {
+            tryIosExternal();
+          }
+        });
+        wrap.appendChild(p);
+        wrap.appendChild(btn);
+        document.body.appendChild(wrap);
+      }
+
+      var pageLikelyBackground = false;
+      document.addEventListener(
+        'visibilitychange',
+        function () {
+          if (document.hidden) pageLikelyBackground = true;
+        },
+        { passive: true },
+      );
+      window.addEventListener(
+        'pagehide',
+        function () {
+          pageLikelyBackground = true;
+        },
+        { passive: true },
+      );
+
+      if (U.indexOf('ANDROID') !== -1) tryAndroidChromeIntent();
+      else tryIosExternal();
+
+      window.setTimeout(function () {
+        if (pageLikelyBackground || document.hidden) return;
+        showFallbackOverlay();
+      }, 900);
+    })();
+  </script>
 </body>
 </html>
