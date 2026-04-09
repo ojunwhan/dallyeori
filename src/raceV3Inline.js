@@ -498,7 +498,14 @@ function raceKeyDown(e){
 }
 hostEl.addEventListener('keydown',raceKeyDown);
 
-function startCD(){ensureAudio();state='countdown';cdVal=CD_START_VAL;cdT=0}
+function startCD(){
+  ensureAudio();
+  /** 온라인 경주: 카운트는 서버만 — 로컬 startCD 는 cdVal=2·serverCdStartAt 없이 갱신 분기가 없어 영구 정지 */
+  if(serverRaceOpt&&serverRaceOpt.socket)return;
+  state='countdown';
+  cdVal=CD_START_VAL;
+  cdT=0;
+}
 /** iframe(embed)에서는 호출 무시 */
 function reset(){
   if(EMBED_APP)return;
