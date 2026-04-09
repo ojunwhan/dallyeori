@@ -520,6 +520,21 @@ function makeFinishPayload(){
 function onServerRaceResult(r){
   if(raceFinishPosted)return;
   if(state!=='racing'&&state!=='countdown')return;
+  if(!r||typeof r!=='object')return;
+  if(!Array.isArray(r.distances)||r.distances.length<2)return;
+  const ws=r.winnerSlot;
+  if(ws!==-1&&ws!==0&&ws!==1)return;
+  const rt=Number(r.raceTime);
+  /**
+   * 카운트다운 중에는 스테일/오염된 raceResult(0초·0m 무승부)만 오면 PC가 즉시 DRAW 로 끝나는 버그가 있었음.
+   * 서버가 실제로 레이스를 돌린 뒤 온 결과만 수용(raceTime 하한).
+   */
+  if(state==='countdown'){
+    if(!Number.isFinite(rt)||rt<0.75){
+      console.warn('[race] raceResult 무시(카운트다운 중 raceTime 비정상·스테일 의심)',rt,r);
+      return;
+    }
+  }
   const ms=myServerSlot;
   let res='lose';
   if(r.winnerSlot===-1)res='draw';
@@ -1014,6 +1029,8 @@ function showRematchRequest(name, onAccept, onDecline) {
 
 /** @type {{ sock: import('socket.io-client').Socket, onCountdown: (d: object) => void, onRaceStart: () => void, onTick: (p: object) => void, onRace: (r: object) => void, onPeerTap: (d: object) => void, onReceiveRematch: (d: object) => void, onRaceAborted: (p: object) => void, onRematchUnavailable: (p: object) => void } | null} */
 let srvHandlers=null;
+/** 서버 카운트다운 이벤트 유실 시 주기적 재동기화 */
+let countdownResyncIntervalId=0;
 if(serverRaceOpt&&serverRaceOpt.socket){
   const sock=serverRaceOpt.socket;
   const onRematchUnavailable=(p)=>{
@@ -1039,17 +1056,40 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     const c=d&&typeof d.count==='number'?d.count:3;
     cdVal=Math.max(0,Math.min(3,c));
     cdT=0;
+    if(countdownResyncIntervalId){
+      clearInterval(countdownResyncIntervalId);
+      countdownResyncIntervalId=0;
+    }
+    countdownResyncIntervalId=window.setInterval(()=>{
+      if(state!=='countdown'||!sock.connected){
+        if(countdownResyncIntervalId){
+          clearInterval(countdownResyncIntervalId);
+          countdownResyncIntervalId=0;
+        }
+        return;
+      }
+      try{
+        sock.emit('requestRaceSync',{roomId:serverRaceOpt.roomId});
+      }catch(e){
+        console.warn('[race] requestRaceSync',e);
+      }
+    },2000);
   };
   const onRaceStart=()=>{
     /**
      * race-start 와 raceGo 가 둘 다 오거나, 이미 raceTick 으로 레이싱 진입한 뒤 늦게 오면
      * raceT=0·snap=null 로 다시 밀면 한쪽만 트랙이 크게 어긋남 — 두 번째부터는 무시.
      */
+    if(countdownResyncIntervalId){
+      clearInterval(countdownResyncIntervalId);
+      countdownResyncIntervalId=0;
+    }
     if(state==='racing'){
       console.log('[race] race-start/raceGo 중복 무시(이미 레이싱)');
       return;
     }
     state='racing';
+    cdVal=-1;
     raceT=0;
     serverRaceSnap=null;
     _raceTickLogCounter=0;
@@ -1143,6 +1183,10 @@ if(EMBED_APP&&!serverRaceOpt){
     if (raceStopped) return;
     raceStopped = true;
     if(srvHandlers){
+      if(countdownResyncIntervalId){
+        clearInterval(countdownResyncIntervalId);
+        countdownResyncIntervalId=0;
+      }
       if(srvHandlers.sock?.connected&&serverRaceOpt?.roomId){
         try{srvHandlers.sock.emit('raceEndingLeft',{roomId:serverRaceOpt.roomId});}catch(e){console.warn('[race] raceEndingLeft',e);}
       }
