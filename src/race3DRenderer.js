@@ -9,7 +9,8 @@ const PLAYER_LANE_X = -1.25;
 const BOT_LANE_X = 1.25;
 const LANE_LATERAL_MAX = 1.25;
 const TRACK_WORLD_LEN = 400;
-const TRACK_STRIPE_SPACING_M = 0.3;
+/** 트랙 텍스처 줄 반복 주기(m) — constants.TAP_STRIDE_M 과 동일 */
+const TRACK_STRIPE_CYCLE_M = TAP_STRIDE_M;
 const BASE_CAMERA_FOV = 63;
 const IDLE_ENTER = 0.15;
 const MAX_SPEED = RACE_ENGINE_PHYSICS.MAX_SPEED;
