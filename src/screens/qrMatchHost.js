@@ -322,8 +322,9 @@ export function mountQrMatchHost(root, api) {
       qrUrl = j.qrUrl;
 
       const dataUrl = await QRCode.toDataURL(qrUrl, {
-        margin: 2,
-        width: 240,
+        margin: 3,
+        width: 320,
+        errorCorrectionLevel: 'L',
         color: { dark: '#ffffffFF', light: '#000000FF' },
       });
       img.src = dataUrl;
