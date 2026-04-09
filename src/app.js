@@ -10,6 +10,7 @@ import {
   connectQrGuestSocket,
   emitRaceJoin,
   ensureSocket,
+  getGameSocket,
   getJwtUid,
   sendTap,
   setServerMatchFoundNavigate,
@@ -543,10 +544,11 @@ function runRace(_payload) {
   const raceSlot = slotNum === 0 || slotNum === 1 ? /** @type {0|1} */ (slotNum) : null;
   /** @type {{ socket: import('socket.io-client').Socket, roomId: string, mySlot: 0|1, myUid?: string, myDuckId: string, oppDuckId: string, myDuckName: string, oppDuckName: string, oppUid?: string, myProfile?: Record<string, unknown>, emitTap?: (foot: 'left'|'right') => void } | undefined} */
   let serverRace;
-  if (pr && pr.roomId != null && raceSlot != null && pr.socket) {
+  const liveRaceSock = getGameSocket() || pr?.socket;
+  if (pr && pr.roomId != null && raceSlot != null && liveRaceSock) {
     const roomId = pr.roomId;
     const slot = raceSlot;
-    const raceSock = pr.socket;
+    const raceSock = liveRaceSock;
     const myId = pr.myDuckId || appState.selectedDuckId || 'bori';
     const oppId = pr.oppDuckId || 'bori';
     console.log('RACE INIT roomId:', roomId, 'myDuck:', myId, 'oppDuck:', oppId);
@@ -583,8 +585,8 @@ function runRace(_payload) {
     embedMode: false,
   });
 
-  if (pr && raceSlot != null && pr.roomId && pr.socket) {
-    emitRaceJoin(pr.roomId, raceSlot, pr.socket, getJwtUid() || (typeof appState.user?.uid === 'string' ? appState.user.uid : ''));
+  if (pr && raceSlot != null && pr.roomId && liveRaceSock) {
+    emitRaceJoin(pr.roomId, raceSlot, liveRaceSock, getJwtUid() || (typeof appState.user?.uid === 'string' ? appState.user.uid : ''));
     delete globalThis.__dallyeoriPendingRace;
   }
 }
@@ -596,7 +598,7 @@ function boot() {
   }
   window.__dallyeoriAppBooted = true;
   /** 배포 확인: 콘솔에 `__DALLYEORI_CLIENT_TAG` 치면 문자열이 나와야 최신 클라(결과창 한판더 없음). undefined면 예전 JS. */
-  globalThis.__DALLYEORI_CLIENT_TAG = '2026-03-30-ready-resync-warmup';
+  globalThis.__DALLYEORI_CLIENT_TAG = '2026-03-30-live-socket-race-matched';
   console.log('[dallyeori] CLIENT_TAG', globalThis.__DALLYEORI_CLIENT_TAG);
   consumeOAuthReturn();
   const qr = consumeQrGuestParams();

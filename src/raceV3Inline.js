@@ -1,7 +1,7 @@
 import { DUCKS_NINE, RACE_ENGINE_PHYSICS } from './constants.js';
 import { spend } from './services/hearts.js';
 import { showAppToast } from './services/toast.js';
-import { emitRaceJoin, getJwtUid, normalizeRaceSlot } from './services/socket.js';
+import { emitRaceJoin, getGameSocket, getJwtUid, normalizeRaceSlot } from './services/socket.js';
 import { createRace3DRenderer } from './race3DRenderer.js';
 
 /**
@@ -28,10 +28,16 @@ export function mountRaceV3Game(hostEl, options) {
   const serverRaceOpt = options && options.serverRace;
   const myServerSlotNorm = serverRaceOpt ? normalizeRaceSlot(serverRaceOpt.mySlot) : null;
   const myServerSlot = myServerSlotNorm != null ? myServerSlotNorm : 0;
+  /** matchFound 시점 pr.socket 과 전역 gameSocket 불일치 시 죽은 소켓에만 countdown 이 붙는 문제 방지 */
+  function getRaceIoSocket() {
+    const g = getGameSocket();
+    if (g) return g;
+    return serverRaceOpt?.socket ?? null;
+  }
   /** iframe 임베드일 때만 true — 메인 앱은 false(기본). true로 두면 ready/reset 탭·키가 막혀 폰에서 무반응처럼 보일 수 있음 */
   const EMBED_APP = Boolean(options && options.embedMode);
   function isServerRaceConnected() {
-    return !!(serverRaceOpt && serverRaceOpt.socket);
+    return !!(serverRaceOpt && getRaceIoSocket()?.connected);
   }
   /** 한판더 대기 중 matchFound 리스너·타이머 정리 */
   const rematchListenCtx = { matchFoundFn: /** @type {(() => void) | null} */ (null), waitTid: 0 };
@@ -323,12 +329,15 @@ function bumpPadGlow(foot){
 }
 
 function tryRaceResyncFromReady(){
-  if(!serverRaceOpt?.socket?.connected||!serverRaceOpt.roomId)return;
+  const sk=getRaceIoSocket();
+  if(!sk?.connected||!serverRaceOpt?.roomId)return;
   const now=Date.now();
   if(now-lastReadyRaceSyncAt<380)return;
   lastReadyRaceSyncAt=now;
   try{
-    serverRaceOpt.socket.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
+    const ru=getJwtUid()||(typeof serverRaceOpt.myUid==='string'?serverRaceOpt.myUid:'');
+    emitRaceJoin(serverRaceOpt.roomId,myServerSlot,sk,ru);
+    sk.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
   }catch(e){
     console.warn('[race] ready requestRaceSync',e);
   }
@@ -468,7 +477,7 @@ function handleTapPadPointerDown(e, foot) {
   if (state === 'ready') {
     ensureAudio();
     if (!EMBED_APP) {
-      if (serverRaceOpt?.socket) {
+      if (serverRaceOpt) {
         tryRaceResyncFromReady();
         tapReadyWarmupJog(foot);
         return;
@@ -499,7 +508,7 @@ function racePointerDown(e){
   console.log('[input] pointerdown, state:',state,'clientX:',e.clientX,'button:',e.button,'pointerType:',e.pointerType);
   if(state==='ready'&&!EMBED_APP){
     e.preventDefault();
-    if(serverRaceOpt?.socket){
+    if(serverRaceOpt){
       tryRaceResyncFromReady();
       tapReadyWarmupJog(footFromPointerClientX(e.clientX));
       return;
@@ -541,7 +550,7 @@ rightTapPadBtn.addEventListener('pointerdown', (e) => handleTapPadPointerDown(e,
 function raceKeyDown(e){
   if(state==='result'){if(EMBED_APP)return;reset();return}
   if(state==='ready'&&!EMBED_APP){
-    if(serverRaceOpt?.socket){
+    if(serverRaceOpt){
       if(e.key==='ArrowLeft'){tryRaceResyncFromReady();tapReadyWarmupJog('L');return;}
       if(e.key==='ArrowRight'){tryRaceResyncFromReady();tapReadyWarmupJog('R');return;}
       startCD();
@@ -557,7 +566,7 @@ hostEl.addEventListener('keydown',raceKeyDown);
 function startCD(){
   ensureAudio();
   /** 온라인: 로컬 countdown 진입 금지 — 서버 이벤트·sync 로만 진행. 탭은 동기화 요청만 */
-  if(serverRaceOpt&&serverRaceOpt.socket){
+  if(serverRaceOpt){
     tryRaceResyncFromReady();
     return;
   }
@@ -645,7 +654,7 @@ function wireNum(x,fallback){
   return Number.isFinite(n)?n:fallback;
 }
 function blendServerDucks(dt){
-  if(!serverRaceOpt||!serverRaceOpt.socket||!isServerRaceTickFresh())return;
+  if(!serverRaceOpt||!isServerRaceTickFresh())return;
   const pl=serverRaceSnap.players;
   if(!pl||pl.length<2)return;
   const me=pl[myServerSlot];
@@ -691,7 +700,7 @@ function lerp(a,b,t){return a+(b-a)*t}
  */
 function applyServerCountdownWallClock(){
   if(state!=='countdown')return null;
-  const srvCd=serverRaceOpt&&serverRaceOpt.socket;
+  const srvCd=!!serverRaceOpt;
   if(!srvCd||serverCdStartAt==null||!Number.isFinite(serverCdStartAt))return null;
   const elapsed=Date.now()-serverCdStartAt;
   /** 서버 시각·단말 시각 차이로 elapsed 가 짧게 나오면 idx 가 한 박자 느림 → 덮어쓰기만 하면 2에 고정됨 */
@@ -708,7 +717,7 @@ function update(dt){
     cdT+=dt;
     updAnim(P,dt);
     updAnim(CPU,dt);
-    const srvCd=serverRaceOpt&&serverRaceOpt.socket;
+    const srvCd=!!serverRaceOpt;
     if(srvCd&&serverCdStartAt!=null&&Number.isFinite(serverCdStartAt)){
       const elapsed=applyServerCountdownWallClock();
       /** GO(0) 이후 ~250ms에 서버가 레이싱 시작 — race-start 유실 시 requestRaceSync로 복구 */
@@ -716,7 +725,7 @@ function update(dt){
         _cdGoRecoverAcc+=dt;
         if(_cdGoRecoverAcc>=0.4){
           _cdGoRecoverAcc=0;
-          const sk=serverRaceOpt.socket;
+          const sk=getRaceIoSocket();
           if(sk){
             try{
               sk.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
@@ -734,7 +743,7 @@ function update(dt){
     return;
   }
   if(state==='racing'){
-    const srv=serverRaceOpt&&serverRaceOpt.socket;
+    const srv=!!serverRaceOpt;
     if(srv){
       /** raceT·상대 동기화는 추락 UI 중에도 유지 — 멈추면 상대가 0m로 굳거나 화면이 버벅인 것처럼 보임 */
       if(
@@ -810,7 +819,7 @@ function update(dt){
 
 function checkCliffFall(p){
   if(p.isCpu)return;
-  if(serverRaceOpt&&serverRaceOpt.socket)return;
+  if(serverRaceOpt)return;
   const terr=getTerrain();
   if(terr.fallThreshold==null||!Number.isFinite(terr.fallThreshold))return;
   if(Math.abs(p.lateral)>terr.fallThreshold){
@@ -992,11 +1001,14 @@ function syncRace3D() {
     renderer3D.setRacing();
   }
   if (state === 'ending' && _r3PrevState !== 'ending') {
-    if (serverRaceOpt?.socket?.connected && serverRaceOpt?.roomId) {
-      try {
-        serverRaceOpt.socket.emit('raceEndingEntered', { roomId: serverRaceOpt.roomId });
-      } catch (e) {
-        console.warn('[race] raceEndingEntered emit', e);
+    {
+      const sk = getRaceIoSocket();
+      if (sk?.connected && serverRaceOpt?.roomId) {
+        try {
+          sk.emit('raceEndingEntered', { roomId: serverRaceOpt.roomId });
+        } catch (e) {
+          console.warn('[race] raceEndingEntered emit', e);
+        }
       }
     }
     const myWin = winner === 'YOU';
@@ -1155,7 +1167,7 @@ function showRematchRequest(name, onAccept, onDecline) {
   }, 15000);
 }
 
-/** @type {{ sock: import('socket.io-client').Socket, onCountdown: (d: object) => void, onRaceStart: () => void, onTick: (p: object) => void, onRace: (r: object) => void, onPeerTap: (d: object) => void, onReceiveRematch: (d: object) => void, onRaceAborted: (p: object) => void, onRematchUnavailable: (p: object) => void } | null} */
+/** @type {{ sock: import('socket.io-client').Socket, onRaceMatched: (p: object) => void, onCountdown: (d: object) => void, onRaceStart: () => void, onTick: (p: object) => void, onRace: (r: object) => void, onPeerTap: (d: object) => void, onReceiveRematch: (d: object) => void, onRaceAborted: (p: object) => void, onRematchUnavailable: (p: object) => void, onSockConnect: () => void } | null} */
 let srvHandlers=null;
 /** 서버 카운트다운 이벤트 유실 시 주기적 재동기화 */
 let countdownResyncIntervalId=0;
@@ -1163,8 +1175,22 @@ let countdownResyncIntervalId=0;
 let racingResyncIntervalId=0;
 /** 카운트다운 중 rAF 정지 대비 월클럭(ms) */
 let countdownWallMsIntervalId=0;
-if(serverRaceOpt&&serverRaceOpt.socket){
-  const sock=serverRaceOpt.socket;
+if(serverRaceOpt){
+  const sock=getRaceIoSocket();
+  if(!sock){
+    console.warn('[race] serverRace 있으나 IO 소켓 없음 — getGameSocket·pendingRace.socket 확인');
+  }else{
+  const onRaceMatched=(payload)=>{
+    touchServerRaceIo();
+    void payload;
+    try{
+      const ru=getJwtUid()||(typeof serverRaceOpt.myUid==='string'?serverRaceOpt.myUid:'');
+      emitRaceJoin(serverRaceOpt.roomId,myServerSlot,sock,ru);
+      sock.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
+    }catch(e){
+      console.warn('[race] race-matched 후속',e);
+    }
+  };
   function armRacingResyncInterval(){
     if(racingResyncIntervalId){
       clearInterval(racingResyncIntervalId);
@@ -1214,7 +1240,9 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     }
     ensureAudio();
     state='countdown';
-    const c=d&&typeof d.count==='number'?d.count:3;
+    const rawC=d&&Object.prototype.hasOwnProperty.call(d,'count')?d.count:3;
+    const cNum=typeof rawC==='number'?rawC:Number(rawC);
+    const c=Number.isFinite(cNum)?cNum:3;
     const cNorm=Math.max(0,Math.min(3,c));
     cdVal=cNorm;
     cdT=0;
@@ -1342,6 +1370,7 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     applyPeerTapVisual(foot);
     console.log('[raceV3] peerTap applied', foot, 'forcedMovingTimer=', CPU.forcedMovingTimer);
   };
+  sock.on('race-matched',onRaceMatched);
   sock.on('countdown',onCountdown);
   sock.on('race-start',onRaceStart);
   sock.on('raceGo',onRaceStart);
@@ -1407,6 +1436,7 @@ if(serverRaceOpt&&serverRaceOpt.socket){
   }
   srvHandlers={
     sock,
+    onRaceMatched,
     onCountdown,
     onRaceStart,
     onTick,
@@ -1421,12 +1451,15 @@ if(serverRaceOpt&&serverRaceOpt.socket){
   window.setTimeout(()=>{
     try{
       if(sock.connected&&serverRaceOpt.roomId){
+        const ru=getRaceMyUid();
+        emitRaceJoin(serverRaceOpt.roomId,myServerSlot,sock,ru);
         sock.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
       }
     }catch(e){
       console.warn('[race] boot requestRaceSync',e);
     }
   },0);
+  }
 }
 
 if(EMBED_APP&&!serverRaceOpt){
@@ -1473,6 +1506,7 @@ if(EMBED_APP&&!serverRaceOpt){
       if(srvHandlers.sock?.connected&&serverRaceOpt?.roomId){
         try{srvHandlers.sock.emit('raceEndingLeft',{roomId:serverRaceOpt.roomId});}catch(e){console.warn('[race] raceEndingLeft',e);}
       }
+      srvHandlers.sock.off('race-matched',srvHandlers.onRaceMatched);
       srvHandlers.sock.off('countdown',srvHandlers.onCountdown);
       srvHandlers.sock.off('race-start',srvHandlers.onRaceStart);
       srvHandlers.sock.off('raceGo',srvHandlers.onRaceStart);
