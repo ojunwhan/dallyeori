@@ -1,7 +1,7 @@
 import { getToken, resolvePublicApiUrl } from './auth.js';
 
 /**
- * @param {object} body
+ * @param {object} body terrain, profile 필드 + 서버가 호스트 소켓을 확정할 **socketId**(Socket.IO id)
  * @returns {Promise<{ matchCode: string, qrUrl: string, guestToken: string }>}
  */
 export async function createQrMatchRoom(body) {

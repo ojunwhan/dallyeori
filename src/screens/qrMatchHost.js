@@ -4,7 +4,13 @@
 
 import QRCode from 'qrcode';
 import { createQrMatchRoom } from '../services/qrMatchApi.js';
-import { endGuestQrFlow, ensureSocket, getGameSocket, normalizeRaceSlot } from '../services/socket.js';
+import {
+  endGuestQrFlow,
+  ensureSocket,
+  getGameSocket,
+  isGuestQrFlowActive,
+  normalizeRaceSlot,
+} from '../services/socket.js';
 import { getBalance } from '../services/hearts.js';
 import { showAppToast } from '../services/toast.js';
 
@@ -309,6 +315,7 @@ export function mountQrMatchHost(root, api) {
         wins: api.state.wins,
         losses: api.state.losses,
         draws: api.state.draws,
+        socketId: sock.id,
       });
       if (disposed) return;
 
