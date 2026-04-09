@@ -30,7 +30,6 @@
     (function () {
       var ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
       var U = ua.toUpperCase();
-      var isMobile = /ANDROID|IPHONE|IPAD|IPOD|WEBOS|BLACKBERRY|MOBILE/i.test(U);
 
       function isInAppWebView() {
         if (U.indexOf('KAKAOTALK') !== -1) return true;
@@ -38,7 +37,9 @@
         if (U.indexOf('INSTAGRAM') !== -1) return true;
         if (U.indexOf('LINE/') !== -1) return true;
         if (U.indexOf('DAUMAPP') !== -1) return true;
-        if (isMobile && U.indexOf('NAVER') !== -1) return true;
+        /* 네이버 **인앱**만 (모바일+NAVER 단독은 웨일·일반 웹뷰 오인 → 검은 화면/intent 실패) */
+        if (U.indexOf('NAVER(INAPP') !== -1) return true;
+        if (U.indexOf('NAVER; INAPP') !== -1) return true;
         return false;
       }
 
