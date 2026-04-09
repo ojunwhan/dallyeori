@@ -236,6 +236,8 @@ let _raceTickLogCounter=0;
 let _blendLogCounter=0;
 let playerSquash=false;
 let oppSquash=false;
+/** 온라인 ready 에서 requestRaceSync 스팸 방지 */
+let lastReadyRaceSyncAt=0;
 
 // ═══ PLAYERS ═══
 function mk(cpu){return{
@@ -318,6 +320,37 @@ function showFallOverlay(){
 // ═══ INPUT ═══
 function bumpPadGlow(foot){
   if(foot==='L')padGlowL=1;else padGlowR=1;
+}
+
+function tryRaceResyncFromReady(){
+  if(!serverRaceOpt?.socket?.connected||!serverRaceOpt.roomId)return;
+  const now=Date.now();
+  if(now-lastReadyRaceSyncAt<380)return;
+  lastReadyRaceSyncAt=now;
+  try{
+    serverRaceOpt.socket.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
+  }catch(e){
+    console.warn('[race] ready requestRaceSync',e);
+  }
+}
+
+/** 온라인 준비(ready) — 카운트다운과 같은 제자리 탭 연출, 상태는 ready 유지 */
+function tapReadyWarmupJog(foot){
+  const p=P;
+  p.lastFoot=foot;
+  p.wcTgt+=Math.PI;
+  if(foot==='L'){
+    p.leftLegTarget=0.7;
+    p.rightLegTarget=-0.3;
+  }else{
+    p.rightLegTarget=0.7;
+    p.leftLegTarget=-0.3;
+  }
+  playSlap();
+  hapticLight(10);
+  bumpPadGlow(foot);
+  P.bodySwTgt=foot==='L'?0.68:-0.68;
+  playerSquash=true;
 }
 
 /**
@@ -435,6 +468,11 @@ function handleTapPadPointerDown(e, foot) {
   if (state === 'ready') {
     ensureAudio();
     if (!EMBED_APP) {
+      if (serverRaceOpt?.socket) {
+        tryRaceResyncFromReady();
+        tapReadyWarmupJog(foot);
+        return;
+      }
       startCD();
       return;
     }
@@ -459,7 +497,16 @@ function handleTapPadPointerDown(e, foot) {
 function racePointerDown(e){
   if (e.target && typeof e.target.closest === 'function' && e.target.closest('[data-tap-pad]')) return;
   console.log('[input] pointerdown, state:',state,'clientX:',e.clientX,'button:',e.button,'pointerType:',e.pointerType);
-  if(state==='ready'&&!EMBED_APP){e.preventDefault();startCD();return}
+  if(state==='ready'&&!EMBED_APP){
+    e.preventDefault();
+    if(serverRaceOpt?.socket){
+      tryRaceResyncFromReady();
+      tapReadyWarmupJog(footFromPointerClientX(e.clientX));
+      return;
+    }
+    startCD();
+    return;
+  }
   if(state==='result'&&!EMBED_APP){e.preventDefault();reset();return}
   if(state==='ending'){
     const canvas=typeof renderer3D.getCanvas==='function'?renderer3D.getCanvas():null;
@@ -493,15 +540,27 @@ rightTapPadBtn.addEventListener('pointerdown', (e) => handleTapPadPointerDown(e,
 
 function raceKeyDown(e){
   if(state==='result'){if(EMBED_APP)return;reset();return}
-  if(state==='ready'){startCD();return}
+  if(state==='ready'&&!EMBED_APP){
+    if(serverRaceOpt?.socket){
+      if(e.key==='ArrowLeft'){tryRaceResyncFromReady();tapReadyWarmupJog('L');return;}
+      if(e.key==='ArrowRight'){tryRaceResyncFromReady();tapReadyWarmupJog('R');return;}
+      startCD();
+      return;
+    }
+    startCD();
+    return;
+  }
   if(e.key==='ArrowLeft')tap('L');if(e.key==='ArrowRight')tap('R');
 }
 hostEl.addEventListener('keydown',raceKeyDown);
 
 function startCD(){
   ensureAudio();
-  /** 온라인 경주: 카운트는 서버만 — 로컬 startCD 는 cdVal=2·serverCdStartAt 없이 갱신 분기가 없어 영구 정지 */
-  if(serverRaceOpt&&serverRaceOpt.socket)return;
+  /** 온라인: 로컬 countdown 진입 금지 — 서버 이벤트·sync 로만 진행. 탭은 동기화 요청만 */
+  if(serverRaceOpt&&serverRaceOpt.socket){
+    tryRaceResyncFromReady();
+    return;
+  }
   state='countdown';
   cdVal=CD_START_VAL;
   cdT=0;
@@ -1359,6 +1418,15 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     onSockConnect,
   };
   console.log('[race] serverRace active', { roomId: serverRaceOpt.roomId, mySlot: serverRaceOpt.mySlot, socketConnected: sock.connected });
+  window.setTimeout(()=>{
+    try{
+      if(sock.connected&&serverRaceOpt.roomId){
+        sock.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
+      }
+    }catch(e){
+      console.warn('[race] boot requestRaceSync',e);
+    }
+  },0);
 }
 
 if(EMBED_APP&&!serverRaceOpt){
