@@ -753,11 +753,6 @@ function wireNum(x,fallback){
   const n=Number(x);
   return Number.isFinite(n)?n:fallback;
 }
-/** HUD·3D로 넘기기 전 — Infinity/NaN 이 toFixed/카메라를 깨뜨림 */
-function safeRaceNum(x,fallback=0){
-  const n=Number(x);
-  return Number.isFinite(n)?n:fallback;
-}
 function blendServerDucks(dt){
   if(!serverRaceOpt||!isServerRaceTickFresh())return;
   const pl=serverRaceSnap.players;
@@ -771,6 +766,8 @@ function blendServerDucks(dt){
    * v·자세는 tap()+updDuck() 로컬, 추락 구간만 서버 v=0 에 맞춤.
    */
   const aPos=1-Math.exp(-22*dt);
+  /** 상대는 조금 더 부드럽게 — 틱 사이 dist 튐이 덜 귀신처럼 보이게 */
+  const aPosOpp=1-Math.exp(-10*dt);
   const aVel=1-Math.exp(-11*dt);
   P.dist=lerp(P.dist,wireNum(me.dist,P.dist),aPos);
   P.lateral=lerp(P.lateral,wireNum(me.lateral,P.lateral),Math.min(1,aVel*1.1));
@@ -781,7 +778,7 @@ function blendServerDucks(dt){
     P.spd=wv;
   }
   if(me.isFallen&&!fallPaused){playerFallAnim=1;showFallOverlay();}
-  CPU.dist=lerp(CPU.dist,wireNum(opp.dist,CPU.dist),aPos);
+  CPU.dist=lerp(CPU.dist,wireNum(opp.dist,CPU.dist),aPosOpp);
   CPU.v=lerp(CPU.v,wireNum(opp.v,CPU.v),aVel);
   CPU.spd=lerp(CPU.spd,wireNum(opp.spd!=null?opp.spd:opp.v,CPU.spd),aVel);
   CPU.lateral=lerp(CPU.lateral,wireNum(opp.lateral,CPU.lateral),aVel);
@@ -789,29 +786,23 @@ function blendServerDucks(dt){
   CPU.spinAngle=lerp(CPU.spinAngle,wireNum(opp.spinAngle,CPU.spinAngle),aVel);
   CPU.stumble=opp.isStumbling?1:0;
   CPU.lastTapRaceT=raceT;
-  if (!Number.isFinite(P.dist)) P.dist = wireNum(me.dist, 0);
-  if (!Number.isFinite(CPU.dist)) CPU.dist = wireNum(opp.dist, 0);
-  try {
-    const lfRaw =
-      opp.lastFoot === 'L' || opp.lastFoot === 'R'
-        ? opp.lastFoot
-        : opp.lastFoot === 'l'
-          ? 'L'
-          : opp.lastFoot === 'r'
-            ? 'R'
-            : null;
-    if (lfRaw === 'L' || lfRaw === 'R') {
-      if (lfRaw !== _wireOppLastFoot) {
-        _wireOppLastFoot = lfRaw;
-        if (lfRaw !== CPU.lastFoot) {
-          applyPeerTapVisual(lfRaw === 'L' ? 'left' : 'right', { silent: true });
-        }
+  const lfRaw =
+    opp.lastFoot === 'L' || opp.lastFoot === 'R'
+      ? opp.lastFoot
+      : opp.lastFoot === 'l'
+        ? 'L'
+        : opp.lastFoot === 'r'
+          ? 'R'
+          : null;
+  if (lfRaw === 'L' || lfRaw === 'R') {
+    if (lfRaw !== _wireOppLastFoot) {
+      _wireOppLastFoot = lfRaw;
+      if (lfRaw !== CPU.lastFoot) {
+        applyPeerTapVisual(lfRaw === 'L' ? 'left' : 'right', { silent: true });
       }
     }
-  } catch (e) {
-    console.error('[blend] lastFoot', e);
   }
-  _blendLogCounter += 1;
+  _blendLogCounter+=1;
   if(_blendLogCounter%30===1){
     console.log('[blend] 상대(CPU) dist:',CPU.dist,'서버 opp.dist:',opp.dist,'내 P.dist:',P.dist,'opp.spd:',opp.spd);
   }
@@ -1149,8 +1140,8 @@ function syncRace3D() {
     renderer3D.setEnding(
       {
         winner: myWin ? 'win' : oppWin ? 'lose' : 'draw',
-        myDist: safeRaceNum(P.dist, 0),
-        oppDist: safeRaceNum(CPU.dist, 0),
+        myDist: P.dist,
+        oppDist: CPU.dist,
       },
       {
         onRematch: () => {
@@ -1211,19 +1202,19 @@ function syncRace3D() {
   _r3PrevState = state;
 
   renderer3D.updatePlayer({
-    dist: safeRaceNum(P.dist, 0),
-    lateral: safeRaceNum(P.lateral, 0),
-    dirA: safeRaceNum(P.dirA, 0),
-    v: safeRaceNum(P.spd ?? P.v, 0),
+    dist: P.dist,
+    lateral: P.lateral || 0,
+    dirA: P.dirA || 0,
+    v: P.spd || P.v || 0,
     lastFoot: P.lastFoot,
     squash: playerSquash,
   });
   playerSquash = false;
   renderer3D.updateOpponent({
-    dist: safeRaceNum(CPU.dist, 0),
-    lateral: safeRaceNum(CPU.lateral, 0),
-    dirA: safeRaceNum(CPU.dirA, 0),
-    v: safeRaceNum(CPU.spd ?? CPU.v, 0),
+    dist: CPU.dist,
+    lateral: CPU.lateral || 0,
+    dirA: CPU.dirA || 0,
+    v: CPU.spd || CPU.v || 0,
     lastFoot: CPU.lastFoot,
     squash: oppSquash,
   });
@@ -1232,13 +1223,11 @@ function syncRace3D() {
   leftTapPadBtn.style.filter = padGlowL > 0.04 ? 'brightness(1.38) saturate(1.12)' : '';
   rightTapPadBtn.style.filter = padGlowR > 0.04 ? 'brightness(1.38) saturate(1.12)' : '';
 
-  const rem = safeRaceNum(Math.max(0, TIME_LIMIT - raceT), 0);
-  const hudMy = safeRaceNum(P.dist, 0);
-  const hudOpp = safeRaceNum(CPU.dist, 0);
+  const rem = Math.max(0, TIME_LIMIT - raceT);
   if (state === 'racing' || state === 'ending' || state === 'result') {
     hudEl.innerHTML =
       `<div style="font-size:24px;font-weight:bold;line-height:1.2">${rem.toFixed(2)}초</div>` +
-      `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나: ${hudMy.toFixed(3)}m | 상대: ${hudOpp.toFixed(3)}m</div>`;
+      `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나: ${P.dist.toFixed(3)}m | 상대: ${CPU.dist.toFixed(3)}m</div>`;
   } else {
     hudEl.innerHTML = '';
   }
@@ -1253,12 +1242,8 @@ let rafId=0;
 let lt=0;
 function loop(t){
   const dt=Math.min((t-lt)/1000,.05);lt=t;
-  try {
-    update(dt);
-    syncRace3D();
-  } catch (err) {
-    console.error('[raceV3] main loop', err);
-  }
+  update(dt);
+  syncRace3D();
   rafId=requestAnimationFrame(loop);
 }
 rafId=requestAnimationFrame(loop);
