@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Git 커밋 및 푸시
 
-이 저장소에서 코드를 수정한 뒤에는 **항상** 다음을 수행한다.
+이 저장소에서 코드·설정을 수정한 작업이 끝나면, **사용자가 “커밋/푸시 하지 마”라고 명시하지 않는 한 반드시** `git commit`과 `git push origin`(현재 브랜치)까지 마무리한다. “작업 완료”라고 말만 하고 저장소에 남기지 않는 것은 허용하지 않는다.
 
 1. **`dallyeori-server`가 서브모듈(또는 별도 저장소)인 경우**  
    - 먼저 `dallyeori-server` 디렉터리에서 변경 파일을 `git add` → 의미 있는 한국어 커밋 메시지로 `git commit` → `git push origin`(해당 브랜치).
