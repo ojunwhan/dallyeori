@@ -46,14 +46,38 @@ export function resolvePublicApiUrl(path) {
  * OAuth 리다이렉트 후 URL 해시에서 JWT 저장
  * @returns {boolean} 토큰을 소비했으면 true
  */
+const QR_GUEST_PENDING_KEY = 'dallyeori_qr_pending';
+
 /**
  * QR 게스트 진입 (?qr=코드&t=JWT) — 읽은 뒤 주소창에서 쿼리 제거
+ * 인앱 브라우저 이탈 직전 URL 이 잘리면 sessionStorage 백업에서 복구 (index.html)
  * @returns {{ code: string, token: string } | null}
  */
 export function consumeQrGuestParams() {
   const p = new URLSearchParams(window.location.search);
-  const code = p.get('qr');
-  const t = p.get('t');
+  let code = p.get('qr');
+  let t = p.get('t');
+  if (code && t) {
+    try {
+      sessionStorage.removeItem(QR_GUEST_PENDING_KEY);
+    } catch (e) {
+      /* ignore */
+    }
+  } else {
+    try {
+      const raw = sessionStorage.getItem(QR_GUEST_PENDING_KEY);
+      if (raw) {
+        sessionStorage.removeItem(QR_GUEST_PENDING_KEY);
+        const o = JSON.parse(raw);
+        if (o && typeof o.code === 'string' && typeof o.token === 'string') {
+          code = o.code;
+          t = o.token;
+        }
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }
   if (!code || !t) return null;
   const path = window.location.pathname || '/';
   window.history.replaceState(null, '', path);

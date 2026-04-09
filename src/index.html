@@ -44,6 +44,16 @@
 
       if (!isInAppWebView()) return;
 
+      /* QR 게스트 (?qr & t) — app.js 가 먼저 쿼리를 지운 뒤 intent 가 열리면 외부 탭에 토큰 누락됨 → 백업 */
+      try {
+        var __iap = new URLSearchParams(window.location.search);
+        var __q = __iap.get('qr');
+        var __tv = __iap.get('t');
+        if (__q && __tv) {
+          sessionStorage.setItem('dallyeori_qr_pending', JSON.stringify({ code: __q, token: __tv }));
+        }
+      } catch (e) {}
+
       var fullUrl = window.location.href;
       var host = window.location.host;
       var pathQs = window.location.pathname + window.location.search;
