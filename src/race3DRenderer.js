@@ -428,8 +428,12 @@ export function createRace3DRenderer(hostEl, options = {}) {
     if (squash === true) {
       run.squashT = 1;
       if (!internalRacing) countdownJogT = 0.38;
-      /** raceV3Inline tap마다 wcTgt+=π 와 동일: 다리 한 걸음 = 위상 π (속도 기반 연동은 제거) */
+      /** 픽시 스타일: 위상·착지 연출 모두 탭(squash) 시점에만 전진 */
       playerPhaseAccum += Math.PI;
+      const vNow =
+        typeof playerState.v === 'number' && Number.isFinite(playerState.v) ? playerState.v : 0;
+      const snTap = Math.min(1, vNow / MAX_SPEED);
+      run.dipImpulse = 0.16 + snTap * 0.12;
       const foot = state.lastFoot;
       if (foot === 'R' || foot === 'right') wobbleImpulse = -0.06;
       else if (foot === 'L' || foot === 'left') wobbleImpulse = 0.06;
@@ -443,6 +447,10 @@ export function createRace3DRenderer(hostEl, options = {}) {
     if (squash === true) {
       oppAnim.squashT = 1;
       oppRunPhase += Math.PI;
+      const vNow =
+        typeof oppState.v === 'number' && Number.isFinite(oppState.v) ? oppState.v : 0;
+      const snTapO = Math.min(1, vNow / MAX_SPEED);
+      oppAnim.dipImpulse = 0.16 + snTapO * 0.12;
       const foot = state.lastFoot;
       if (foot === 'R' || foot === 'right') oppWobbleImpulse = -0.06;
       else if (foot === 'L' || foot === 'left') oppWobbleImpulse = 0.06;
@@ -602,14 +610,9 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
     if (playerState.runPhase != null && Number.isFinite(playerState.runPhase)) {
       playerPhaseAccum = playerState.runPhase;
-    } else if (runningP) {
-      /** 탭(squash)이 아닌 구간만 아주 약하게 진행 — 미끄럼·관성 구간 자연스럽게, 탭 리듬은 깨지 않게 */
-      playerPhaseAccum += dt * (0.25 + speedNP * 0.55);
     }
     if (oppState.runPhase != null && Number.isFinite(oppState.runPhase)) {
       oppRunPhase = oppState.runPhase;
-    } else if (runningO) {
-      oppRunPhase += dt * (0.25 + speedNO * 0.55);
     }
 
     const ph = playerState.runPhase != null ? playerState.runPhase : playerPhaseAccum;
@@ -651,12 +654,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
       headGroup.rotation.y = Math.sin(ph) * (0.08 + speedNP * 0.06) * 2.0 * speedNP;
       tailPivot.rotation.y = Math.sin(ph + 0.5) * (0.55 + speedNP * 0.65);
       tailPivot.rotation.x = Math.sin(ph * 2) * 0.12 * speedNP;
-      const stepWave = Math.abs(Math.cos(ph * 2));
-      const contact = stepWave < 0.11;
-      if (contact && !run.wasContact) {
-        run.dipImpulse = 0.16 + speedNP * 0.12;
-      }
-      run.wasContact = contact;
       run.dipImpulse *= Math.pow(0.82, dt * 60);
       duckRoot.position.y = -run.dipImpulse * 0.35;
       const wingOpen = speedNP * 0.55;
@@ -709,12 +706,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
       oppDuck.rightWing.rotation.y = 0.15 + bwingO * 0.35;
       oppDuck.leftWing.rotation.z = 0.25 + Math.sin(bph * 2) * 0.06 * speedNO;
       oppDuck.rightWing.rotation.z = -0.25 - Math.sin(bph * 2) * 0.06 * speedNO;
-      const bstepWave = Math.abs(Math.cos(bph * 2));
-      const bcontact = bstepWave < 0.11;
-      if (bcontact && !oppAnim.wasContact) {
-        oppAnim.dipImpulse = 0.16 + speedNO * 0.12;
-      }
-      oppAnim.wasContact = bcontact;
       oppAnim.dipImpulse *= Math.pow(0.82, dt * 60);
       oppRoot.position.y = -oppAnim.dipImpulse * 0.35;
     } else {
