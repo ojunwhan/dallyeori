@@ -753,6 +753,11 @@ function wireNum(x,fallback){
   const n=Number(x);
   return Number.isFinite(n)?n:fallback;
 }
+/** HUD·3D로 넘기기 전 — Infinity/NaN 이 toFixed/카메라를 깨뜨림 */
+function safeRaceNum(x,fallback=0){
+  const n=Number(x);
+  return Number.isFinite(n)?n:fallback;
+}
 function blendServerDucks(dt){
   if(!serverRaceOpt||!isServerRaceTickFresh())return;
   const pl=serverRaceSnap.players;
@@ -1144,8 +1149,8 @@ function syncRace3D() {
     renderer3D.setEnding(
       {
         winner: myWin ? 'win' : oppWin ? 'lose' : 'draw',
-        myDist: P.dist,
-        oppDist: CPU.dist,
+        myDist: safeRaceNum(P.dist, 0),
+        oppDist: safeRaceNum(CPU.dist, 0),
       },
       {
         onRematch: () => {
@@ -1206,19 +1211,19 @@ function syncRace3D() {
   _r3PrevState = state;
 
   renderer3D.updatePlayer({
-    dist: P.dist,
-    lateral: P.lateral || 0,
-    dirA: P.dirA || 0,
-    v: P.spd || P.v || 0,
+    dist: safeRaceNum(P.dist, 0),
+    lateral: safeRaceNum(P.lateral, 0),
+    dirA: safeRaceNum(P.dirA, 0),
+    v: safeRaceNum(P.spd ?? P.v, 0),
     lastFoot: P.lastFoot,
     squash: playerSquash,
   });
   playerSquash = false;
   renderer3D.updateOpponent({
-    dist: CPU.dist,
-    lateral: CPU.lateral || 0,
-    dirA: CPU.dirA || 0,
-    v: CPU.spd || CPU.v || 0,
+    dist: safeRaceNum(CPU.dist, 0),
+    lateral: safeRaceNum(CPU.lateral, 0),
+    dirA: safeRaceNum(CPU.dirA, 0),
+    v: safeRaceNum(CPU.spd ?? CPU.v, 0),
     lastFoot: CPU.lastFoot,
     squash: oppSquash,
   });
@@ -1227,11 +1232,13 @@ function syncRace3D() {
   leftTapPadBtn.style.filter = padGlowL > 0.04 ? 'brightness(1.38) saturate(1.12)' : '';
   rightTapPadBtn.style.filter = padGlowR > 0.04 ? 'brightness(1.38) saturate(1.12)' : '';
 
-  const rem = Math.max(0, TIME_LIMIT - raceT);
+  const rem = safeRaceNum(Math.max(0, TIME_LIMIT - raceT), 0);
+  const hudMy = safeRaceNum(P.dist, 0);
+  const hudOpp = safeRaceNum(CPU.dist, 0);
   if (state === 'racing' || state === 'ending' || state === 'result') {
     hudEl.innerHTML =
       `<div style="font-size:24px;font-weight:bold;line-height:1.2">${rem.toFixed(2)}초</div>` +
-      `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나: ${P.dist.toFixed(3)}m | 상대: ${CPU.dist.toFixed(3)}m</div>`;
+      `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나: ${hudMy.toFixed(3)}m | 상대: ${hudOpp.toFixed(3)}m</div>`;
   } else {
     hudEl.innerHTML = '';
   }

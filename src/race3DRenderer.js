@@ -331,6 +331,29 @@ export function createRace3DRenderer(hostEl, options = {}) {
   cEl.style.cssText =
     'display:block;width:100%;height:100%;vertical-align:top;touch-action:none;outline:none;';
 
+  const glLostBanner = document.createElement('div');
+  glLostBanner.setAttribute('role', 'alert');
+  glLostBanner.style.cssText =
+    'position:absolute;inset:0;z-index:500;display:none;align-items:center;justify-content:center;' +
+    'padding:20px;box-sizing:border-box;background:rgba(0,0,0,.88);color:#fff;font-size:15px;line-height:1.5;' +
+    'text-align:center;pointer-events:none;';
+  glLostBanner.textContent =
+    '그래픽( WebGL ) 연결이 끊겼습니다. 화면을 위로 당겨 새로고침하거나, 탭을 다시 열어 주세요.';
+  hostEl.appendChild(glLostBanner);
+  cEl.addEventListener(
+    'webglcontextlost',
+    (ev) => {
+      try {
+        ev.preventDefault();
+      } catch (_) {
+        /* ignore */
+      }
+      console.warn('[race3D] webglcontextlost');
+      glLostBanner.style.display = 'flex';
+    },
+    false,
+  );
+
   const hemi = new THREE.HemisphereLight(0xfff5e6, 0x3d5c3a, 0.85);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffffff, 1.05);
@@ -557,8 +580,10 @@ export function createRace3DRenderer(hostEl, options = {}) {
       main = 'LOSE!';
       col = '#f44336';
     }
-    const myD = result && Number.isFinite(result.myDist) ? result.myDist : playerState.dist;
-    const opD = result && Number.isFinite(result.oppDist) ? result.oppDist : oppState.dist;
+    let myD = result && Number.isFinite(result.myDist) ? result.myDist : playerState.dist;
+    let opD = result && Number.isFinite(result.oppDist) ? result.oppDist : oppState.dist;
+    if (!Number.isFinite(myD)) myD = 0;
+    if (!Number.isFinite(opD)) opD = 0;
     resultOverlayEl.innerHTML =
       `<span style="color:${col}">${main}</span>` +
       `<div style="font-size:min(5vw,28px);font-weight:600;opacity:0.95;margin-top:12px;color:#fff">` +
@@ -637,12 +662,23 @@ export function createRace3DRenderer(hostEl, options = {}) {
     // }
     if (cdOverlayEl.parentNode) cdOverlayEl.parentNode.removeChild(cdOverlayEl);
     if (resultOverlayEl.parentNode) resultOverlayEl.parentNode.removeChild(resultOverlayEl);
+    if (glLostBanner.parentNode) glLostBanner.parentNode.removeChild(glLostBanner);
     if (!prevHostPos || prevHostPos === 'static') hostEl.style.position = '';
   }
 
   function renderLoop() {
     animId = requestAnimationFrame(renderLoop);
+    try {
     const dt = Math.min(clock.getDelta(), 0.05);
+
+    if (!Number.isFinite(playerState.dist)) playerState.dist = 0;
+    if (!Number.isFinite(oppState.dist)) oppState.dist = 0;
+    if (!Number.isFinite(playerState.lateral)) playerState.lateral = 0;
+    if (!Number.isFinite(oppState.lateral)) oppState.lateral = 0;
+    if (!Number.isFinite(playerState.dirA)) playerState.dirA = 0;
+    if (!Number.isFinite(oppState.dirA)) oppState.dirA = 0;
+    if (!Number.isFinite(playerState.v)) playerState.v = 0;
+    if (!Number.isFinite(oppState.v)) oppState.v = 0;
 
     const distP = playerState.dist;
     const distO = oppState.dist;
@@ -845,6 +881,16 @@ export function createRace3DRenderer(hostEl, options = {}) {
     camera.lookAt(camTargetPos);
 
     renderer.render(scene, camera);
+    } catch (err) {
+      console.error('[race3D] renderLoop', err);
+      try {
+        camera.position.set(0, 4.15, 8);
+        camera.lookAt(0, 1.35, 0);
+        renderer.render(scene, camera);
+      } catch (_) {
+        /* ignore */
+      }
+    }
   }
 
   renderLoop();
