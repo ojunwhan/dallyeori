@@ -1,4 +1,4 @@
-import { DUCKS_NINE, RACE_ENGINE_PHYSICS } from './constants.js';
+import { DUCKS_NINE, RACE_ENGINE_PHYSICS, TAP_STRIDE_M } from './constants.js';
 import { spend } from './services/hearts.js';
 import { showAppToast } from './services/toast.js';
 import {
@@ -431,8 +431,8 @@ function tap(foot){
   console.log('[input] tap() foot:',foot,'P.dist:',p.dist.toFixed(1));
   const terr=getTerrain();
   const sameFoot=p.lastFoot===foot;
-  let imp=PH.TAP_FORCE/PH.DUCK_MASS*terr.friction;
-  if(p.stumble)imp*=0.45;
+  let stride=TAP_STRIDE_M;
+  if(p.stumble)stride*=0.45;
   if(sameFoot){
     if(foot==='L')p.dirA-=PH.SAME_FOOT_ANGLE;
     else p.dirA+=PH.SAME_FOOT_ANGLE;
@@ -440,9 +440,8 @@ function tap(foot){
       p.spinAngle+=terr.spinRate||0.35;
       slipFxUntil=raceT+0.25;
     }
-    p.v+=imp*0.38;
+    stride*=0.38;
   }else{
-    p.v+=imp;
     const r=PH.ANGLE_RECOVERY;
     if(p.dirA>r)p.dirA-=r;
     else if(p.dirA<-r)p.dirA+=r;
@@ -451,11 +450,19 @@ function tap(foot){
       p.spinAngle=moveTowardVal(p.spinAngle,0,terr.spinRecovery);
     }
   }
-  p.v=Math.max(0,Math.min(PH.MAX_SPEED,p.v));
-  p.spd=p.v;
   p.dirA=Math.max(-DIR_A_LIMIT,Math.min(DIR_A_LIMIT,p.dirA));
   p.spinAngle=Math.max(-DIR_A_LIMIT,Math.min(DIR_A_LIMIT,p.spinAngle));
-  p.lastFoot=foot;p.taps++;
+  const ca=Math.cos(p.dirA);
+  const sa=Math.sin(p.dirA);
+  if(!(isServerRaceConnected()&&isServerRaceTickFresh())){
+    p.dist+=stride*ca;
+    p.lateral+=stride*sa;
+  }
+  p.v=Math.min(PH.MAX_SPEED,stride*8);
+  p.spd=p.v;
+  p.lastFoot=foot;
+  p.taps++;
+  p.lastTapRaceT=raceT;
   p.wcTgt+=Math.PI;
   if(DEBUG_RACE_TAP){
     const dProg=0;
@@ -796,26 +803,30 @@ function update(dt){
         CPU.tapT=0;CPU.tapI=.13+Math.random()*.07;
         const terr=getTerrain();
         const slip=Math.random()<.08;
-        const imp=PH.TAP_FORCE/PH.DUCK_MASS*terr.friction*CPU_TAP_DV_MUL*CPU.cpuM;
+        let stride=TAP_STRIDE_M*CPU_TAP_DV_MUL*CPU.cpuM;
+        const f=CPU.lastFoot==='L'?'R':'L';
         if(slip){
           if(CPU.lastFoot==='L')CPU.dirA-=PH.SAME_FOOT_ANGLE*0.7;
           else CPU.dirA+=PH.SAME_FOOT_ANGLE*0.7;
           if(terr.slipOnSameFoot)CPU.spinAngle+=(terr.spinRate||0.35)*0.6;
-          CPU.v+=imp*0.4;
+          stride*=0.4;
         }else{
-          CPU.v+=imp;
           const r=PH.ANGLE_RECOVERY;
           if(CPU.dirA>r)CPU.dirA-=r;
           else if(CPU.dirA<-r)CPU.dirA+=r;
           else CPU.dirA=0;
           if(terr.spinRecovery!=null)CPU.spinAngle=moveTowardVal(CPU.spinAngle,0,terr.spinRecovery);
         }
-        CPU.v=Math.max(0,Math.min(PH.MAX_SPEED,CPU.v));
-        CPU.spd=CPU.v;
         CPU.dirA=Math.max(-DIR_A_LIMIT,Math.min(DIR_A_LIMIT,CPU.dirA));
+        CPU.spinAngle=Math.max(-DIR_A_LIMIT,Math.min(DIR_A_LIMIT,CPU.spinAngle));
+        const ca=Math.cos(CPU.dirA);
+        const sa=Math.sin(CPU.dirA);
+        CPU.dist+=stride*ca;
+        CPU.lateral+=stride*sa;
+        CPU.v=Math.min(PH.MAX_SPEED,stride*8);
+        CPU.spd=CPU.v;
         CPU.lastTapRaceT=raceT;
         CPU.wcTgt+=Math.PI;
-        const f=CPU.lastFoot==='L'?'R':'L';
         CPU.lastFoot=f;
         CPU.bodySwTgt=f==='L'?0.68:-0.68;
         if(f==='L'){CPU.leftLegTarget=.7;CPU.rightLegTarget=-.3}
@@ -856,7 +867,6 @@ function updDuck(p,dt){
   }
   const spinRec=terr.spinRecovery!=null?terr.spinRecovery:0.06;
   p.spinAngle=moveTowardVal(p.spinAngle,0,spinRec*dt*8);
-  const effA=p.dirA+0.45*p.spinAngle*Math.sin(raceT*3);
   const prevV=p.v;
   const dt60=60*dt;
   p.v*=Math.pow(terr.slideDecay,dt60);
@@ -874,13 +884,7 @@ function updDuck(p,dt){
     if(prevV>PH.STUMBLE_THRESHOLD&&gap>PH.STUMBLE_GAP)p.stumble=1;
   }
   p.v=Math.max(0,Math.min(PH.MAX_SPEED,p.v));
-  const fwd=p.v*Math.cos(effA)*dt;
-  const lat=p.v*Math.sin(effA)*dt;
-  /** 온라인+raceTick 동안 내 오리 dist/lat 는 blend 만 (CPU 는 이 분기에서 온라인 시 호출되지 않음) */
-  if(!(isServerRaceConnected()&&isServerRaceTickFresh()&&!p.isCpu)){
-    p.dist+=fwd;
-    p.lateral+=lat;
-  }
+  /** 한 탭 = 한 걸음(TAP_STRIDE_M) — 프레임 간 v 로 dist 를 적분하지 않음. 온라인은 서버 blend 가 dist 권위 */
   p.spd=p.v;
   checkCliffFall(p);
   if(playerFallAnim>0&&!p.isCpu){
