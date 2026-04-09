@@ -287,6 +287,8 @@ export function createRace3DRenderer(hostEl, options = {}) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   hostEl.appendChild(renderer.domElement);
+  /** 부모 touch-action:manipulation 과 함께 쓰일 때 캔버스 드래그가 페이지 스크롤을 건드리지 않게 */
+  renderer.domElement.style.touchAction = 'none';
 
   const hemi = new THREE.HemisphereLight(0xfff5e6, 0x3d5c3a, 0.85);
   scene.add(hemi);

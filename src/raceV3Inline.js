@@ -12,6 +12,7 @@ import { createRace3DRenderer } from './race3DRenderer.js';
  *   terrainKey?: string,
  *   getAppState?: () => object,
  *   serverRace?: { socket: import('socket.io-client').Socket, roomId: string, mySlot: 0|1, myDuckId?: string, oppDuckId?: string, myDuckName?: string, oppDuckName?: string, oppUid?: string, myProfile?: Record<string, unknown>, emitTap?: (foot: 'left'|'right') => void },
+ *   embedMode?: boolean,
  * }} options
  * @returns {() => void} stop — 리스너·rAF 정리
  */
@@ -27,6 +28,8 @@ export function mountRaceV3Game(hostEl, options) {
   const serverRaceOpt = options && options.serverRace;
   const myServerSlotNorm = serverRaceOpt ? normalizeRaceSlot(serverRaceOpt.mySlot) : null;
   const myServerSlot = myServerSlotNorm != null ? myServerSlotNorm : 0;
+  /** iframe 임베드일 때만 true — 메인 앱은 false(기본). true로 두면 ready/reset 탭·키가 막혀 폰에서 무반응처럼 보일 수 있음 */
+  const EMBED_APP = Boolean(options && options.embedMode);
   function isServerRaceConnected() {
     return !!(serverRaceOpt && serverRaceOpt.socket);
   }
@@ -49,7 +52,7 @@ export function mountRaceV3Game(hostEl, options) {
     return t || RACE_ENGINE_PHYSICS.TERRAIN.normal;
   }
   hostEl.style.cssText =
-    'position:fixed;inset:0;z-index:200;touch-action:none;background:#222;overflow:hidden;';
+    'position:fixed;inset:0;z-index:200;touch-action:manipulation;background:#222;overflow:hidden;-webkit-touch-callout:none;';
   hostEl.replaceChildren();
   hostEl.tabIndex = -1;
   try {
@@ -118,8 +121,6 @@ export function mountRaceV3Game(hostEl, options) {
   window.addEventListener('resize', resize);
 
 'use strict';
-/** iframe이면 true — frameElement만 참조, 부모와는 BroadcastChannel로만 통신 */
-const EMBED_APP=true;
 let raceFinishPosted=false;
 (function(){
   const el=document.getElementById('overlay');
@@ -150,6 +151,52 @@ let ac=null;
 function ensureAudio(){
   if(!ac)try{ac=new(AudioContext||webkitAudioContext)}catch(e){}
   if(ac&&ac.state==='suspended')ac.resume();
+}
+/** 안드로이드 등. iOS Safari 는 대부분 미지원 */
+function hapticLight(ms){
+  try{
+    if(typeof navigator!=='undefined'&&typeof navigator.vibrate==='function')navigator.vibrate(ms);
+  }catch(e){/* ignore */}
+}
+/**
+ * 방송 정각 알림 느낌 — 3·2·1 짧은 이중 똑딱, GO 는 약간 긴 상승 톤
+ * @param {number} cd 3|2|1|0
+ */
+function playStationCountdownBeep(cd){
+  ensureAudio();
+  if(!ac)return;
+  const t0=ac.currentTime;
+  const g=ac.createGain();
+  g.connect(ac.destination);
+  g.gain.setValueAtTime(0.0001,t0);
+  if(cd===0){
+    g.gain.exponentialRampToValueAtTime(0.28,t0+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+0.42);
+    const freqs=[523.25,659.25,783.99];
+    for(let i=0;i<3;i++){
+      const o=ac.createOscillator();
+      o.type='sine';
+      o.frequency.setValueAtTime(freqs[i],t0+i*0.07);
+      o.connect(g);
+      o.start(t0+i*0.07);
+      o.stop(t0+i*0.07+0.11);
+    }
+    hapticLight(14);
+    return;
+  }
+  g.gain.exponentialRampToValueAtTime(0.26,t0+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.22);
+  const a=1046.5;
+  const b=1318.5;
+  for(let i=0;i<2;i++){
+    const o=ac.createOscillator();
+    o.type='sine';
+    o.frequency.setValueAtTime(i===0?a:b,t0+i*0.052);
+    o.connect(g);
+    o.start(t0+i*0.052);
+    o.stop(t0+i*0.052+0.048);
+  }
+  hapticLight(6);
 }
 function playSlap(){
   if(!ac)return;const t=ac.currentTime;
@@ -297,7 +344,7 @@ function tap(foot){
       p.leftLegTarget=-0.3;
     }
     playSlap();
-    if(navigator.vibrate)navigator.vibrate(15);
+    hapticLight(10);
     bumpPadGlow(foot);
     P.bodySwTgt=foot==='L'?0.68:-0.68;
     playerSquash=true;
@@ -351,7 +398,7 @@ function tap(foot){
     p.leftLegTarget=-0.3;
   }
   playSlap();
-  if(navigator.vibrate)navigator.vibrate(15);
+  hapticLight(10);
   bumpPadGlow(foot);
   P.bodySwTgt=foot==='L'?0.68:-0.68;
   if(serverRaceOpt&&typeof serverRaceOpt.emitTap==='function'){
@@ -370,8 +417,12 @@ function isNonPrimaryMouseButton(e){
 function handleTapPadPointerDown(e, foot) {
   e.preventDefault();
   e.stopPropagation();
-  if (state === 'ready' && !EMBED_APP) {
-    startCD();
+  if (state === 'ready') {
+    ensureAudio();
+    if (!EMBED_APP) {
+      startCD();
+      return;
+    }
     return;
   }
   if (state === 'result' && !EMBED_APP) {
@@ -778,15 +829,25 @@ function updAnim(p,dt){
 
 // ═══ 3D sync + HTML HUD ═══
 let _r3PrevState = '';
+/** 카운트다운 숫자 바뀔 때만 정각식 비프 1회 */
+let _cdStationBeepKey = /** @type {string | null} */ (null);
 function syncRace3D() {
+  tapPadsWrap.style.display = state === 'ending' || state === 'result' ? 'none' : 'flex';
   if (state === 'ready' && _r3PrevState !== 'ready') {
     renderer3D.setCountdown(null);
+    _cdStationBeepKey = null;
   }
   if (state === 'countdown') {
     if (cdVal >= 1 && cdVal <= 3) renderer3D.setCountdown(cdVal);
     else if (cdVal === 0) renderer3D.setCountdown(0);
+    const k = String(cdVal);
+    if (cdVal >= 0 && cdVal <= 3 && _cdStationBeepKey !== k) {
+      _cdStationBeepKey = k;
+      playStationCountdownBeep(cdVal);
+    }
   } else if (_r3PrevState === 'countdown') {
     renderer3D.setCountdown(null);
+    _cdStationBeepKey = null;
   }
   if (state === 'racing' && _r3PrevState !== 'racing') {
     renderer3D.setRacing();
