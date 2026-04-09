@@ -628,9 +628,11 @@ function applyServerCountdownWallClock(){
   const srvCd=serverRaceOpt&&serverRaceOpt.socket;
   if(!srvCd||serverCdStartAt==null||!Number.isFinite(serverCdStartAt))return null;
   const elapsed=Date.now()-serverCdStartAt;
-  const idx=Math.min(3,Math.floor(Math.max(0,elapsed)/1000));
+  /** 서버 시각·단말 시각 차이로 elapsed 가 짧게 나오면 idx 가 한 박자 느림 → 덮어쓰기만 하면 2에 고정됨 */
+  const idx=Math.min(3,Math.floor(Math.max(0,elapsed+180)/1000));
   const counts=[3,2,1,0];
-  cdVal=counts[idx];
+  const next=counts[idx];
+  cdVal=Math.min(cdVal,next);
   return elapsed;
 }
 function update(dt){
