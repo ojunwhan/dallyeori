@@ -38,6 +38,19 @@ function socketUrl() {
 }
 
 /**
+ * PC·일부 역프록시에서 wss 업그레이드 실패 시 세션 끊김·connected 불일치가 남음.
+ * WebSocket 없이 long-polling 만 사용(폰·QR 동일).
+ */
+const GAME_IO_BASE_OPTS = {
+  reconnection: true,
+  reconnectionAttempts: 12,
+  reconnectionDelay: 350,
+  reconnectionDelayMax: 12000,
+  timeout: 45000,
+  transports: ['polling'],
+};
+
+/**
  * @param {object} opts
  * @returns {import('socket.io-client').Socket}
  */
@@ -351,12 +364,9 @@ export function connectQrGuestSocket(token) {
   }
   lastSocketToken = token;
   gameSocket = openGameSocket({
-    auth: { token, language: resolveSocketLanguageForToken(token) },
-    reconnection: true,
+    ...GAME_IO_BASE_OPTS,
     reconnectionAttempts: 2,
-    reconnectionDelay: 800,
-    /** polling 먼저 — PC 프록시/방화벽에서 wss 실패 시에도 경주 유지(websocket 우선이면 끊김·재연결 루프 빈번) */
-    transports: ['polling', 'websocket'],
+    auth: { token, language: resolveSocketLanguageForToken(token) },
   });
 
   const onFound = (data) => {
@@ -460,12 +470,8 @@ export function ensureSocket() {
   }
   lastSocketToken = token;
   gameSocket = openGameSocket({
+    ...GAME_IO_BASE_OPTS,
     auth: { token, language: resolveSocketLanguageForToken(token) },
-    reconnection: true,
-    reconnectionAttempts: 3,
-    reconnectionDelay: 800,
-    /** polling 먼저 — 동일 출처 wss 핸드셰이크 실패 환경에서 안정적 */
-    transports: ['polling', 'websocket'],
   });
   console.log('[socket] new socket created');
   gameSocket.on('connect_error', () => {
