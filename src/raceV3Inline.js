@@ -1122,7 +1122,7 @@ function syncRace3D() {
   if (state === 'racing' || state === 'ending' || state === 'result') {
     hudEl.innerHTML =
       `<div style="font-size:24px;font-weight:bold;line-height:1.2">${rem.toFixed(2)}초</div>` +
-      `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나: ${P.dist.toFixed(4)}m | 상대: ${CPU.dist.toFixed(4)}m</div>`;
+      `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나: ${P.dist.toFixed(3)}m | 상대: ${CPU.dist.toFixed(3)}m</div>`;
   } else {
     hudEl.innerHTML = '';
   }

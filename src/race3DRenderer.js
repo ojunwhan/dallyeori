@@ -417,7 +417,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
   let countdownJogT = 0;
 
   let internalRacing = false;
-  let boostTimer = 0;
+  /** 출발 시 화면이 흔들리던 원인: 짧은 FOV 사인 펄스(55±10°) — 제거 */
   let animId = 0;
   const clock = new THREE.Clock();
 
@@ -461,7 +461,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
   function setRacing() {
     internalRacing = true;
     cdOverlayEl.textContent = '';
-    boostTimer = 0.3;
   }
 
   function setEnding(result, callbacks = {}) {
@@ -737,16 +736,6 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const camDesired = new THREE.Vector3(0, 4.5, -midDist + 8);
     camera.position.lerp(camDesired, 0.05);
     camera.lookAt(camTargetPos);
-
-    if (boostTimer > 0) {
-      boostTimer -= dt;
-      const t = Math.max(0, boostTimer) / 0.3;
-      camera.fov = 55 + 10 * Math.sin(t * Math.PI);
-      camera.updateProjectionMatrix();
-    } else {
-      camera.fov = BASE_CAMERA_FOV;
-      camera.updateProjectionMatrix();
-    }
 
     renderer.render(scene, camera);
   }
