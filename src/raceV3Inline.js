@@ -27,6 +27,7 @@ import { createRace3DRenderer } from './race3DRenderer.js';
 export function mountRaceV3Game(hostEl, options) {
   pendingRematchFromPeer = null;
   openRematchInviteFromPeer = null;
+  _wireOppLastFoot = null;
   const onFinish = options && options.onFinish;
   const getAppState = options && typeof options.getAppState === 'function' ? options.getAppState : null;
   function normalizeTerrainKey(k) {
@@ -327,6 +328,8 @@ let lastReadyRaceSyncAt=0;
 let pendingRematchFromPeer = /** @type {{ senderUid: string, senderName: string } | null} */ (null);
 /** mountRaceV3Game(serverRace) 에서 할당 — 엔딩 진입 시 pendingRematchFromPeer 플러시 */
 let openRematchInviteFromPeer = /** @type {((senderUid: string, senderName: string) => void) | null} */ (null);
+/** raceTick 상대 lastFoot 직전값 — 탭 스냅샷으로 다리 보조 */
+let _wireOppLastFoot = /** @type {'L'|'R'|null} */ (null);
 
 // ═══ PLAYERS ═══
 function mk(cpu){return{
@@ -456,10 +459,12 @@ function tapReadyWarmupJog(foot){
  * 서버 peerTap 전용 — 상대 오리(CPU) 시각만 (거리/속도 불변).
  * 다리·몸통·wc 스텝 값은 로컬 tap()과 동일 (race 카운트다운 제외).
  * @param {'left'|'right'} foot
+ * @param {{ silent?: boolean }} [opt] silent=true 이면 효과음 없음(raceTick 권위 lastFoot 보조)
  */
-function applyPeerTapVisual(foot){
+function applyPeerTapVisual(foot, opt){
   if(state!=='racing')return;
   if(!isServerRaceConnected())return;
+  !opt?.silent && playSlap();
   const f=foot==='left'?'L':'R';
   CPU.lastFoot=f;
   CPU.wcTgt+=Math.PI;
@@ -472,7 +477,6 @@ function applyPeerTapVisual(foot){
     CPU.rightLegTarget=legHi;
     CPU.leftLegTarget=legLo;
   }
-  playSlap();
   const bodySw=0.68*0.7;
   CPU.bodySwTgt=f==='L'?bodySw:-bodySw;
   CPU.forcedMovingTimer=0.3;
@@ -762,6 +766,8 @@ function blendServerDucks(dt){
    * v·자세는 tap()+updDuck() 로컬, 추락 구간만 서버 v=0 에 맞춤.
    */
   const aPos=1-Math.exp(-22*dt);
+  /** 상대는 조금 더 부드럽게 — 틱 사이 dist 튐이 덜 귀신처럼 보이게 */
+  const aPosOpp=1-Math.exp(-10*dt);
   const aVel=1-Math.exp(-11*dt);
   P.dist=lerp(P.dist,wireNum(me.dist,P.dist),aPos);
   P.lateral=lerp(P.lateral,wireNum(me.lateral,P.lateral),Math.min(1,aVel*1.1));
@@ -772,7 +778,7 @@ function blendServerDucks(dt){
     P.spd=wv;
   }
   if(me.isFallen&&!fallPaused){playerFallAnim=1;showFallOverlay();}
-  CPU.dist=lerp(CPU.dist,wireNum(opp.dist,CPU.dist),aPos);
+  CPU.dist=lerp(CPU.dist,wireNum(opp.dist,CPU.dist),aPosOpp);
   CPU.v=lerp(CPU.v,wireNum(opp.v,CPU.v),aVel);
   CPU.spd=lerp(CPU.spd,wireNum(opp.spd!=null?opp.spd:opp.v,CPU.spd),aVel);
   CPU.lateral=lerp(CPU.lateral,wireNum(opp.lateral,CPU.lateral),aVel);
@@ -780,6 +786,22 @@ function blendServerDucks(dt){
   CPU.spinAngle=lerp(CPU.spinAngle,wireNum(opp.spinAngle,CPU.spinAngle),aVel);
   CPU.stumble=opp.isStumbling?1:0;
   CPU.lastTapRaceT=raceT;
+  const lfRaw =
+    opp.lastFoot === 'L' || opp.lastFoot === 'R'
+      ? opp.lastFoot
+      : opp.lastFoot === 'l'
+        ? 'L'
+        : opp.lastFoot === 'r'
+          ? 'R'
+          : null;
+  if (lfRaw === 'L' || lfRaw === 'R') {
+    if (lfRaw !== _wireOppLastFoot) {
+      _wireOppLastFoot = lfRaw;
+      if (lfRaw !== CPU.lastFoot) {
+        applyPeerTapVisual(lfRaw === 'L' ? 'left' : 'right', { silent: true });
+      }
+    }
+  }
   _blendLogCounter+=1;
   if(_blendLogCounter%30===1){
     console.log('[blend] 상대(CPU) dist:',CPU.dist,'서버 opp.dist:',opp.dist,'내 P.dist:',P.dist,'opp.spd:',opp.spd);
@@ -1343,6 +1365,7 @@ if(serverRaceOpt){
   };
   const onCountdown=(d)=>{
     pendingRematchFromPeer = null;
+    _wireOppLastFoot = null;
     touchServerRaceIo();
     if(racingResyncIntervalId){
       clearInterval(racingResyncIntervalId);
@@ -1430,6 +1453,7 @@ if(serverRaceOpt){
     serverRaceSnap=null;
     _raceTickLogCounter=0;
     _blendLogCounter=0;
+    _wireOppLastFoot = null;
     armRacingResyncInterval();
     console.log('[race] race-start — HUD 내 오리:',hudLabelMe(),'mySlot:',myServerSlot);
   };
@@ -1461,6 +1485,7 @@ if(serverRaceOpt){
       }
       state='racing';
       cdVal=-1;
+      _wireOppLastFoot = null;
       armRacingResyncInterval();
       console.warn(
         wasCd
