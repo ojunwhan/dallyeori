@@ -176,7 +176,8 @@ function attachHeartEconomyRelay(sock) {
   sock.on('matchError', matchErrorSocketHandler);
 }
 
-function getJwtUid() {
+/** 소켓 handshake·raceJoin payload 는 항상 이 값과 서버 JWT uid 가 일치해야 함(google:/kakao: 접두사 포함) */
+export function getJwtUid() {
   const t = getToken();
   if (!t) return '';
   const p = decodeJWT(t);

@@ -1,7 +1,7 @@
 import { DUCKS_NINE, RACE_ENGINE_PHYSICS } from './constants.js';
 import { spend } from './services/hearts.js';
 import { showAppToast } from './services/toast.js';
-import { emitRaceJoin, normalizeRaceSlot } from './services/socket.js';
+import { emitRaceJoin, getJwtUid, normalizeRaceSlot } from './services/socket.js';
 import { createRace3DRenderer } from './race3DRenderer.js';
 
 /**
@@ -1251,6 +1251,10 @@ if(serverRaceOpt&&serverRaceOpt.socket){
   };
   sock.on('receiveRematch',onReceiveRematch);
   const getRaceMyUid=()=>{
+    try{
+      const j=getJwtUid();
+      if(j)return j;
+    }catch(e){/* ignore */}
     if(serverRaceOpt&&typeof serverRaceOpt.myUid==='string'&&serverRaceOpt.myUid)return serverRaceOpt.myUid;
     if(getAppState){
       try{
