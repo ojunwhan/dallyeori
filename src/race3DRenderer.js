@@ -3,7 +3,7 @@
  * 물리·소켓·입력은 raceV3Inline 등에서 담당하고, 여기서는 표시만 갱신한다.
  */
 import * as THREE from 'three';
-import { DUCK_3D_COLORS, RACE_ENGINE_PHYSICS } from './constants.js';
+import { DUCK_3D_COLORS, RACE_ENGINE_PHYSICS, TAP_STRIDE_M } from './constants.js';
 
 const PLAYER_LANE_X = -1.25;
 const BOT_LANE_X = 1.25;
@@ -44,7 +44,7 @@ function makeTrackStripeTexture() {
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = 4;
-  tex.repeat.set(1, TRACK_WORLD_LEN / TRACK_STRIPE_SPACING_M);
+  tex.repeat.set(1, TRACK_WORLD_LEN / TRACK_STRIPE_CYCLE_M);
   return tex;
 }
 
@@ -76,7 +76,7 @@ function makeDashedStripeGroup(x) {
   const grp = new THREE.Group();
   const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const half = TRACK_WORLD_LEN / 2;
-  for (let z = -half; z < half; z += 1) {
+  for (let z = -half; z < half; z += TAP_STRIDE_M) {
     const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.5, 1, 1), mat);
     dash.rotation.x = -Math.PI / 2;
     dash.position.set(x, 0.021, z + 0.25);
@@ -732,9 +732,11 @@ export function createRace3DRenderer(hostEl, options = {}) {
       oppRoot.position.y = oppRoot.position.y * (1 - dt * 6);
     }
 
-    const midDist = distP * 0.6 + distO * 0.4;
-    const camTargetPos = new THREE.Vector3(0, 1.5, -midDist);
-    const camDesired = new THREE.Vector3(0, 4.5, -midDist + 8);
+    /** 내 오리(distP) 기준 추적 — 상대는 같은 장면에서 상대 거리만큼 앞·뒤로 보임 */
+    const camX = myLaneX + latP;
+    const camFollowDist = distP;
+    const camTargetPos = new THREE.Vector3(camX, 1.5, -camFollowDist);
+    const camDesired = new THREE.Vector3(camX, 4.5, -camFollowDist + 8);
     camera.position.lerp(camDesired, 0.05);
     camera.lookAt(camTargetPos);
 
