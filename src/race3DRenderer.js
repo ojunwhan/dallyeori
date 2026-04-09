@@ -314,7 +314,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
   scene.fog = new THREE.Fog(0xa8dcff, 15, 120);
 
   const camera = new THREE.PerspectiveCamera(BASE_CAMERA_FOV, w0 / h0, 0.1, 650);
-  camera.position.set(0, 4.5, 8);
+  camera.position.set(0, 4.15, 8);
 
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
@@ -690,9 +690,11 @@ export function createRace3DRenderer(hostEl, options = {}) {
       const leftPhase = ph;
       const rightPhase = ph + Math.PI;
       legLU.rotation.x = Math.sin(leftPhase) * thighAmp;
-      legLL.rotation.x = Math.max(0, -Math.sin(leftPhase + 0.4) * swing * 0.9);
+      /** 발뒤꿈치 스윙 시 발목 굽힘 — 발바닥 노출 살짝 강화(~25%) */
+      const shankBend = swing * 0.9 * 1.25;
+      legLL.rotation.x = Math.max(0, -Math.sin(leftPhase + 0.4) * shankBend);
       legRU.rotation.x = Math.sin(rightPhase) * thighAmp;
-      legRL.rotation.x = Math.max(0, -Math.sin(rightPhase + 0.4) * swing * 0.9);
+      legRL.rotation.x = Math.max(0, -Math.sin(rightPhase + 0.4) * shankBend);
       const waddleAmpBase =
         WADDLE_RAD_SLOW + speedNP * (WADDLE_RAD_FAST - WADDLE_RAD_SLOW);
       const waddleAmp = waddleAmpBase * playerWaddleJitter;
@@ -747,11 +749,12 @@ export function createRace3DRenderer(hostEl, options = {}) {
       const bswing = 0.85 + speedNO * 0.55;
       const bthigh = 0.95 + speedNO * 0.5;
       oppDuck.leftLeg.hip.rotation.x = Math.sin(bph) * bthigh;
-      oppDuck.leftLeg.lower.rotation.x = Math.max(0, -Math.sin(bph + 0.4) * bswing * 0.9);
+      const oppShankBend = bswing * 0.9 * 1.25;
+      oppDuck.leftLeg.lower.rotation.x = Math.max(0, -Math.sin(bph + 0.4) * oppShankBend);
       oppDuck.rightLeg.hip.rotation.x = Math.sin(bph + Math.PI) * bthigh;
       oppDuck.rightLeg.lower.rotation.x = Math.max(
         0,
-        -Math.sin(bph + Math.PI + 0.4) * bswing * 0.9,
+        -Math.sin(bph + Math.PI + 0.4) * oppShankBend,
       );
       const bwadBase =
         WADDLE_RAD_SLOW + speedNO * (WADDLE_RAD_FAST - WADDLE_RAD_SLOW);
@@ -803,8 +806,8 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const distSafe = Number.isFinite(distP) ? distP : 0;
     const camX = 0;
     const camFollowDist = Math.max(0, distSafe) * STRIDE_VISUAL_SCALE;
-    const camTargetPos = new THREE.Vector3(camX, 1.5, -camFollowDist);
-    const camDesired = new THREE.Vector3(camX, 4.5, -camFollowDist + 8);
+    const camTargetPos = new THREE.Vector3(camX, 1.35, -camFollowDist);
+    const camDesired = new THREE.Vector3(camX, 4.15, -camFollowDist + 8);
     camera.position.lerp(camDesired, 0.05);
     camera.lookAt(camTargetPos);
 
