@@ -223,6 +223,15 @@ let _cdGoRecoverAcc=0;
 /** 서버 레이스 이벤트 수신 시각 — connected 만으로 재연결 UI 판단 시 PC 오탐 방지 */
 let lastServerRaceIoAt=0;
 function touchServerRaceIo(){lastServerRaceIoAt=Date.now();}
+/** 마지막 raceTick 수신 — 스냅만 남고 틱이 끊기면 dist 가 0m 에 고정되는 PC 버그 방지 */
+let lastRaceTickRecvAt=0;
+function isServerRaceTickFresh(){
+  return !!(
+    serverRaceSnap &&
+    lastRaceTickRecvAt>0 &&
+    Date.now()-lastRaceTickRecvAt<1250
+  );
+}
 let _raceTickLogCounter=0;
 let _blendLogCounter=0;
 let playerSquash=false;
@@ -570,7 +579,7 @@ function wireNum(x,fallback){
   return Number.isFinite(n)?n:fallback;
 }
 function blendServerDucks(dt){
-  if(!serverRaceOpt||!serverRaceOpt.socket||!serverRaceSnap)return;
+  if(!serverRaceOpt||!serverRaceOpt.socket||!isServerRaceTickFresh())return;
   const pl=serverRaceSnap.players;
   if(!pl||pl.length<2)return;
   const me=pl[myServerSlot];
@@ -629,7 +638,7 @@ function update(dt){
         if(_cdGoRecoverAcc>=0.4){
           _cdGoRecoverAcc=0;
           const sk=serverRaceOpt.socket;
-          if(sk&&sk.connected){
+          if(sk){
             try{
               sk.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
             }catch(e){/* ignore */}
@@ -649,8 +658,15 @@ function update(dt){
     const srv=serverRaceOpt&&serverRaceOpt.socket;
     if(srv){
       /** raceT·상대 동기화는 추락 UI 중에도 유지 — 멈추면 상대가 0m로 굳거나 화면이 버벅인 것처럼 보임 */
-      if(serverRaceSnap&&typeof serverRaceSnap.raceT==='number'&&Number.isFinite(serverRaceSnap.raceT)){
+      if(
+        isServerRaceTickFresh()&&
+        serverRaceSnap&&
+        typeof serverRaceSnap.raceT==='number'&&
+        Number.isFinite(serverRaceSnap.raceT)
+      ){
         raceT=serverRaceSnap.raceT;
+      }else if(srv){
+        raceT+=dt;
       }
       blendServerDucks(dt);
       updDuck(P,dt);
@@ -758,7 +774,7 @@ function updDuck(p,dt){
   const fwd=p.v*Math.cos(effA)*dt;
   const lat=p.v*Math.sin(effA)*dt;
   /** 온라인+raceTick 동안 내 오리 dist/lat 는 blend 만 (CPU 는 이 분기에서 온라인 시 호출되지 않음) */
-  if(!(isServerRaceConnected()&&serverRaceSnap&&!p.isCpu)){
+  if(!(isServerRaceConnected()&&isServerRaceTickFresh()&&!p.isCpu)){
     p.dist+=fwd;
     p.lateral+=lat;
   }
@@ -819,7 +835,7 @@ function updAnim(p,dt){
   }
 
   let effSpdForAnim=p.spd;
-  if(inRace&&isServerRaceConnected()&&p===CPU&&serverRaceSnap){
+  if(inRace&&isServerRaceConnected()&&p===CPU&&isServerRaceTickFresh()&&serverRaceSnap){
     const pl=serverRaceSnap.players;
     const opp=pl&&pl[1-myServerSlot];
     if(opp){
@@ -1000,18 +1016,9 @@ function syncRace3D() {
   } else {
     hudEl.innerHTML = '';
   }
-  if (raceReconnectOvRef && serverRaceOpt?.socket) {
-    const sk = serverRaceOpt.socket;
-    const eng = sk.io && sk.io.engine;
-    const rs = eng && typeof eng.readyState === 'string' ? eng.readyState : '';
-    /** 핸드셰이크·재연결 중 connected 가 false 인 순간이 있음 */
-    const engineLive = rs === 'open' || rs === 'opening';
-    const staleMs = Date.now() - lastServerRaceIoAt;
-    const inRaceFlow =
-      state === 'countdown' || state === 'racing' || state === 'ending' || state === 'result';
-    const showReconnect =
-      inRaceFlow && !sk.connected && !engineLive && staleMs > 3200;
-    raceReconnectOvRef.style.display = showReconnect ? 'flex' : 'none';
+  /** PC 에서 connected/엔진 상태와 무관하게 오탐 — 레이스 UX 해치므로 비표시(복구는 틱 신선도·requestRaceSync) */
+  if (raceReconnectOvRef) {
+    raceReconnectOvRef.style.display = 'none';
   }
 }
 
@@ -1073,8 +1080,30 @@ function showRematchRequest(name, onAccept, onDecline) {
 let srvHandlers=null;
 /** 서버 카운트다운 이벤트 유실 시 주기적 재동기화 */
 let countdownResyncIntervalId=0;
+/** 레이싱 중 raceTick 유실 시 requestRaceSync */
+let racingResyncIntervalId=0;
 if(serverRaceOpt&&serverRaceOpt.socket){
   const sock=serverRaceOpt.socket;
+  function armRacingResyncInterval(){
+    if(racingResyncIntervalId){
+      clearInterval(racingResyncIntervalId);
+      racingResyncIntervalId=0;
+    }
+    racingResyncIntervalId=window.setInterval(()=>{
+      if(state!=='racing'){
+        if(racingResyncIntervalId){
+          clearInterval(racingResyncIntervalId);
+          racingResyncIntervalId=0;
+        }
+        return;
+      }
+      try{
+        sock.emit('requestRaceSync',{roomId:serverRaceOpt.roomId,slot:myServerSlot});
+      }catch(e){
+        console.warn('[race] racing requestRaceSync',e);
+      }
+    },900);
+  }
   const onRematchUnavailable=(p)=>{
     if(!p||typeof p!=='object')return;
     const reason=typeof p.reason==='string'?p.reason:'';
@@ -1094,6 +1123,10 @@ if(serverRaceOpt&&serverRaceOpt.socket){
   sock.on('rematchUnavailable',onRematchUnavailable);
   const onCountdown=(d)=>{
     touchServerRaceIo();
+    if(racingResyncIntervalId){
+      clearInterval(racingResyncIntervalId);
+      racingResyncIntervalId=0;
+    }
     ensureAudio();
     state='countdown';
     const c=d&&typeof d.count==='number'?d.count:3;
@@ -1137,17 +1170,20 @@ if(serverRaceOpt&&serverRaceOpt.socket){
     touchServerRaceIo();
     serverCdStartAt=null;
     _cdGoRecoverAcc=0;
+    lastRaceTickRecvAt=0;
     state='racing';
     cdVal=-1;
     raceT=0;
     serverRaceSnap=null;
     _raceTickLogCounter=0;
     _blendLogCounter=0;
+    armRacingResyncInterval();
     console.log('[race] race-start — HUD 내 오리:',hudLabelMe(),'mySlot:',myServerSlot);
   };
   const onTick=(p)=>{
     touchServerRaceIo();
     serverRaceSnap=p;
+    lastRaceTickRecvAt=Date.now();
     if(p&&typeof p.raceT==='number'&&Number.isFinite(p.raceT))raceT=p.raceT;
     /** race-start 유실 시 — racing 페이즈에서만 틱이 오므로 상태를 맞춤 */
     if(
@@ -1161,8 +1197,14 @@ if(serverRaceOpt&&serverRaceOpt.socket){
       const wasCd = state === 'countdown';
       serverCdStartAt=null;
       _cdGoRecoverAcc=0;
+      lastRaceTickRecvAt=Date.now();
+      if(countdownResyncIntervalId){
+        clearInterval(countdownResyncIntervalId);
+        countdownResyncIntervalId=0;
+      }
       state='racing';
       cdVal=-1;
+      armRacingResyncInterval();
       console.warn(
         wasCd
           ? '[race] raceTick: 카운트다운 중 클라이언트를 racing 으로 동기화'
@@ -1287,9 +1329,14 @@ if(EMBED_APP&&!serverRaceOpt){
         clearInterval(countdownResyncIntervalId);
         countdownResyncIntervalId=0;
       }
+      if(racingResyncIntervalId){
+        clearInterval(racingResyncIntervalId);
+        racingResyncIntervalId=0;
+      }
       serverCdStartAt=null;
       _cdGoRecoverAcc=0;
       lastServerRaceIoAt=0;
+      lastRaceTickRecvAt=0;
       raceReconnectOvRef=null;
       if(srvHandlers.sock?.connected&&serverRaceOpt?.roomId){
         try{srvHandlers.sock.emit('raceEndingLeft',{roomId:serverRaceOpt.roomId});}catch(e){console.warn('[race] raceEndingLeft',e);}
