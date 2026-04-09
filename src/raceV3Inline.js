@@ -766,8 +766,6 @@ function blendServerDucks(dt){
    * v·자세는 tap()+updDuck() 로컬, 추락 구간만 서버 v=0 에 맞춤.
    */
   const aPos=1-Math.exp(-22*dt);
-  /** 상대는 조금 더 부드럽게 — 틱 사이 dist 튐이 덜 귀신처럼 보이게 */
-  const aPosOpp=1-Math.exp(-10*dt);
   const aVel=1-Math.exp(-11*dt);
   P.dist=lerp(P.dist,wireNum(me.dist,P.dist),aPos);
   P.lateral=lerp(P.lateral,wireNum(me.lateral,P.lateral),Math.min(1,aVel*1.1));
@@ -778,7 +776,7 @@ function blendServerDucks(dt){
     P.spd=wv;
   }
   if(me.isFallen&&!fallPaused){playerFallAnim=1;showFallOverlay();}
-  CPU.dist=lerp(CPU.dist,wireNum(opp.dist,CPU.dist),aPosOpp);
+  CPU.dist=lerp(CPU.dist,wireNum(opp.dist,CPU.dist),aPos);
   CPU.v=lerp(CPU.v,wireNum(opp.v,CPU.v),aVel);
   CPU.spd=lerp(CPU.spd,wireNum(opp.spd!=null?opp.spd:opp.v,CPU.spd),aVel);
   CPU.lateral=lerp(CPU.lateral,wireNum(opp.lateral,CPU.lateral),aVel);
@@ -786,23 +784,29 @@ function blendServerDucks(dt){
   CPU.spinAngle=lerp(CPU.spinAngle,wireNum(opp.spinAngle,CPU.spinAngle),aVel);
   CPU.stumble=opp.isStumbling?1:0;
   CPU.lastTapRaceT=raceT;
-  const lfRaw =
-    opp.lastFoot === 'L' || opp.lastFoot === 'R'
-      ? opp.lastFoot
-      : opp.lastFoot === 'l'
-        ? 'L'
-        : opp.lastFoot === 'r'
-          ? 'R'
-          : null;
-  if (lfRaw === 'L' || lfRaw === 'R') {
-    if (lfRaw !== _wireOppLastFoot) {
-      _wireOppLastFoot = lfRaw;
-      if (lfRaw !== CPU.lastFoot) {
-        applyPeerTapVisual(lfRaw === 'L' ? 'left' : 'right', { silent: true });
+  if (!Number.isFinite(P.dist)) P.dist = wireNum(me.dist, 0);
+  if (!Number.isFinite(CPU.dist)) CPU.dist = wireNum(opp.dist, 0);
+  try {
+    const lfRaw =
+      opp.lastFoot === 'L' || opp.lastFoot === 'R'
+        ? opp.lastFoot
+        : opp.lastFoot === 'l'
+          ? 'L'
+          : opp.lastFoot === 'r'
+            ? 'R'
+            : null;
+    if (lfRaw === 'L' || lfRaw === 'R') {
+      if (lfRaw !== _wireOppLastFoot) {
+        _wireOppLastFoot = lfRaw;
+        if (lfRaw !== CPU.lastFoot) {
+          applyPeerTapVisual(lfRaw === 'L' ? 'left' : 'right', { silent: true });
+        }
       }
     }
+  } catch (e) {
+    console.error('[blend] lastFoot', e);
   }
-  _blendLogCounter+=1;
+  _blendLogCounter += 1;
   if(_blendLogCounter%30===1){
     console.log('[blend] 상대(CPU) dist:',CPU.dist,'서버 opp.dist:',opp.dist,'내 P.dist:',P.dist,'opp.spd:',opp.spd);
   }
@@ -1242,8 +1246,12 @@ let rafId=0;
 let lt=0;
 function loop(t){
   const dt=Math.min((t-lt)/1000,.05);lt=t;
-  update(dt);
-  syncRace3D();
+  try {
+    update(dt);
+    syncRace3D();
+  } catch (err) {
+    console.error('[raceV3] main loop', err);
+  }
   rafId=requestAnimationFrame(loop);
 }
 rafId=requestAnimationFrame(loop);
