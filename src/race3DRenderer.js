@@ -13,6 +13,10 @@ const TRACK_STRIPE_SPACING_M = 0.3;
 const BASE_CAMERA_FOV = 63;
 const IDLE_ENTER = 0.15;
 const MAX_SPEED = RACE_ENGINE_PHYSICS.MAX_SPEED;
+/** 몸통 좌우 기우뚱 — 주기는 ph 동일, 숫자만 키워 체감 강화 (랜덤 없음) */
+const BODY_SIDE_SWAY_MUL = 1.58;
+/** 탭 1회당 좌우 롤 킥(L=+, R=-) — 크기만 고정 스칼라 */
+const WOBBLE_IMPULSE_TAP = 0.12;
 
 function clayMat(hex, r = 0.88, m = 0.04) {
   return new THREE.MeshStandardMaterial({
@@ -435,8 +439,8 @@ export function createRace3DRenderer(hostEl, options = {}) {
       const snTap = Math.min(1, vNow / MAX_SPEED);
       run.dipImpulse = 0.16 + snTap * 0.12;
       const foot = state.lastFoot;
-      if (foot === 'R' || foot === 'right') wobbleImpulse = -0.06;
-      else if (foot === 'L' || foot === 'left') wobbleImpulse = 0.06;
+      if (foot === 'R' || foot === 'right') wobbleImpulse = -WOBBLE_IMPULSE_TAP;
+      else if (foot === 'L' || foot === 'left') wobbleImpulse = WOBBLE_IMPULSE_TAP;
     }
   }
 
@@ -452,8 +456,8 @@ export function createRace3DRenderer(hostEl, options = {}) {
       const snTapO = Math.min(1, vNow / MAX_SPEED);
       oppAnim.dipImpulse = 0.16 + snTapO * 0.12;
       const foot = state.lastFoot;
-      if (foot === 'R' || foot === 'right') oppWobbleImpulse = -0.06;
-      else if (foot === 'L' || foot === 'left') oppWobbleImpulse = 0.06;
+      if (foot === 'R' || foot === 'right') oppWobbleImpulse = -WOBBLE_IMPULSE_TAP;
+      else if (foot === 'L' || foot === 'left') oppWobbleImpulse = WOBBLE_IMPULSE_TAP;
     }
   }
 
@@ -644,14 +648,16 @@ export function createRace3DRenderer(hostEl, options = {}) {
       legLL.rotation.x = Math.max(0, -Math.sin(leftPhase + 0.4) * swing * 0.9);
       legRU.rotation.x = Math.sin(rightPhase) * thighAmp;
       legRL.rotation.x = Math.max(0, -Math.sin(rightPhase + 0.4) * swing * 0.9);
-      const waddleAmp = (0.12 + speedNP * 0.38) * 1.85;
+      const waddleAmp = (0.12 + speedNP * 0.38) * 1.85 * BODY_SIDE_SWAY_MUL;
       const waddle = waddleAmp * Math.sin(ph) + wobbleImpulse;
-      bodySquashGroup.rotation.z = waddle + dirP * 1.5;
-      bodySquashGroup.position.x = Math.sin(ph) * (0.07 + speedNP * 0.22) * 1.85;
+      bodySquashGroup.rotation.z = waddle + dirP * 1.75;
+      bodySquashGroup.position.x =
+        Math.sin(ph) * (0.07 + speedNP * 0.22) * 1.85 * BODY_SIDE_SWAY_MUL;
       const leanF = speedNP * 0.38;
-      bodySquashGroup.rotation.x = leanF + Math.sin(ph * 2) * 0.04 * speedNP;
-      headGroup.rotation.x = Math.sin(ph * 2) * (0.18 + speedNP * 0.2) * 2.0;
-      headGroup.rotation.y = Math.sin(ph) * (0.08 + speedNP * 0.06) * 2.0 * speedNP;
+      bodySquashGroup.rotation.x = leanF + Math.sin(ph * 2) * 0.055 * speedNP;
+      headGroup.rotation.x = Math.sin(ph * 2) * (0.18 + speedNP * 0.2) * 2.0 * 1.2;
+      headGroup.rotation.y =
+        Math.sin(ph) * (0.1 + speedNP * 0.075) * 2.0 * speedNP * BODY_SIDE_SWAY_MUL;
       tailPivot.rotation.y = Math.sin(ph + 0.5) * (0.55 + speedNP * 0.65);
       tailPivot.rotation.x = Math.sin(ph * 2) * 0.12 * speedNP;
       run.dipImpulse *= Math.pow(0.82, dt * 60);
@@ -691,14 +697,16 @@ export function createRace3DRenderer(hostEl, options = {}) {
         0,
         -Math.sin(bph + Math.PI + 0.4) * bswing * 0.9,
       );
-      const bwad = (0.12 + speedNO * 0.38) * 1.85;
+      const bwad = (0.12 + speedNO * 0.38) * 1.85 * BODY_SIDE_SWAY_MUL;
       const bwaddle = bwad * Math.sin(bph) + oppWobbleImpulse;
-      oppDuck.body.rotation.z = bwaddle + dirO * 1.5;
-      oppDuck.body.position.x = Math.sin(bph) * (0.07 + speedNO * 0.22) * 1.85;
+      oppDuck.body.rotation.z = bwaddle + dirO * 1.75;
+      oppDuck.body.position.x =
+        Math.sin(bph) * (0.07 + speedNO * 0.22) * 1.85 * BODY_SIDE_SWAY_MUL;
       const blev = speedNO * 0.38;
-      oppDuck.body.rotation.x = blev + Math.sin(bph * 2) * 0.04 * speedNO;
-      oppDuck.head.rotation.x = Math.sin(bph * 2) * (0.18 + speedNO * 0.2) * 2.0;
-      oppDuck.head.rotation.y = Math.sin(bph) * (0.08 + speedNO * 0.06) * 2.0 * speedNO;
+      oppDuck.body.rotation.x = blev + Math.sin(bph * 2) * 0.055 * speedNO;
+      oppDuck.head.rotation.x = Math.sin(bph * 2) * (0.18 + speedNO * 0.2) * 2.0 * 1.2;
+      oppDuck.head.rotation.y =
+        Math.sin(bph) * (0.1 + speedNO * 0.075) * 2.0 * speedNO * BODY_SIDE_SWAY_MUL;
       oppDuck.tail.rotation.y = Math.sin(bph + 0.5) * (0.55 + speedNO * 0.65);
       oppDuck.tail.rotation.x = Math.sin(bph * 2) * 0.12 * speedNO;
       const bwingO = speedNO * 0.55;
