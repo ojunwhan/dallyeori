@@ -9,15 +9,29 @@ const PLAYER_LANE_X = -1.25;
 const BOT_LANE_X = 1.25;
 const LANE_LATERAL_MAX = 1.25;
 const TRACK_WORLD_LEN = 400;
-/** 트랙 텍스처 줄 반복 주기(m) — constants.TAP_STRIDE_M 과 동일 */
-const TRACK_STRIPE_CYCLE_M = TAP_STRIDE_M;
+/**
+ * 게임 dist(m)·탭당 TAP_STRIDE_M 과 3D 전진량 비율 — 몸통 길이에 가깝게 한 걸음이 보이도록 소폭 확대
+ * 줄무늬 텍스처 주기도 동일 배율로 맞춤(한 탭 = 한 줄 주기 유지)
+ */
+const STRIDE_VISUAL_SCALE = 1.38;
+const TRACK_STRIPE_CYCLE_M = TAP_STRIDE_M * STRIDE_VISUAL_SCALE;
 const BASE_CAMERA_FOV = 63;
 const IDLE_ENTER = 0.15;
 const MAX_SPEED = RACE_ENGINE_PHYSICS.MAX_SPEED;
-/** 몸통 좌우 기우뚱 — 주기는 ph 동일, 숫자만 키워 체감 강화 (랜덤 없음) */
+/** 몸통 좌우 횡 이동·머리 y — 기존식 유지, 신규 waddle 진폭에 맞게 축소 배율만 곱함 */
 const BODY_SIDE_SWAY_MUL = 1.58;
-/** 탭 1회당 좌우 롤 킥(L=+, R=-) — 크기만 고정 스칼라 */
-const WOBBLE_IMPULSE_TAP = 0.12;
+/** 구 waddleAmp 최대(~1.46rad) 대비 신규 최대(~0.49×1.12rad) 비율로 횡 흔들림 정합 */
+const LATERAL_SWAY_MATCH_WADDLE = 0.38;
+/** 저속·고속 기우뚱 목표(도) → 라디안; 탭마다 waddleJitter(±12%) 곱해 다음 탭까지 유지 */
+const WADDLE_DEG_SLOW = 12;
+const WADDLE_DEG_FAST = 28;
+const WADDLE_RAD_SLOW = (WADDLE_DEG_SLOW * Math.PI) / 180;
+const WADDLE_RAD_FAST = (WADDLE_DEG_FAST * Math.PI) / 180;
+const WADDLE_JITTER_FRAC = 0.12;
+/** 탭 킥 목표 ≈11° + 탭마다 ±15% (다음 탭까지 유지 아님·순간량만; 감쇠는 기존 유지) */
+const WOBBLE_IMPULSE_DEG = 11;
+const WOBBLE_IMPULSE_BASE_RAD = (WOBBLE_IMPULSE_DEG * Math.PI) / 180;
+const WOBBLE_JITTER_FRAC = 0.15;
 
 /**
  * 경주 호스트가 방금 붙은 직후 clientWidth=0 인 브라우저 대비 — WebGL 0크기·검정 화면 방지
@@ -79,7 +93,7 @@ function makeDistanceLabelSprites() {
     const tex = new THREE.CanvasTexture(canvas);
     const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
     const sp = new THREE.Sprite(mat);
-    sp.position.set(-3.5, 1.5, -m);
+    sp.position.set(-3.5, 1.5, -m * STRIDE_VISUAL_SCALE);
     sp.scale.set(3.2, 1.6, 1);
     g.add(sp);
   }
@@ -438,6 +452,9 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
   let wobbleImpulse = 0;
   let oppWobbleImpulse = 0;
+  /** 탭마다 굴려 다음 탭까지 유지 — waddle 진폭만 변조(wobble 킥은 별도 랜덤) */
+  let playerWaddleJitter = 1;
+  let oppWaddleJitter = 1;
   let playerPhaseAccum = 0;
   let oppRunPhase = 0;
   /** prototype/maduck_run_test.html — 카운트다운·출발 전 제자리 조깅(run.phase += dt*cadence) */
@@ -457,13 +474,16 @@ export function createRace3DRenderer(hostEl, options = {}) {
       if (!internalRacing) countdownJogT = 0.38;
       /** 픽시 스타일: 위상·착지 연출 모두 탭(squash) 시점에만 전진 */
       playerPhaseAccum += Math.PI;
+      playerWaddleJitter = 1 + (Math.random() * 2 - 1) * WADDLE_JITTER_FRAC;
       const vNow =
         typeof playerState.v === 'number' && Number.isFinite(playerState.v) ? playerState.v : 0;
       const snTap = Math.min(1, vNow / MAX_SPEED);
       run.dipImpulse = 0.16 + snTap * 0.12;
       const foot = state.lastFoot;
-      if (foot === 'R' || foot === 'right') wobbleImpulse = -WOBBLE_IMPULSE_TAP;
-      else if (foot === 'L' || foot === 'left') wobbleImpulse = WOBBLE_IMPULSE_TAP;
+      const wobMag =
+        WOBBLE_IMPULSE_BASE_RAD * (1 + (Math.random() * 2 - 1) * WOBBLE_JITTER_FRAC);
+      if (foot === 'R' || foot === 'right') wobbleImpulse = -wobMag;
+      else if (foot === 'L' || foot === 'left') wobbleImpulse = wobMag;
     }
   }
 
@@ -474,13 +494,16 @@ export function createRace3DRenderer(hostEl, options = {}) {
     if (squash === true) {
       oppAnim.squashT = 1;
       oppRunPhase += Math.PI;
+      oppWaddleJitter = 1 + (Math.random() * 2 - 1) * WADDLE_JITTER_FRAC;
       const vNow =
         typeof oppState.v === 'number' && Number.isFinite(oppState.v) ? oppState.v : 0;
       const snTapO = Math.min(1, vNow / MAX_SPEED);
       oppAnim.dipImpulse = 0.16 + snTapO * 0.12;
       const foot = state.lastFoot;
-      if (foot === 'R' || foot === 'right') oppWobbleImpulse = -WOBBLE_IMPULSE_TAP;
-      else if (foot === 'L' || foot === 'left') oppWobbleImpulse = WOBBLE_IMPULSE_TAP;
+      const owobMag =
+        WOBBLE_IMPULSE_BASE_RAD * (1 + (Math.random() * 2 - 1) * WOBBLE_JITTER_FRAC);
+      if (foot === 'R' || foot === 'right') oppWobbleImpulse = -owobMag;
+      else if (foot === 'L' || foot === 'left') oppWobbleImpulse = owobMag;
     }
   }
 
@@ -603,9 +626,9 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const distO = oppState.dist;
     const latP = Math.max(-LANE_LATERAL_MAX, Math.min(LANE_LATERAL_MAX, playerState.lateral));
     const latO = Math.max(-LANE_LATERAL_MAX, Math.min(LANE_LATERAL_MAX, oppState.lateral));
-    duckRoot.position.z = -distP;
+    duckRoot.position.z = -distP * STRIDE_VISUAL_SCALE;
     duckRoot.position.x = myLaneX + latP;
-    oppRoot.position.z = -distO;
+    oppRoot.position.z = -distO * STRIDE_VISUAL_SCALE;
     oppRoot.position.x = oppLaneX + latO;
 
     const dirP = playerState.dirA;
@@ -670,16 +693,27 @@ export function createRace3DRenderer(hostEl, options = {}) {
       legLL.rotation.x = Math.max(0, -Math.sin(leftPhase + 0.4) * swing * 0.9);
       legRU.rotation.x = Math.sin(rightPhase) * thighAmp;
       legRL.rotation.x = Math.max(0, -Math.sin(rightPhase + 0.4) * swing * 0.9);
-      const waddleAmp = (0.12 + speedNP * 0.38) * 1.85 * BODY_SIDE_SWAY_MUL;
+      const waddleAmpBase =
+        WADDLE_RAD_SLOW + speedNP * (WADDLE_RAD_FAST - WADDLE_RAD_SLOW);
+      const waddleAmp = waddleAmpBase * playerWaddleJitter;
       const waddle = waddleAmp * Math.sin(ph) + wobbleImpulse;
       bodySquashGroup.rotation.z = waddle + dirP * 1.75;
       bodySquashGroup.position.x =
-        Math.sin(ph) * (0.07 + speedNP * 0.22) * 1.85 * BODY_SIDE_SWAY_MUL;
+        Math.sin(ph) *
+        (0.07 + speedNP * 0.22) *
+        1.85 *
+        BODY_SIDE_SWAY_MUL *
+        LATERAL_SWAY_MATCH_WADDLE;
       const leanF = speedNP * 0.38;
       bodySquashGroup.rotation.x = leanF + Math.sin(ph * 2) * 0.055 * speedNP;
       headGroup.rotation.x = Math.sin(ph * 2) * (0.18 + speedNP * 0.2) * 2.0 * 1.2;
       headGroup.rotation.y =
-        Math.sin(ph) * (0.1 + speedNP * 0.075) * 2.0 * speedNP * BODY_SIDE_SWAY_MUL;
+        Math.sin(ph) *
+        (0.1 + speedNP * 0.075) *
+        2.0 *
+        speedNP *
+        BODY_SIDE_SWAY_MUL *
+        LATERAL_SWAY_MATCH_WADDLE;
       tailPivot.rotation.y = Math.sin(ph + 0.5) * (0.55 + speedNP * 0.65);
       tailPivot.rotation.x = Math.sin(ph * 2) * 0.12 * speedNP;
       run.dipImpulse *= Math.pow(0.82, dt * 60);
@@ -719,16 +753,27 @@ export function createRace3DRenderer(hostEl, options = {}) {
         0,
         -Math.sin(bph + Math.PI + 0.4) * bswing * 0.9,
       );
-      const bwad = (0.12 + speedNO * 0.38) * 1.85 * BODY_SIDE_SWAY_MUL;
+      const bwadBase =
+        WADDLE_RAD_SLOW + speedNO * (WADDLE_RAD_FAST - WADDLE_RAD_SLOW);
+      const bwad = bwadBase * oppWaddleJitter;
       const bwaddle = bwad * Math.sin(bph) + oppWobbleImpulse;
       oppDuck.body.rotation.z = bwaddle + dirO * 1.75;
       oppDuck.body.position.x =
-        Math.sin(bph) * (0.07 + speedNO * 0.22) * 1.85 * BODY_SIDE_SWAY_MUL;
+        Math.sin(bph) *
+        (0.07 + speedNO * 0.22) *
+        1.85 *
+        BODY_SIDE_SWAY_MUL *
+        LATERAL_SWAY_MATCH_WADDLE;
       const blev = speedNO * 0.38;
       oppDuck.body.rotation.x = blev + Math.sin(bph * 2) * 0.055 * speedNO;
       oppDuck.head.rotation.x = Math.sin(bph * 2) * (0.18 + speedNO * 0.2) * 2.0 * 1.2;
       oppDuck.head.rotation.y =
-        Math.sin(bph) * (0.1 + speedNO * 0.075) * 2.0 * speedNO * BODY_SIDE_SWAY_MUL;
+        Math.sin(bph) *
+        (0.1 + speedNO * 0.075) *
+        2.0 *
+        speedNO *
+        BODY_SIDE_SWAY_MUL *
+        LATERAL_SWAY_MATCH_WADDLE;
       oppDuck.tail.rotation.y = Math.sin(bph + 0.5) * (0.55 + speedNO * 0.65);
       oppDuck.tail.rotation.x = Math.sin(bph * 2) * 0.12 * speedNO;
       const bwingO = speedNO * 0.55;
@@ -754,12 +799,10 @@ export function createRace3DRenderer(hostEl, options = {}) {
       oppRoot.position.y = oppRoot.position.y * (1 - dt * 6);
     }
 
-    /** 내 오리(distP) 기준 추적 — 상대는 같은 장면에서 상대 거리만큼 앞·뒤로 보임 */
-    const latSafe = Number.isFinite(latP) ? latP : 0;
+    /** 트랙 X 중앙 고정, Z만 내 오리 거리(시각 스케일) 따라 추적 */
     const distSafe = Number.isFinite(distP) ? distP : 0;
-    const latClamped = Math.max(-LANE_LATERAL_MAX, Math.min(LANE_LATERAL_MAX, latSafe));
-    const camX = myLaneX + latClamped;
-    const camFollowDist = Math.max(0, distSafe);
+    const camX = 0;
+    const camFollowDist = Math.max(0, distSafe) * STRIDE_VISUAL_SCALE;
     const camTargetPos = new THREE.Vector3(camX, 1.5, -camFollowDist);
     const camDesired = new THREE.Vector3(camX, 4.5, -camFollowDist + 8);
     camera.position.lerp(camDesired, 0.05);
