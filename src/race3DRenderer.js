@@ -428,9 +428,11 @@ export function createRace3DRenderer(hostEl, options = {}) {
     if (squash === true) {
       run.squashT = 1;
       if (!internalRacing) countdownJogT = 0.38;
+      /** raceV3Inline tap마다 wcTgt+=π 와 동일: 다리 한 걸음 = 위상 π (속도 기반 연동은 제거) */
+      playerPhaseAccum += Math.PI;
       const foot = state.lastFoot;
-      if (foot === 'R' || foot === 'right') wobbleImpulse = -0.15;
-      else if (foot === 'L' || foot === 'left') wobbleImpulse = 0.15;
+      if (foot === 'R' || foot === 'right') wobbleImpulse = -0.06;
+      else if (foot === 'L' || foot === 'left') wobbleImpulse = 0.06;
     }
   }
 
@@ -440,10 +442,10 @@ export function createRace3DRenderer(hostEl, options = {}) {
     Object.assign(oppState, rest);
     if (squash === true) {
       oppAnim.squashT = 1;
-      oppRunPhase += Math.PI * 0.5;
+      oppRunPhase += Math.PI;
       const foot = state.lastFoot;
-      if (foot === 'R' || foot === 'right') oppWobbleImpulse = -0.15;
-      else if (foot === 'L' || foot === 'left') oppWobbleImpulse = 0.15;
+      if (foot === 'R' || foot === 'right') oppWobbleImpulse = -0.06;
+      else if (foot === 'L' || foot === 'left') oppWobbleImpulse = 0.06;
     }
   }
 
@@ -597,17 +599,17 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
     const speedNP = Math.min(1, vP / MAX_SPEED);
     const speedNO = Math.min(1, vO / MAX_SPEED);
-    const cadenceP = 6 + speedNP * 14;
 
     if (playerState.runPhase != null && Number.isFinite(playerState.runPhase)) {
       playerPhaseAccum = playerState.runPhase;
     } else if (runningP) {
-      playerPhaseAccum += dt * cadenceP;
+      /** 탭(squash)이 아닌 구간만 아주 약하게 진행 — 미끄럼·관성 구간 자연스럽게, 탭 리듬은 깨지 않게 */
+      playerPhaseAccum += dt * (0.25 + speedNP * 0.55);
     }
     if (oppState.runPhase != null && Number.isFinite(oppState.runPhase)) {
       oppRunPhase = oppState.runPhase;
     } else if (runningO) {
-      oppRunPhase += vO * dt * 8;
+      oppRunPhase += dt * (0.25 + speedNO * 0.55);
     }
 
     const ph = playerState.runPhase != null ? playerState.runPhase : playerPhaseAccum;
