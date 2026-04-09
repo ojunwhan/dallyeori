@@ -76,7 +76,8 @@ function makeDashedStripeGroup(x) {
   const grp = new THREE.Group();
   const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
   const half = TRACK_WORLD_LEN / 2;
-  for (let z = -half; z < half; z += TAP_STRIDE_M) {
+  /** 간격 촘촘하면 메쉬 수백~수천 개로 폰 WebGL 다운(검정 화면) — 장식선만 소간격 유지 */
+  for (let z = -half; z < half; z += 1) {
     const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.5, 1, 1), mat);
     dash.rotation.x = -Math.PI / 2;
     dash.position.set(x, 0.021, z + 0.25);
@@ -733,8 +734,11 @@ export function createRace3DRenderer(hostEl, options = {}) {
     }
 
     /** 내 오리(distP) 기준 추적 — 상대는 같은 장면에서 상대 거리만큼 앞·뒤로 보임 */
-    const camX = myLaneX + latP;
-    const camFollowDist = distP;
+    const latSafe = Number.isFinite(latP) ? latP : 0;
+    const distSafe = Number.isFinite(distP) ? distP : 0;
+    const latClamped = Math.max(-LANE_LATERAL_MAX, Math.min(LANE_LATERAL_MAX, latSafe));
+    const camX = myLaneX + latClamped;
+    const camFollowDist = Math.max(0, distSafe);
     const camTargetPos = new THREE.Vector3(camX, 1.5, -camFollowDist);
     const camDesired = new THREE.Vector3(camX, 4.5, -camFollowDist + 8);
     camera.position.lerp(camDesired, 0.05);
