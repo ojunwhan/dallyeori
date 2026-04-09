@@ -25,6 +25,8 @@ import { createRace3DRenderer } from './race3DRenderer.js';
  * @returns {() => void} stop — 리스너·rAF 정리
  */
 export function mountRaceV3Game(hostEl, options) {
+  pendingRematchFromPeer = null;
+  openRematchInviteFromPeer = null;
   const onFinish = options && options.onFinish;
   const getAppState = options && typeof options.getAppState === 'function' ? options.getAppState : null;
   function normalizeTerrainKey(k) {
@@ -321,6 +323,10 @@ let playerSquash=false;
 let oppSquash=false;
 /** 온라인 ready 에서 requestRaceSync 스팸 방지 */
 let lastReadyRaceSyncAt=0;
+/** receiveRematch 가 raceResult(엔딩)보다 먼저 오면 state===racing 이라 무시되던 문제 보정 */
+let pendingRematchFromPeer = /** @type {{ senderUid: string, senderName: string } | null} */ (null);
+/** mountRaceV3Game(serverRace) 에서 할당 — 엔딩 진입 시 pendingRematchFromPeer 플러시 */
+let openRematchInviteFromPeer = /** @type {((senderUid: string, senderName: string) => void) | null} */ (null);
 
 // ═══ PLAYERS ═══
 function mk(cpu){return{
@@ -1098,6 +1104,15 @@ function syncRace3D() {
         }
       }
     }
+    if (pendingRematchFromPeer && openRematchInviteFromPeer) {
+      const pr = pendingRematchFromPeer;
+      pendingRematchFromPeer = null;
+      try {
+        openRematchInviteFromPeer(pr.senderUid, pr.senderName);
+      } catch (e) {
+        console.warn('[race] flush pending rematch invite', e);
+      }
+    }
     const myWin = winner === 'YOU';
     const oppWin = winner === 'CPU';
     renderer3D.setEnding(
@@ -1120,7 +1135,7 @@ function syncRace3D() {
             showAppToast('상대방 정보가 없습니다.');
             return;
           }
-          const sock = serverRaceOpt?.socket;
+          const sock = getRaceIoSocket() || serverRaceOpt?.socket;
           if (!sock || !sock.connected) {
             showAppToast('상대방이 떠났습니다.');
             return;
@@ -1315,7 +1330,19 @@ if(serverRaceOpt){
     else if(reason==='not_in_ending'||reason==='no_room')showAppToast('지금은 재대전을 요청할 수 없어요.');
   };
   sock.on('rematchUnavailable',onRematchUnavailable);
+  openRematchInviteFromPeer = (senderUid, senderName) => {
+    showRematchRequest(senderName, () => {
+      const s = getRaceIoSocket() || sock;
+      if (!s?.connected) return;
+      s.emit('acceptRematch', {
+        peerUid: senderUid,
+        terrain: raceTerrainKey || 'normal',
+        profile: serverRaceOpt?.myProfile || {},
+      });
+    }, () => {});
+  };
   const onCountdown=(d)=>{
+    pendingRematchFromPeer = null;
     touchServerRaceIo();
     if(racingResyncIntervalId){
       clearInterval(racingResyncIntervalId);
@@ -1471,14 +1498,15 @@ if(serverRaceOpt){
     const senderUid=typeof data.senderUid==='string'?data.senderUid:'';
     const senderName=typeof data.senderName==='string'?data.senderName:'상대';
     if(!senderUid)return;
-    if(state!=='ending')return;
-    showRematchRequest(senderName,()=>{
-      sock.emit('acceptRematch',{
-        peerUid:senderUid,
-        terrain:raceTerrainKey||'normal',
-        profile:serverRaceOpt?.myProfile||{},
-      });
-    },()=>{});
+    if(state==='ending'){
+      pendingRematchFromPeer = null;
+      openRematchInviteFromPeer?.(senderUid,senderName);
+      return;
+    }
+    if(state==='racing'||state==='countdown'){
+      pendingRematchFromPeer={senderUid,senderName};
+      return;
+    }
   };
   sock.on('receiveRematch',onReceiveRematch);
   const getRaceMyUid=()=>{
@@ -1576,6 +1604,8 @@ if(EMBED_APP&&!serverRaceOpt){
   function stop() {
     if (raceStopped) return;
     raceStopped = true;
+    pendingRematchFromPeer = null;
+    openRematchInviteFromPeer = null;
     if(srvHandlers){
       if(countdownResyncIntervalId){
         clearInterval(countdownResyncIntervalId);
