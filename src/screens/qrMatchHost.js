@@ -16,6 +16,13 @@ import { showAppToast } from '../services/toast.js';
 
 const QR_TIMEOUT_SEC = 180; // 서버 QR_PENDING_MS 와 동기화 (3분)
 
+const QR_TO_DATA_URL_OPTS = {
+  margin: 3,
+  width: 320,
+  errorCorrectionLevel: 'L',
+  color: { dark: '#ffffffFF', light: '#000000FF' },
+};
+
 /**
  * @param {HTMLElement} root
  * @param {{ navigate: (s: string, p?: object) => void, state: object }} api
@@ -126,6 +133,77 @@ export function mountQrMatchHost(root, api) {
 
   /* ── QR URL 저장 ── */
   let qrUrl = '';
+  /** 서버에 방이 한 번 만들어진 뒤 — 폰에서 화면 꺼짐·망 끊김 시 소켓 끊기면 서버가 방을 지우므로 reconnect 시 새로 생성 */
+  let roomLive = false;
+
+  function buildCreateBody() {
+    return {
+      terrain: api.state.terrain || 'normal',
+      nickname: api.state.nickname,
+      photoURL: api.state.profilePhotoURL,
+      duckId: api.state.selectedDuckId,
+      wins: api.state.wins,
+      losses: api.state.losses,
+      draws: api.state.draws,
+      socketId: sock.id,
+    };
+  }
+
+  async function applyNewQrRoom(j) {
+    qrUrl = j.qrUrl;
+    img.src = await QRCode.toDataURL(qrUrl, QR_TO_DATA_URL_OPTS);
+    btnCopy.disabled = false;
+    btnShare.disabled = false;
+    status.textContent = '상대를 기다리는 중…';
+  }
+
+  /** 소켓 재연결 직후 — 이전 matchCode 는 서버에서 이미 폐기됨 */
+  async function refreshQrAfterReconnect() {
+    if (disposed || !roomLive) return;
+    if (getBalance(api.state) < 1) {
+      showAppToast('하트가 부족해요.');
+      disposed = true;
+      stopTimer();
+      sock.off('matchFound', onFound);
+      sock.off('qrMatchExpired', onExpired);
+      sock.off('reconnect', onReconnect);
+      sock.off('disconnect', onHostDisconnect);
+      window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
+      api.navigate('lobby');
+      return;
+    }
+    try {
+      status.textContent = '연결 복구 — QR 새로 만드는 중…';
+      const j = await createQrMatchRoom(buildCreateBody());
+      if (disposed) return;
+      await applyNewQrRoom(j);
+      remainSec = QR_TIMEOUT_SEC;
+      updateTimer();
+      showAppToast('연결이 복구되어 QR을 새로 만들었어요. 이 코드로 스캔해 주세요.');
+    } catch (e) {
+      console.error('[qrMatchHost] reconnect refresh', e);
+      if (!disposed) {
+        showAppToast('연결은 됐지만 QR을 새로 만들지 못했어요. 로비에서 다시 시도해 주세요.');
+        disposed = true;
+        stopTimer();
+        sock.off('matchFound', onFound);
+        sock.off('qrMatchExpired', onExpired);
+        sock.off('reconnect', onReconnect);
+        sock.off('disconnect', onHostDisconnect);
+        window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
+        api.navigate('lobby');
+      }
+    }
+  }
+
+  function onReconnect() {
+    void refreshQrAfterReconnect();
+  }
+
+  function onHostDisconnect() {
+    if (disposed || !roomLive) return;
+    status.textContent = '연결이 잠시 끊겼어요. 복구되면 자동으로 QR이 갱신됩니다.';
+  }
 
   /* ── 소켓 이벤트 ── */
   const onFound = (data) => {
@@ -162,8 +240,11 @@ export function mountQrMatchHost(root, api) {
       draws: opp.draws ?? 0,
     };
     disposed = true;
+    roomLive = false;
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
+    sock.off('reconnect', onReconnect);
+    sock.off('disconnect', onHostDisconnect);
     window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
     api.navigate('race');
   };
@@ -173,20 +254,26 @@ export function mountQrMatchHost(root, api) {
     stopTimer();
     showAppToast('대기 시간이 지났어요. 다시 시도해 주세요.');
     disposed = true;
+    roomLive = false;
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
+    sock.off('reconnect', onReconnect);
+    sock.off('disconnect', onHostDisconnect);
     window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
     api.navigate('lobby');
   };
 
   sock.on('matchFound', onFound);
   sock.on('qrMatchExpired', onExpired);
+  sock.on('reconnect', onReconnect);
+  sock.on('disconnect', onHostDisconnect);
 
   const onMatchErrorHost = (ev) => {
     const d = ev.detail;
     if (disposed) return;
     if (!d || d.reason !== 'noHearts') return;
     disposed = true;
+    roomLive = false;
     stopTimer();
     try {
       pendingConnectCleanup?.();
@@ -196,6 +283,8 @@ export function mountQrMatchHost(root, api) {
     pendingConnectCleanup = null;
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
+    sock.off('reconnect', onReconnect);
+    sock.off('disconnect', onHostDisconnect);
     window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
     sock.emit('qrMatchCancel');
     window.alert(
@@ -285,8 +374,11 @@ export function mountQrMatchHost(root, api) {
     stopTimer();
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
+    sock.off('reconnect', onReconnect);
+    sock.off('disconnect', onHostDisconnect);
     window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
     sock.emit('qrMatchCancel');
+    roomLive = false;
     api.navigate('lobby');
   });
 
@@ -307,32 +399,11 @@ export function mountQrMatchHost(root, api) {
         return;
       }
 
-      const j = await createQrMatchRoom({
-        terrain,
-        nickname: api.state.nickname,
-        photoURL: api.state.profilePhotoURL,
-        duckId: api.state.selectedDuckId,
-        wins: api.state.wins,
-        losses: api.state.losses,
-        draws: api.state.draws,
-        socketId: sock.id,
-      });
+      const j = await createQrMatchRoom(buildCreateBody());
       if (disposed) return;
 
-      qrUrl = j.qrUrl;
-
-      const dataUrl = await QRCode.toDataURL(qrUrl, {
-        margin: 3,
-        width: 320,
-        errorCorrectionLevel: 'L',
-        color: { dark: '#ffffffFF', light: '#000000FF' },
-      });
-      img.src = dataUrl;
-
-      btnCopy.disabled = false;
-      btnShare.disabled = false;
-
-      status.textContent = '상대를 기다리는 중…';
+      roomLive = true;
+      await applyNewQrRoom(j);
       startTimer();
     } catch (e) {
       console.error('[qrMatchHost]', e);
@@ -343,8 +414,11 @@ export function mountQrMatchHost(root, api) {
         showAppToast('QR 방을 만들지 못했어요. 잠시 후 다시 시도해 주세요.');
       }
       disposed = true;
+      roomLive = false;
       sock.off('matchFound', onFound);
       sock.off('qrMatchExpired', onExpired);
+      sock.off('reconnect', onReconnect);
+      sock.off('disconnect', onHostDisconnect);
       window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
       api.navigate('lobby');
     }
