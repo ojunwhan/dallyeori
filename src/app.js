@@ -114,8 +114,7 @@ function removeRaceMount() {
     }
     raceV3Unmount = null;
   }
-  const staleHost = gameRoot.querySelector('#race-v3-host');
-  if (staleHost) staleHost.remove();
+  gameRoot.querySelectorAll('#race-v3-host').forEach((el) => el.remove());
   appRoot.classList.remove('app-root--pass-through', 'app-root--race-hidden');
 }
 
@@ -537,6 +536,7 @@ function runRace(_payload) {
   appRoot.classList.remove('app-root--pass-through');
   appRoot.classList.add('app-root--race-hidden');
 
+  gameRoot.querySelectorAll('#race-v3-host').forEach((el) => el.remove());
   const host = document.createElement('div');
   host.id = 'race-v3-host';
   gameRoot.appendChild(host);
@@ -582,13 +582,37 @@ function runRace(_payload) {
     };
   }
 
-  raceV3Unmount = mountRaceV3Game(host, {
-    onFinish: (pl) => onRaceFinishPayload(pl),
-    terrainKey: appState.terrain || 'normal',
-    getAppState: () => appState,
-    serverRace,
-    embedMode: false,
-  });
+  try {
+    raceV3Unmount = mountRaceV3Game(host, {
+      onFinish: (pl) => onRaceFinishPayload(pl),
+      terrainKey: appState.terrain || 'normal',
+      getAppState: () => appState,
+      serverRace,
+      embedMode: false,
+    });
+  } catch (err) {
+    console.error('[race] mountRaceV3Game 실패', err);
+    raceV3Unmount = () => {
+      try {
+        host.remove();
+      } catch (_) {
+        /* ignore */
+      }
+    };
+    host.replaceChildren();
+    const msg = document.createElement('div');
+    msg.setAttribute('role', 'alert');
+    msg.style.cssText =
+      'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +
+      'padding:24px;box-sizing:border-box;text-align:center;color:#fff;font-size:16px;line-height:1.55;' +
+      'background:linear-gradient(180deg,#1e2a3a,#0a0f14);z-index:10;';
+    msg.innerHTML =
+      '<div><strong>경기 화면 초기화에 실패했어요.</strong><br/>' +
+      'Chrome/Safari에서 다시 열거나 새로고침 해 주세요.<br/>' +
+      '<span style="display:block;margin-top:14px;opacity:.75;font-size:13px">콘솔에 빨간 오류가 있으면 캡처해 주세요.</span></div>';
+    host.appendChild(msg);
+    showAppToast('경기 화면을 띄우지 못했어요.');
+  }
 
   if (pr && raceSlot != null && pr.roomId && liveRaceSock) {
     emitRaceJoin(pr.roomId, raceSlot, liveRaceSock, getJwtUid() || (typeof appState.user?.uid === 'string' ? appState.user.uid : ''));

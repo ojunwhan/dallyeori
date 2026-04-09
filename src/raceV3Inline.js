@@ -25,9 +25,13 @@ import { createRace3DRenderer } from './race3DRenderer.js';
  * @returns {() => void} stop — 리스너·rAF 정리
  */
 export function mountRaceV3Game(hostEl, options) {
-  pendingRematchFromPeer = null;
-  openRematchInviteFromPeer = null;
-  _wireOppLastFoot = null;
+  /**
+   * 매 마운트마다 초기화. 반드시 이 블록에서 `let` 선언 — 아래쪽 동일 이름 `let`보다
+   * 위에서 대입하면 TDZ(ReferenceError: Cannot access before initialization) 발생.
+   */
+  let pendingRematchFromPeer = /** @type {{ senderUid: string, senderName: string } | null} */ (null);
+  let openRematchInviteFromPeer = /** @type {((senderUid: string, senderName: string) => void) | null} */ (null);
+  let _wireOppLastFoot = /** @type {'L'|'R'|null} */ (null);
   const onFinish = options && options.onFinish;
   const getAppState = options && typeof options.getAppState === 'function' ? options.getAppState : null;
   function normalizeTerrainKey(k) {
@@ -324,12 +328,6 @@ let playerSquash=false;
 let oppSquash=false;
 /** 온라인 ready 에서 requestRaceSync 스팸 방지 */
 let lastReadyRaceSyncAt=0;
-/** receiveRematch 가 raceResult(엔딩)보다 먼저 오면 state===racing 이라 무시되던 문제 보정 */
-let pendingRematchFromPeer = /** @type {{ senderUid: string, senderName: string } | null} */ (null);
-/** mountRaceV3Game(serverRace) 에서 할당 — 엔딩 진입 시 pendingRematchFromPeer 플러시 */
-let openRematchInviteFromPeer = /** @type {((senderUid: string, senderName: string) => void) | null} */ (null);
-/** raceTick 상대 lastFoot 직전값 — 탭 스냅샷으로 다리 보조 */
-let _wireOppLastFoot = /** @type {'L'|'R'|null} */ (null);
 
 // ═══ PLAYERS ═══
 function mk(cpu){return{
