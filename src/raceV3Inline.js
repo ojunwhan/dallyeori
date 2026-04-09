@@ -309,6 +309,8 @@ let serverRaceSnap=null;
 let serverFinishPayload=null;
 /** 서버 카운트다운 기준 시각(ms) — 이벤트 유실 시에도 로컬에서 숫자·GO 진행 */
 let serverCdStartAt=/** @type {number|null} */(null);
+/** countdown.serverNow 와 수신 시점 Date.now() 차이 — 폰 시계·서버 시계 어긋남 보정(ms) */
+let serverClockOffsetMs=0;
 let _cdGoRecoverAcc=0;
 /** 서버 레이스 이벤트 수신 시각 — connected 만으로 재연결 UI 판단 시 PC 오탐 방지 */
 let lastServerRaceIoAt=0;
@@ -818,7 +820,7 @@ function applyServerCountdownWallClock(){
   if(state!=='countdown')return null;
   const srvCd=!!serverRaceOpt;
   if(!srvCd||serverCdStartAt==null||!Number.isFinite(serverCdStartAt))return null;
-  const elapsed=Date.now()-serverCdStartAt;
+  const elapsed=Date.now()+serverClockOffsetMs-serverCdStartAt;
   /** 서버 시각·단말 시각 차이로 elapsed 가 짧게 나오면 idx 가 한 박자 느림 → 덮어쓰기만 하면 2에 고정됨 */
   const idx=Math.min(3,Math.floor(Math.max(0,elapsed+180)/1000));
   const counts=[3,2,1,0];
@@ -1375,12 +1377,24 @@ if(serverRaceOpt){
     }
     ensureAudio();
     state='countdown';
+    serverClockOffsetMs=0;
     const rawC=d&&Object.prototype.hasOwnProperty.call(d,'count')?d.count:3;
     const cNum=typeof rawC==='number'?rawC:Number(rawC);
     const c=Number.isFinite(cNum)?cNum:3;
     const cNorm=Math.max(0,Math.min(3,c));
     cdVal=cNorm;
     cdT=0;
+    const rawSn=d&&Object.prototype.hasOwnProperty.call(d,'serverNow')?d.serverNow:undefined;
+    let serverNowMs=NaN;
+    if(typeof rawSn==='number'&&Number.isFinite(rawSn)&&rawSn>0){
+      serverNowMs=rawSn;
+    }else if(typeof rawSn==='string'){
+      const n=Number(rawSn);
+      if(Number.isFinite(n)&&n>0)serverNowMs=n;
+    }
+    if(Number.isFinite(serverNowMs)){
+      serverClockOffsetMs=serverNowMs-Date.now();
+    }
     const rawSa=d&&Object.prototype.hasOwnProperty.call(d,'startAt')?d.startAt:undefined;
     let startMs=NaN;
     if(typeof rawSa==='number'&&Number.isFinite(rawSa)&&rawSa>0){
@@ -1393,7 +1407,7 @@ if(serverRaceOpt){
       serverCdStartAt=startMs;
     }else if(serverCdStartAt==null){
       /** startAt 누락·구버전 서버: 수신 count 기준으로 가상 시작 시각 (이벤트만으로는 2에서 멈춤) */
-      serverCdStartAt=Date.now()-(3-cNorm)*1000;
+      serverCdStartAt=Date.now()+serverClockOffsetMs-(3-cNorm)*1000;
     }
     countdownWallMsIntervalId=window.setInterval(()=>{
       if(state!=='countdown'){
@@ -1443,6 +1457,7 @@ if(serverRaceOpt){
     }
     touchServerRaceIo();
     serverCdStartAt=null;
+    serverClockOffsetMs=0;
     _cdGoRecoverAcc=0;
     lastRaceTickRecvAt=0;
     state='racing';
@@ -1471,6 +1486,7 @@ if(serverRaceOpt){
     ){
       const wasCd = state === 'countdown';
       serverCdStartAt=null;
+      serverClockOffsetMs=0;
       _cdGoRecoverAcc=0;
       lastRaceTickRecvAt=Date.now();
       if(countdownResyncIntervalId){
@@ -1643,6 +1659,7 @@ if(EMBED_APP&&!serverRaceOpt){
         countdownWallMsIntervalId=0;
       }
       serverCdStartAt=null;
+      serverClockOffsetMs=0;
       _cdGoRecoverAcc=0;
       lastServerRaceIoAt=0;
       lastRaceTickRecvAt=0;
