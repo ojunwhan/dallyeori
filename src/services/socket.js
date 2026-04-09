@@ -454,15 +454,30 @@ export function getRaceJoinPayloadUid() {
 export function ensureSocket() {
   console.log('[socket] ensureSocket called, token:', !!getToken(), 'existing:', !!gameSocket, 'connected:', gameSocket?.connected);
   if (guestQrFlowActive) {
-    if (gameSocket?.connected) {
+    const loginTok = getToken();
+    /**
+     * localStorage 에 로그인 JWT 가 있으면 QR 게스트 플래그만으로 게스트 소켓을 고집하지 않음.
+     * (같은 탭에서 게스트 링크를 한 번 연 뒤 SPA 로 로비·QR 호스트에 오면 PC 가 막히던 현상)
+     */
+    if (loginTok) {
+      guestQrFlowActive = false;
+      try {
+        gameSocket?.disconnect();
+      } catch {
+        /* ignore */
+      }
+      gameSocket = null;
+      lastSocketToken = null;
+    } else if (gameSocket?.connected) {
       attachReceiveChatRelay(gameSocket);
       attachReceiveHeartRelay(gameSocket);
       attachHeartEconomyRelay(gameSocket);
       attachReceiveFriendRematchRelay(gameSocket);
       attachGlobalMatchFoundBridge(gameSocket);
       return gameSocket;
+    } else {
+      return null;
     }
-    return null;
   }
 
   const token = getToken();

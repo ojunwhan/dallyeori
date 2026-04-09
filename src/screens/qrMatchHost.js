@@ -4,7 +4,7 @@
 
 import QRCode from 'qrcode';
 import { createQrMatchRoom } from '../services/qrMatchApi.js';
-import { ensureSocket, getGameSocket, normalizeRaceSlot } from '../services/socket.js';
+import { endGuestQrFlow, ensureSocket, getGameSocket, normalizeRaceSlot } from '../services/socket.js';
 import { getBalance } from '../services/hearts.js';
 import { showAppToast } from '../services/toast.js';
 
@@ -15,6 +15,9 @@ const QR_TIMEOUT_SEC = 180; // 서버 QR_PENDING_MS 와 동기화 (3분)
  * @param {{ navigate: (s: string, p?: object) => void, state: object }} api
  */
 export function mountQrMatchHost(root, api) {
+  if (!api.state.qrGuestOneShot) {
+    endGuestQrFlow();
+  }
   const wrap = document.createElement('div');
   wrap.className = 'app-screen qr-match-screen';
 
