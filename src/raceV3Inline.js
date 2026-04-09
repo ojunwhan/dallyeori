@@ -246,6 +246,50 @@ function playSlap(){
   g.gain.setValueAtTime(.3,t);g.gain.exponentialRampToValueAtTime(.001,t+.09);
   o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+.09);
 }
+/**
+ * 레이스 탭 — 합성 클릭음 + vibrate (파일 없음). 모바일은 첫 ensure 후 resume.
+ * @param {'good'|'same'|'stumble'} kind
+ */
+function playTapFeedback(kind){
+  ensureAudio();
+  if(ac&&ac.state==='suspended')void ac.resume();
+  if(!ac)return;
+  const t0=ac.currentTime;
+  const g=ac.createGain();
+  g.connect(ac.destination);
+  g.gain.setValueAtTime(0.0001,t0);
+  let f0,f1,dur,peak;
+  if(kind==='good'){
+    f0=1550+Math.random()*120;
+    f1=Math.max(80,f0*0.92);
+    dur=0.038;
+    peak=0.2;
+  }else if(kind==='same'){
+    f0=520+Math.random()*80;
+    f1=Math.max(60,f0*0.85);
+    dur=0.048;
+    peak=0.18;
+  }else{
+    f0=280+Math.random()*60;
+    f1=Math.max(50,f0*0.78);
+    dur=0.056;
+    peak=0.22;
+  }
+  g.gain.exponentialRampToValueAtTime(peak,t0+0.004);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  const o=ac.createOscillator();
+  o.type='sine';
+  o.frequency.setValueAtTime(f0,t0);
+  o.frequency.exponentialRampToValueAtTime(f1,t0+dur*0.88);
+  o.connect(g);
+  o.start(t0);
+  o.stop(t0+dur+0.012);
+  if(typeof navigator!=='undefined'&&typeof navigator.vibrate==='function'){
+    if(kind==='good')navigator.vibrate(15);
+    else if(kind==='same')navigator.vibrate(30);
+    else navigator.vibrate([20,10,20]);
+  }
+}
 
 // ═══ STATE ═══
 let state='ready',cdVal=CD_START_VAL,cdT=0,raceT=0,winner=null,endT=0,flowAcc=0;
@@ -501,8 +545,7 @@ function tap(foot){
     p.rightLegTarget=0.7;
     p.leftLegTarget=-0.3;
   }
-  playSlap();
-  hapticLight(10);
+  playTapFeedback(p.stumble?'stumble':sameFoot?'same':'good');
   bumpPadGlow(foot);
   P.bodySwTgt=foot==='L'?0.68:-0.68;
   if(serverRaceOpt&&typeof serverRaceOpt.emitTap==='function'){

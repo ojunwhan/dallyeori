@@ -417,6 +417,27 @@ export function createRace3DRenderer(hostEl, options = {}) {
   scene.add(duckRoot);
   scene.add(oppRoot);
 
+  function makeFootContactShadowMesh() {
+    const geo = new THREE.CircleGeometry(0.14, 20);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.25,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -0.5,
+      polygonOffsetUnits: -0.5,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    return mesh;
+  }
+  const playerFootShL = makeFootContactShadowMesh();
+  const playerFootShR = makeFootContactShadowMesh();
+  const oppFootShL = makeFootContactShadowMesh();
+  const oppFootShR = makeFootContactShadowMesh();
+  scene.add(playerFootShL, playerFootShR, oppFootShL, oppFootShR);
+
   const cdOverlayEl = document.createElement('div');
   cdOverlayEl.setAttribute('aria-hidden', 'true');
   cdOverlayEl.style.cssText =
@@ -464,6 +485,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
   /** 출발 시 화면이 흔들리던 원인: 짧은 FOV 사인 펄스(55±10°) — 제거 */
   let animId = 0;
   const clock = new THREE.Clock();
+  const _vFootWorld = new THREE.Vector3();
 
   function updatePlayer(state) {
     if (!state || typeof state !== 'object') return;
@@ -801,6 +823,17 @@ export function createRace3DRenderer(hostEl, options = {}) {
       oppDuck.rightWing.rotation.y = 0.15;
       oppRoot.position.y = oppRoot.position.y * (1 - dt * 6);
     }
+
+    duckRoot.updateMatrixWorld(true);
+    oppRoot.updateMatrixWorld(true);
+    playerDuck.leftLeg.foot.getWorldPosition(_vFootWorld);
+    playerFootShL.position.set(_vFootWorld.x, 0.01, _vFootWorld.z);
+    playerDuck.rightLeg.foot.getWorldPosition(_vFootWorld);
+    playerFootShR.position.set(_vFootWorld.x, 0.01, _vFootWorld.z);
+    oppDuck.leftLeg.foot.getWorldPosition(_vFootWorld);
+    oppFootShL.position.set(_vFootWorld.x, 0.01, _vFootWorld.z);
+    oppDuck.rightLeg.foot.getWorldPosition(_vFootWorld);
+    oppFootShR.position.set(_vFootWorld.x, 0.01, _vFootWorld.z);
 
     /** 트랙 X 중앙 고정, Z만 내 오리 거리(시각 스케일) 따라 추적 */
     const distSafe = Number.isFinite(distP) ? distP : 0;
