@@ -72,12 +72,30 @@ export function mountRaceV3Game(hostEl, options) {
   try {
     hostEl.focus({ preventScroll: true });
   } catch (e) {}
-  const renderer3D = createRace3DRenderer(hostEl, {
-    terrainKey: raceTerrainKey,
-    myDuckId: serverRaceOpt?.myDuckId || 'duri',
-    oppDuckId: serverRaceOpt?.oppDuckId || 'tori',
-    myServerSlot,
-  });
+  let renderer3D;
+  try {
+    renderer3D = createRace3DRenderer(hostEl, {
+      terrainKey: raceTerrainKey,
+      myDuckId: serverRaceOpt?.myDuckId || 'duri',
+      oppDuckId: serverRaceOpt?.oppDuckId || 'tori',
+      myServerSlot,
+    });
+  } catch (err) {
+    console.error('[race] 3D/WebGL 초기화 실패', err);
+    const fail = document.createElement('div');
+    fail.setAttribute('role', 'alert');
+    fail.style.cssText =
+      'position:absolute;inset:0;z-index:400;display:flex;align-items:center;justify-content:center;' +
+      'padding:24px;color:#fff;background:linear-gradient(180deg,#1a1a1a,#0d0d0d);text-align:center;' +
+      'font-size:16px;line-height:1.5;box-sizing:border-box;';
+    fail.innerHTML =
+      '<div><strong>경기 화면을 불러오지 못했어요.</strong><br/>새로고침 하거나, 절전 모드를 끄고 다시 시도해 주세요.<br/>' +
+      '<span style="opacity:.7;font-size:13px;margin-top:12px;display:block">(서버 로그보다 브라우저/기기 WebGL 문제인 경우가 많습니다)</span></div>';
+    hostEl.appendChild(fail);
+    return () => {
+      fail.remove();
+    };
+  }
   const hudEl = document.createElement('div');
   hudEl.id = 'race-hud';
   hudEl.style.cssText =
@@ -132,6 +150,13 @@ export function mountRaceV3Game(hostEl, options) {
     updateTapPadsVisibility();
   }
   resize();
+  requestAnimationFrame(() => {
+    try {
+      renderer3D.resize();
+    } catch (_) {
+      /* ignore */
+    }
+  });
   window.addEventListener('resize', resize);
 
 'use strict';

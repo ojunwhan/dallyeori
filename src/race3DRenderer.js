@@ -18,6 +18,19 @@ const BODY_SIDE_SWAY_MUL = 1.58;
 /** 탭 1회당 좌우 롤 킥(L=+, R=-) — 크기만 고정 스칼라 */
 const WOBBLE_IMPULSE_TAP = 0.12;
 
+/**
+ * 경주 호스트가 방금 붙은 직후 clientWidth=0 인 브라우저 대비 — WebGL 0크기·검정 화면 방지
+ * @param {HTMLElement} hostEl
+ */
+function hostViewportSize(hostEl) {
+  const cw = hostEl.clientWidth || 0;
+  const ch = hostEl.clientHeight || 0;
+  if (cw >= 32 && ch >= 32) return { w: cw, h: ch };
+  const iw = typeof window !== 'undefined' ? window.innerWidth : 300;
+  const ih = typeof window !== 'undefined' ? window.innerHeight : 150;
+  return { w: Math.max(320, cw || iw), h: Math.max(240, ch || ih) };
+}
+
 function clayMat(hex, r = 0.88, m = 0.04) {
   return new THREE.MeshStandardMaterial({
     color: hex,
@@ -272,12 +285,14 @@ export function createRace3DRenderer(hostEl, options = {}) {
   const myCol = duckColorsFromId(myId);
   const oppCol = duckColorsFromId(oppId);
 
-  const prevHostPos = hostEl.style.position;
-  if (!prevHostPos || prevHostPos === 'static') hostEl.style.position = 'relative';
+  /** 부모가 position:fixed full-screen 이면 절대 relative 로 깨지 않게 */
+  const posBefore = hostEl.style.position;
+  if (posBefore !== 'fixed' && (!posBefore || posBefore === 'static')) {
+    hostEl.style.position = 'relative';
+  }
   hostEl.style.overflow = 'hidden';
 
-  const w0 = Math.max(1, hostEl.clientWidth || hostEl.offsetWidth || 300);
-  const h0 = Math.max(1, hostEl.clientHeight || hostEl.offsetHeight || 150);
+  const { w: w0, h: h0 } = hostViewportSize(hostEl);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87c5ff);
@@ -286,21 +301,27 @@ export function createRace3DRenderer(hostEl, options = {}) {
   const camera = new THREE.PerspectiveCamera(BASE_CAMERA_FOV, w0 / h0, 0.1, 650);
   camera.position.set(0, 4.5, 8);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    alpha: false,
+    powerPreference: 'default',
+    failIfMajorPerformanceCaveat: false,
+  });
   renderer.setSize(w0, h0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   hostEl.appendChild(renderer.domElement);
-  /** 부모 touch-action:manipulation 과 함께 쓰일 때 캔버스 드래그가 페이지 스크롤을 건드리지 않게 */
-  renderer.domElement.style.touchAction = 'none';
+  const cEl = renderer.domElement;
+  cEl.style.cssText =
+    'display:block;width:100%;height:100%;vertical-align:top;touch-action:none;outline:none;';
 
   const hemi = new THREE.HemisphereLight(0xfff5e6, 0x3d5c3a, 0.85);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffffff, 1.05);
   sun.position.set(4, 14, 6);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1024, 1024);
   sun.shadow.camera.near = 0.5;
   sun.shadow.camera.far = 220;
   sun.shadow.camera.left = -40;
@@ -531,8 +552,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
   }
 
   function resize() {
-    const w = Math.max(1, hostEl.clientWidth || hostEl.offsetWidth || 300);
-    const h = Math.max(1, hostEl.clientHeight || hostEl.offsetHeight || 150);
+    const { w, h } = hostViewportSize(hostEl);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
