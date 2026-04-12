@@ -440,17 +440,14 @@ export function createRace3DRenderer(hostEl, options = {}) {
   scene.add(playerFootShL, playerFootShR, oppFootShL, oppFootShR);
 
   const playerCollarMat = /** @type {THREE.MeshStandardMaterial} */ (playerDuck.collar.material);
-  const oppCollarMat = /** @type {THREE.MeshStandardMaterial} */ (oppDuck.collar.material);
-  oppCollarMat.emissive.setHex(0x000000);
-  oppCollarMat.emissiveIntensity = 0;
-  playerCollarMat.emissive.setHex(myCol.collar);
-  playerCollarMat.emissiveIntensity = 0;
+  const originalCollarColor = playerCollarMat.color.clone();
+  const whiteColorReused = new THREE.Color(0xffffff);
 
   let collarPulseActive = false;
   function setFloorRingVisible(v) {
     collarPulseActive = !!v;
     if (!collarPulseActive) {
-      playerCollarMat.emissiveIntensity = 0;
+      playerCollarMat.color.copy(originalCollarColor);
     }
   }
 
@@ -853,15 +850,16 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
     if (collarPulseActive) {
       const t = clock.getElapsedTime();
-      playerCollarMat.emissiveIntensity = 0.9 + Math.sin(t * Math.PI * 2.8) * 0.9;
+      const pulse = (Math.sin(t * Math.PI * 2.8) + 1) / 2;
+      playerCollarMat.color.copy(originalCollarColor).lerp(whiteColorReused, pulse * 0.85);
     }
 
     /** 트랙 X 중앙 고정, Z만 내 오리 거리(시각 스케일) 따라 추적 */
     const distSafe = Number.isFinite(distP) ? distP : 0;
     const camX = 0;
     const camFollowDist = Math.max(0, distSafe) * STRIDE_VISUAL_SCALE;
-    const camTargetPos = new THREE.Vector3(camX, 1.35, -camFollowDist);
-    const camDesired = new THREE.Vector3(camX, 4.15, -camFollowDist + 8);
+    const camTargetPos = new THREE.Vector3(camX, 1.2, -camFollowDist);
+    const camDesired = new THREE.Vector3(camX, 3.0, -camFollowDist + 5.5);
     camera.position.lerp(camDesired, 0.05);
     camera.lookAt(camTargetPos);
 
