@@ -1095,6 +1095,11 @@ let _cdStationBeepKey = /** @type {string | null} */ (null);
 /** PC 등에서 transport 업그레이드로 disconnect→connect 순서가 꼬여도 connected 기준으로 오버레이 동기화 */
 let raceReconnectOvRef = /** @type {HTMLDivElement | null} */ (null);
 function syncRace3D() {
+  if (renderer3D && typeof renderer3D.setFloorRingVisible === 'function') {
+    renderer3D.setFloorRingVisible(
+      state === 'countdown' || state === 'racing' || state === 'ending' || state === 'result',
+    );
+  }
   tapPadsWrap.style.display = state === 'ending' || state === 'result' ? 'none' : 'flex';
   if (state === 'ready' && _r3PrevState !== 'ready') {
     renderer3D.setCountdown(null);
@@ -1227,7 +1232,7 @@ function syncRace3D() {
   if (state === 'racing' || state === 'ending' || state === 'result') {
     hudEl.innerHTML =
       `<div style="font-size:24px;font-weight:bold;line-height:1.2">${rem.toFixed(2)}초</div>` +
-      `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나: ${P.dist.toFixed(3)}m | 상대: ${CPU.dist.toFixed(3)}m</div>`;
+      `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나(${hudLabelMe()}): ${P.dist.toFixed(3)}m | 상대(${hudLabelOpp()}): ${CPU.dist.toFixed(3)}m</div>`;
   } else {
     hudEl.innerHTML = '';
   }

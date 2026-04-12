@@ -14,6 +14,10 @@ const TRACK_WORLD_LEN = 400;
  * 줄무늬 텍스처 주기도 동일 배율로 맞춤(한 탭 = 한 줄 주기 유지)
  */
 const STRIDE_VISUAL_SCALE = 1.38;
+/** 내 오리 발밑 하이라이트 링 (월드 단위 m, 반지름) */
+const FLOOR_RING_Y = 0.02;
+const FLOOR_RING_INNER_R = 0.225;
+const FLOOR_RING_OUTER_R = 0.3;
 const TRACK_STRIPE_CYCLE_M = TAP_STRIDE_M * STRIDE_VISUAL_SCALE;
 const BASE_CAMERA_FOV = 63;
 const IDLE_ENTER = 0.15;
@@ -438,6 +442,25 @@ export function createRace3DRenderer(hostEl, options = {}) {
   const oppFootShR = makeFootContactShadowMesh();
   scene.add(playerFootShL, playerFootShR, oppFootShL, oppFootShR);
 
+  const ringGeo = new THREE.RingGeometry(FLOOR_RING_INNER_R, FLOOR_RING_OUTER_R, 48);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.35,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const myFloorRing = new THREE.Mesh(ringGeo, ringMat);
+  myFloorRing.rotation.x = -Math.PI / 2;
+  myFloorRing.visible = false;
+  scene.add(myFloorRing);
+
+  let floorRingVisible = false;
+  function setFloorRingVisible(v) {
+    floorRingVisible = !!v;
+    myFloorRing.visible = floorRingVisible;
+  }
+
   const cdOverlayEl = document.createElement('div');
   cdOverlayEl.setAttribute('aria-hidden', 'true');
   cdOverlayEl.style.cssText =
@@ -835,6 +858,10 @@ export function createRace3DRenderer(hostEl, options = {}) {
     oppDuck.rightLeg.foot.getWorldPosition(_vFootWorld);
     oppFootShR.position.set(_vFootWorld.x, 0.01, _vFootWorld.z);
 
+    if (floorRingVisible) {
+      myFloorRing.position.set(duckRoot.position.x, FLOOR_RING_Y, duckRoot.position.z);
+    }
+
     /** 트랙 X 중앙 고정, Z만 내 오리 거리(시각 스케일) 따라 추적 */
     const distSafe = Number.isFinite(distP) ? distP : 0;
     const camX = 0;
@@ -855,6 +882,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
     setCountdown,
     setRacing,
     setEnding,
+    setFloorRingVisible,
     resize,
     dispose,
     getCanvas: () => renderer.domElement,
