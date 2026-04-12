@@ -14,10 +14,8 @@ const TRACK_WORLD_LEN = 400;
  * 줄무늬 텍스처 주기도 동일 배율로 맞춤(한 탭 = 한 줄 주기 유지)
  */
 const STRIDE_VISUAL_SCALE = 1.38;
-/** 내 오리 발밑 하이라이트 링 (월드 단위 m, 반지름) */
-const FLOOR_RING_Y = 0.02;
-const FLOOR_RING_INNER_R = 0.225;
-const FLOOR_RING_OUTER_R = 0.3;
+/** 아리 — 밝은 몸색 대비 맥동 emissive 전용 연한 하늘 */
+const COLLAR_PULSE_EMISSIVE_ARI_HEX = 0xb8d4e8;
 const TRACK_STRIPE_CYCLE_M = TAP_STRIDE_M * STRIDE_VISUAL_SCALE;
 const BASE_CAMERA_FOV = 63;
 const IDLE_ENTER = 0.15;
@@ -262,6 +260,7 @@ function createDuck(bodyColor, collarColor) {
   return {
     root,
     body: bodySquash,
+    collar,
     head,
     hairGroup,
     leftLeg: { hip: L.hip, lower: L.lower, foot: L.foot },
@@ -442,23 +441,24 @@ export function createRace3DRenderer(hostEl, options = {}) {
   const oppFootShR = makeFootContactShadowMesh();
   scene.add(playerFootShL, playerFootShR, oppFootShL, oppFootShR);
 
-  const ringGeo = new THREE.RingGeometry(FLOOR_RING_INNER_R, FLOOR_RING_OUTER_R, 48);
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.35,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const myFloorRing = new THREE.Mesh(ringGeo, ringMat);
-  myFloorRing.rotation.x = -Math.PI / 2;
-  myFloorRing.visible = false;
-  scene.add(myFloorRing);
+  const playerCollarMat = /** @type {THREE.MeshStandardMaterial} */ (playerDuck.collar.material);
+  const oppCollarMat = /** @type {THREE.MeshStandardMaterial} */ (oppDuck.collar.material);
+  oppCollarMat.emissive.setHex(0x000000);
+  oppCollarMat.emissiveIntensity = 0;
+  const myIdLower = (myId && String(myId).toLowerCase()) || 'duri';
+  if (myIdLower === 'ari') {
+    playerCollarMat.emissive.setHex(COLLAR_PULSE_EMISSIVE_ARI_HEX);
+  } else {
+    playerCollarMat.emissive.setHex(myCol.collar);
+  }
+  playerCollarMat.emissiveIntensity = 0;
 
-  let floorRingVisible = false;
+  let collarPulseActive = false;
   function setFloorRingVisible(v) {
-    floorRingVisible = !!v;
-    myFloorRing.visible = floorRingVisible;
+    collarPulseActive = !!v;
+    if (!collarPulseActive) {
+      playerCollarMat.emissiveIntensity = 0;
+    }
   }
 
   const cdOverlayEl = document.createElement('div');
@@ -858,8 +858,9 @@ export function createRace3DRenderer(hostEl, options = {}) {
     oppDuck.rightLeg.foot.getWorldPosition(_vFootWorld);
     oppFootShR.position.set(_vFootWorld.x, 0.01, _vFootWorld.z);
 
-    if (floorRingVisible) {
-      myFloorRing.position.set(duckRoot.position.x, FLOOR_RING_Y, duckRoot.position.z);
+    if (collarPulseActive) {
+      const t = clock.getElapsedTime();
+      playerCollarMat.emissiveIntensity = 0.75 + Math.sin(t * Math.PI) * 0.45;
     }
 
     /** 트랙 X 중앙 고정, Z만 내 오리 거리(시각 스케일) 따라 추적 */
