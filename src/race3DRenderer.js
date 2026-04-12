@@ -14,8 +14,6 @@ const TRACK_WORLD_LEN = 400;
  * 줄무늬 텍스처 주기도 동일 배율로 맞춤(한 탭 = 한 줄 주기 유지)
  */
 const STRIDE_VISUAL_SCALE = 1.38;
-/** 아리 — 밝은 몸색 대비 맥동 emissive 전용 연한 하늘 */
-const COLLAR_PULSE_EMISSIVE_ARI_HEX = 0xb8d4e8;
 const TRACK_STRIPE_CYCLE_M = TAP_STRIDE_M * STRIDE_VISUAL_SCALE;
 const BASE_CAMERA_FOV = 63;
 const IDLE_ENTER = 0.15;
@@ -445,12 +443,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
   const oppCollarMat = /** @type {THREE.MeshStandardMaterial} */ (oppDuck.collar.material);
   oppCollarMat.emissive.setHex(0x000000);
   oppCollarMat.emissiveIntensity = 0;
-  const myIdLower = (myId && String(myId).toLowerCase()) || 'duri';
-  if (myIdLower === 'ari') {
-    playerCollarMat.emissive.setHex(COLLAR_PULSE_EMISSIVE_ARI_HEX);
-  } else {
-    playerCollarMat.emissive.setHex(myCol.collar);
-  }
+  playerCollarMat.emissive.setHex(myCol.collar);
   playerCollarMat.emissiveIntensity = 0;
 
   let collarPulseActive = false;
@@ -860,7 +853,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
     if (collarPulseActive) {
       const t = clock.getElapsedTime();
-      playerCollarMat.emissiveIntensity = 0.75 + Math.sin(t * Math.PI) * 0.45;
+      playerCollarMat.emissiveIntensity = 0.9 + Math.sin(t * Math.PI * 2.8) * 0.9;
     }
 
     /** 트랙 X 중앙 고정, Z만 내 오리 거리(시각 스케일) 따라 추적 */
