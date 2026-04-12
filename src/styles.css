@@ -486,7 +486,7 @@
   display: block;
   width: 240px;
   height: 240px;
-  image-rendering: pixelated;
+  image-rendering: auto;
 }
 
 .qr-match-timer {

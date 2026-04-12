@@ -18,9 +18,9 @@ const QR_TIMEOUT_SEC = 180; // 서버 QR_PENDING_MS 와 동기화 (3분)
 
 const QR_TO_DATA_URL_OPTS = {
   margin: 3,
-  width: 320,
-  errorCorrectionLevel: 'L',
-  color: { dark: '#ffffffFF', light: '#000000FF' },
+  width: 512,
+  errorCorrectionLevel: 'M',
+  color: { dark: '#000000FF', light: '#FFFFFFFF' },
 };
 
 /**
