@@ -21,13 +21,16 @@ import {
 } from '../services/friends.js';
 import { emitAcceptFriendRequest, emitFriendRequestSent, ensureSocket } from '../services/socket.js';
 import { isMutualHeart, markHeartNotificationsSeen, sendHeart } from '../services/likes.js';
-import { searchUsersDiscoveryV1, postFriendRequestV1 } from '../services/profileApi.js';
 import {
-  LANGUAGES_FULL,
+  searchUsersOnServer,
+  searchUsersDiscoveryV1,
+  postFriendRequestV1,
+} from '../services/profileApi.js';
+import {
   getLanguageByCode,
   getCountryDisplayFromAlpha2,
+  getUniqueCountryFilterOptions,
 } from '../data/languagesFull.js';
-import { regionalEmojiToAlpha2 } from '../utils/flagIcon.js';
 
 /** @type {(() => void) | null} */
 let detachFriendsStorageListener = null;
@@ -36,20 +39,6 @@ let detachFriendsStorageListener = null;
 function duckLabel(duckId) {
   if (!duckId) return '—';
   return DUCKS_NINE.find((d) => d.id === duckId)?.name ?? duckId;
-}
-
-/** LANGUAGES_FULL 기준 리전 플래그 → alpha-2, 동일 국기(동일 alpha2) 한 번만 */
-function uniqueCountryOptionsFromLanguagesFull() {
-  const seenCc = new Set();
-  const list = [];
-  for (const row of LANGUAGES_FULL) {
-    const cc = regionalEmojiToAlpha2(row.flag);
-    if (!cc || seenCc.has(cc)) continue;
-    seenCc.add(cc);
-    list.push({ alpha2: cc, label: `${row.flag} ${row.name}` });
-  }
-  list.sort((a, b) => a.label.localeCompare(b.label, 'en'));
-  return list;
 }
 
 /** @param {HTMLElement} el */
@@ -158,9 +147,9 @@ export function mountFriends(root, api) {
   optAllCountry.value = '';
   optAllCountry.textContent = '🌐 All Countries';
   countrySel.appendChild(optAllCountry);
-  for (const c of uniqueCountryOptionsFromLanguagesFull()) {
+  for (const c of getUniqueCountryFilterOptions()) {
     const o = document.createElement('option');
-    o.value = c.alpha2;
+    o.value = c.countryCode;
     o.textContent = c.label;
     countrySel.appendChild(o);
   }

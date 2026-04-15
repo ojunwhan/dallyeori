@@ -131,20 +131,25 @@ export function getCountryCodeByLanguage(langCode) {
 }
 
 /**
- * 리전 플래그 기준 중복 제거 국가 필터 옵션 (표시: flag + LANGUAGES_FULL.name 영문)
- * @returns {{ countryCode: string, flag: string, labelName: string }[]}
+ * 리전 플래그 기준 중복 제거 국가 필터 옵션.
+ * - value용: countryCode (alpha-2만)
+ * - 표시용: label = `${lang.flag} ${lang.name}` — flag는 LANGUAGES_FULL 유니코드 이모지 그대로
+ * @returns {{ countryCode: string, label: string }[]}
  */
 export function getUniqueCountryFilterOptions() {
-  /** @type {Map<string, { countryCode: string, flag: string, labelName: string }>} */
+  /** @type {Map<string, { countryCode: string, label: string, sortKey: string }>} */
   const byAlpha = new Map();
   for (const lang of LANGUAGES_FULL) {
     const a2 = regionalEmojiToAlpha2(lang.flag);
     if (!a2) continue;
     if (!byAlpha.has(a2)) {
-      byAlpha.set(a2, { countryCode: a2, flag: lang.flag, labelName: lang.name });
+      const label = `${lang.flag} ${lang.name}`;
+      byAlpha.set(a2, { countryCode: a2, label, sortKey: lang.name });
     }
   }
-  return [...byAlpha.values()].sort((a, b) => a.labelName.localeCompare(b.labelName));
+  return [...byAlpha.values()]
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey, 'en'))
+    .map(({ countryCode, label }) => ({ countryCode, label }));
 }
 
 /**
