@@ -157,16 +157,21 @@ export function mountQrMatchHost(root, api) {
     status.textContent = '상대를 기다리는 중…';
   }
 
-  /** 소켓 재연결 직후 — 이전 matchCode 는 서버에서 이미 폐기됨 */
+  /** 소켓 재연결 직후 폴백 — 서버가 pending 을 지운 경우에만 새 QR 발급 */
   async function refreshQrAfterReconnect() {
     if (disposed || !roomLive) return;
     if (getBalance(api.state) < 1) {
       showAppToast('하트가 부족해요.');
       disposed = true;
       stopTimer();
+      if (reconnectFallbackTimer) {
+        clearTimeout(reconnectFallbackTimer);
+        reconnectFallbackTimer = null;
+      }
       sock.off('matchFound', onFound);
       sock.off('qrMatchExpired', onExpired);
       sock.off('reconnect', onReconnect);
+      sock.off('qrSessionRestored', onQrSessionRestored);
       sock.off('disconnect', onHostDisconnect);
       window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
       api.navigate('lobby');
@@ -189,6 +194,7 @@ export function mountQrMatchHost(root, api) {
         sock.off('matchFound', onFound);
         sock.off('qrMatchExpired', onExpired);
         sock.off('reconnect', onReconnect);
+        sock.off('qrSessionRestored', onQrSessionRestored);
         sock.off('disconnect', onHostDisconnect);
         window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
         api.navigate('lobby');
@@ -196,8 +202,25 @@ export function mountQrMatchHost(root, api) {
     }
   }
 
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let reconnectFallbackTimer = null;
+
+  function onQrSessionRestored() {
+    if (disposed || !roomLive) return;
+    if (reconnectFallbackTimer) {
+      clearTimeout(reconnectFallbackTimer);
+      reconnectFallbackTimer = null;
+    }
+    status.textContent = 'QR이 여전히 유효합니다. 상대를 기다리는 중…';
+  }
+
   function onReconnect() {
-    void refreshQrAfterReconnect();
+    if (disposed || !roomLive) return;
+    if (reconnectFallbackTimer) clearTimeout(reconnectFallbackTimer);
+    reconnectFallbackTimer = setTimeout(() => {
+      reconnectFallbackTimer = null;
+      void refreshQrAfterReconnect();
+    }, 1000);
   }
 
   function onHostDisconnect() {
@@ -209,6 +232,10 @@ export function mountQrMatchHost(root, api) {
   const onFound = (data) => {
     if (disposed) return;
     stopTimer();
+    if (reconnectFallbackTimer) {
+      clearTimeout(reconnectFallbackTimer);
+      reconnectFallbackTimer = null;
+    }
     const opp = data.opponent || {};
     const mp = globalThis.__dallyeoriMatchProfile || {};
     const myDuck = data.myDuckId || mp.duckId || 'bori';
@@ -244,6 +271,7 @@ export function mountQrMatchHost(root, api) {
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
     sock.off('reconnect', onReconnect);
+    sock.off('qrSessionRestored', onQrSessionRestored);
     sock.off('disconnect', onHostDisconnect);
     window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
     api.navigate('race');
@@ -252,12 +280,17 @@ export function mountQrMatchHost(root, api) {
   const onExpired = () => {
     if (disposed) return;
     stopTimer();
+    if (reconnectFallbackTimer) {
+      clearTimeout(reconnectFallbackTimer);
+      reconnectFallbackTimer = null;
+    }
     showAppToast('대기 시간이 지났어요. 다시 시도해 주세요.');
     disposed = true;
     roomLive = false;
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
     sock.off('reconnect', onReconnect);
+    sock.off('qrSessionRestored', onQrSessionRestored);
     sock.off('disconnect', onHostDisconnect);
     window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
     api.navigate('lobby');
@@ -266,6 +299,7 @@ export function mountQrMatchHost(root, api) {
   sock.on('matchFound', onFound);
   sock.on('qrMatchExpired', onExpired);
   sock.on('reconnect', onReconnect);
+  sock.on('qrSessionRestored', onQrSessionRestored);
   sock.on('disconnect', onHostDisconnect);
 
   const onMatchErrorHost = (ev) => {
@@ -275,6 +309,10 @@ export function mountQrMatchHost(root, api) {
     disposed = true;
     roomLive = false;
     stopTimer();
+    if (reconnectFallbackTimer) {
+      clearTimeout(reconnectFallbackTimer);
+      reconnectFallbackTimer = null;
+    }
     try {
       pendingConnectCleanup?.();
     } catch {
@@ -284,6 +322,7 @@ export function mountQrMatchHost(root, api) {
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
     sock.off('reconnect', onReconnect);
+    sock.off('qrSessionRestored', onQrSessionRestored);
     sock.off('disconnect', onHostDisconnect);
     window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
     sock.emit('qrMatchCancel');
@@ -372,9 +411,14 @@ export function mountQrMatchHost(root, api) {
     }
     pendingConnectCleanup = null;
     stopTimer();
+    if (reconnectFallbackTimer) {
+      clearTimeout(reconnectFallbackTimer);
+      reconnectFallbackTimer = null;
+    }
     sock.off('matchFound', onFound);
     sock.off('qrMatchExpired', onExpired);
     sock.off('reconnect', onReconnect);
+    sock.off('qrSessionRestored', onQrSessionRestored);
     sock.off('disconnect', onHostDisconnect);
     window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
     sock.emit('qrMatchCancel');
@@ -394,6 +438,9 @@ export function mountQrMatchHost(root, api) {
         disposed = true;
         sock.off('matchFound', onFound);
         sock.off('qrMatchExpired', onExpired);
+        sock.off('reconnect', onReconnect);
+        sock.off('qrSessionRestored', onQrSessionRestored);
+        sock.off('disconnect', onHostDisconnect);
         window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
         api.navigate('lobby');
         return;
@@ -418,6 +465,7 @@ export function mountQrMatchHost(root, api) {
       sock.off('matchFound', onFound);
       sock.off('qrMatchExpired', onExpired);
       sock.off('reconnect', onReconnect);
+      sock.off('qrSessionRestored', onQrSessionRestored);
       sock.off('disconnect', onHostDisconnect);
       window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
       api.navigate('lobby');
