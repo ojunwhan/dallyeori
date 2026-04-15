@@ -196,7 +196,6 @@ function sectionPhoto(vm, api, refresh) {
       const token = getToken();
       if (!token) {
         showAppToast('로그인이 필요해요.');
-        refresh();
         return;
       }
 
@@ -227,7 +226,7 @@ function sectionPhoto(vm, api, refresh) {
                       ? '로그인이 필요해요.'
                       : '업로드에 실패했어요. 잠시 후 다시 시도해 주세요.';
         showAppToast(msg);
-        refresh();
+        fillInnerFromSrc(buildProfileViewModel(api.state).photoURL || '');
         return;
       }
       const nextUrl = typeof r.photoURL === 'string' ? r.photoURL.trim() : '';
@@ -238,7 +237,7 @@ function sectionPhoto(vm, api, refresh) {
     } catch (err) {
       console.error('[profile] avatarFileInput change', err);
       showAppToast('사진 처리 중 오류가 났어요. 잠시 후 다시 시도해 주세요.');
-      refresh();
+      fillInnerFromSrc(buildProfileViewModel(api.state).photoURL || '');
     } finally {
       if (previewUrl) {
         try {
