@@ -39,6 +39,63 @@ function fillLanguageSelect(select, selectedCode) {
   select.value = code;
 }
 
+const AVATAR_INPUT_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+function isSupportedAvatarInputFile(/** @type {File} */ file) {
+  const t = (file.type || '').toLowerCase().trim();
+  if (AVATAR_INPUT_MIME_TYPES.includes(t)) return true;
+  const name = typeof file.name === 'string' ? file.name : '';
+  return /\.(jpe?g|png|webp|gif)$/i.test(name);
+}
+
+/**
+ * EXIF 반영 후 정사각 center-crop, 긴 변 최대 1024(작은 원본은 업스케일 없음) → WebP 우선, 실패 시 JPEG.
+ * @param {File} file
+ * @returns {Promise<{ blob: Blob, filename: string, mime: string }>}
+ */
+async function prepareProfileAvatarUploadBlob(file) {
+  let bmp;
+  try {
+    bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    throw new Error('unsupported_bitmap');
+  }
+  try {
+    const W = bmp.width;
+    const H = bmp.height;
+    const side = Math.min(W, H);
+    const sx = (W - side) / 2;
+    const sy = (H - side) / 2;
+    const outSize = Math.min(1024, side);
+    const canvas = document.createElement('canvas');
+    canvas.width = outSize;
+    canvas.height = outSize;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('no_canvas');
+    ctx.drawImage(bmp, sx, sy, side, side, 0, 0, outSize, outSize);
+
+    const webpBlob = await new Promise((resolve) => {
+      canvas.toBlob((b) => resolve(b), 'image/webp', 0.9);
+    });
+    if (webpBlob && webpBlob.size > 0) {
+      return { blob: webpBlob, filename: 'avatar.webp', mime: 'image/webp' };
+    }
+    const jpegBlob = await new Promise((resolve) => {
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92);
+    });
+    if (jpegBlob && jpegBlob.size > 0) {
+      return { blob: jpegBlob, filename: 'avatar.jpg', mime: 'image/jpeg' };
+    }
+    throw new Error('encode_failed');
+  } finally {
+    try {
+      bmp.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /**
  * 프로필 사진용 body file input ↔ 현재 sectionPhoto UI 연결
  * @type {{ fillFromSrc: (src: string) => void, setLoading: (on: boolean) => void }}
@@ -64,7 +121,7 @@ export function mountProfile(root, api) {
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
   fileInput.id = 'avatarFileInput';
-  fileInput.accept = 'image/*';
+  fileInput.accept = 'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif';
   fileInput.setAttribute('aria-label', '프로필 사진 파일 선택');
   fileInput.className = 'profile-avatar-file-input profile-avatar-file-input--body';
   document.body.appendChild(fileInput);
@@ -93,7 +150,12 @@ export function mountProfile(root, api) {
       }
 
       if (file.size > 5 * 1024 * 1024) {
-        showAppToast('이미지는 5MB 이하만 올릴 수 있어요.');
+        alert('5MB 이하 이미지만 가능합니다');
+        return;
+      }
+
+      if (!isSupportedAvatarInputFile(file)) {
+        alert('지원하지 않는 이미지 형식입니다.');
         return;
       }
 
@@ -101,23 +163,42 @@ export function mountProfile(root, api) {
       avatarUiBridge.fillFromSrc(previewUrl);
       avatarUiBridge.setLoading(true);
 
-      const r = await postProfileAvatar(file);
+      let prepared;
+      try {
+        prepared = await prepareProfileAvatarUploadBlob(file);
+      } catch (prepErr) {
+        console.error('[profile] avatar prepare', prepErr);
+        alert('지원하지 않는 이미지 형식입니다.');
+        avatarUiBridge.fillFromSrc(buildProfileViewModel(api.state).photoURL || '');
+        return;
+      }
+
+      if (prepared.blob.size > 5 * 1024 * 1024) {
+        alert('5MB 이하 이미지만 가능합니다');
+        avatarUiBridge.fillFromSrc(buildProfileViewModel(api.state).photoURL || '');
+        return;
+      }
+
+      const uploadFile = new File([prepared.blob], prepared.filename, { type: prepared.mime });
+      const r = await postProfileAvatar(uploadFile);
 
       if (!r.ok) {
         const msg =
           r.error === 'file_too_large'
             ? '파일이 너무 커요 (최대 5MB).'
             : r.error === 'bad_file_type'
-              ? 'JPG, PNG, WEBP만 올릴 수 있어요.'
-              : r.error === 'no_profile'
-                ? '프로필을 먼저 저장한 뒤 다시 시도해 주세요.'
-                : r.error === 'avatar_required'
-                  ? '파일을 선택해 주세요.'
-                  : r.error === 'server_error'
-                    ? '서버 오류로 업로드에 실패했어요.'
-                    : r.status === 401
-                      ? '로그인이 필요해요.'
-                      : '업로드에 실패했어요. 잠시 후 다시 시도해 주세요.';
+              ? 'JPG, PNG, WEBP, GIF만 올릴 수 있어요.'
+              : r.error === 'invalid_extension'
+                ? '허용되지 않는 파일 확장자예요.'
+                : r.error === 'no_profile'
+                  ? '프로필을 먼저 저장한 뒤 다시 시도해 주세요.'
+                  : r.error === 'avatar_required'
+                    ? '파일을 선택해 주세요.'
+                    : r.error === 'server_error'
+                      ? '서버 오류로 업로드에 실패했어요.'
+                      : r.status === 401
+                        ? '로그인이 필요해요.'
+                        : '업로드에 실패했어요. 잠시 후 다시 시도해 주세요.';
         showAppToast(msg);
         avatarUiBridge.fillFromSrc(buildProfileViewModel(api.state).photoURL || '');
         return;
