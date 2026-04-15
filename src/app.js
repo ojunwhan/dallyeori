@@ -158,7 +158,6 @@ const POP_BACK_TO_LOBBY = new Set([
   'matching',
   'rematchWait',
   'terrainSelect',
-  'profile',
   'friends',
   'messages',
   'shop',
@@ -397,6 +396,18 @@ window.addEventListener('popstate', (e) => {
       history.replaceState(buildHistoryState('lobby', null), '', '');
     } catch (err) {
       console.warn('[nav] popstate force lobby replaceState', err);
+    }
+    return;
+  }
+  if (appState.screen === 'profile') {
+    if (window.__filePickerOpen) {
+      return;
+    }
+    navigate('lobby', undefined, { skipHistory: true });
+    try {
+      history.replaceState(buildHistoryState('lobby', null), '', '');
+    } catch (err) {
+      console.warn('[nav] popstate profile → lobby', err);
     }
     return;
   }
