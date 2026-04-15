@@ -123,11 +123,11 @@ function sectionPhoto(vm, api, refresh) {
   fileInput.style.display = 'none';
   fileInput.setAttribute('aria-hidden', 'true');
 
+  const stack = document.createElement('div');
+  stack.className = 'profile-avatar-stack';
+
   const wrapImg = document.createElement('div');
-  wrapImg.className = 'profile-avatar-wrap profile-avatar-wrap--clickable';
-  wrapImg.setAttribute('role', 'button');
-  wrapImg.tabIndex = 0;
-  wrapImg.setAttribute('aria-label', '프로필 사진 변경');
+  wrapImg.className = 'profile-avatar-wrap';
 
   const inner = document.createElement('div');
   inner.className = 'profile-avatar-inner';
@@ -135,15 +135,73 @@ function sectionPhoto(vm, api, refresh) {
   const loadingEl = document.createElement('div');
   loadingEl.className = 'profile-avatar-loading';
   loadingEl.hidden = true;
-  loadingEl.textContent = '업로드 중…';
+  loadingEl.textContent = '업로드 중...';
 
   wrapImg.appendChild(inner);
   wrapImg.appendChild(loadingEl);
 
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'app-btn app-btn--inline profile-avatar-edit-btn';
+  editBtn.textContent = '✏️';
+  editBtn.setAttribute('aria-label', '사진 변경');
+  editBtn.title = '사진 변경';
+
+  stack.appendChild(wrapImg);
+  stack.appendChild(editBtn);
+
+  const sheet = document.createElement('div');
+  sheet.className = 'action-sheet';
+  sheet.hidden = true;
+  const sheetInner = document.createElement('div');
+  sheetInner.className = 'action-sheet-inner app-box';
+  sheet.appendChild(sheetInner);
+  sheet.addEventListener('click', (e) => {
+    if (e.target === sheet) sheet.hidden = true;
+  });
+
+  function openPhotoSheet() {
+    if (editBtn.disabled) return;
+    sheetInner.replaceChildren();
+    const h = document.createElement('div');
+    h.className = 'action-sheet-title';
+    h.textContent = '프로필 사진';
+    sheetInner.appendChild(h);
+
+    const bChange = document.createElement('button');
+    bChange.type = 'button';
+    bChange.className = 'app-btn';
+    bChange.style.marginTop = '8px';
+    bChange.textContent = '사진 변경';
+    bChange.addEventListener('click', () => {
+      sheet.hidden = true;
+      fileInput.click();
+    });
+    sheetInner.appendChild(bChange);
+
+    const bCancel = document.createElement('button');
+    bCancel.type = 'button';
+    bCancel.className = 'app-btn';
+    bCancel.style.marginTop = '8px';
+    bCancel.textContent = '취소';
+    bCancel.addEventListener('click', () => {
+      sheet.hidden = true;
+    });
+    sheetInner.appendChild(bCancel);
+
+    sheet.hidden = false;
+  }
+
+  editBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openPhotoSheet();
+  });
+
   function setLoading(on) {
     loadingEl.hidden = !on;
-    wrapImg.style.pointerEvents = on ? 'none' : '';
+    loadingEl.textContent = '업로드 중...';
     fileInput.disabled = on;
+    editBtn.disabled = on;
   }
 
   function fillInnerFromSrc(src) {
@@ -154,6 +212,7 @@ function sectionPhoto(vm, api, refresh) {
       img.src = src;
       img.alt = '프로필';
       img.referrerPolicy = 'no-referrer';
+      img.draggable = false;
       img.addEventListener('error', () => {
         inner.replaceChildren(avatarPlaceholder());
       });
@@ -165,18 +224,6 @@ function sectionPhoto(vm, api, refresh) {
 
   fillInnerFromSrc(vm.photoURL || '');
 
-  wrapImg.addEventListener('click', () => {
-    if (!loadingEl.hidden) return;
-    fileInput.click();
-  });
-  wrapImg.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      if (!loadingEl.hidden) return;
-      fileInput.click();
-    }
-  });
-
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files && fileInput.files[0];
     fileInput.value = '';
@@ -185,6 +232,7 @@ function sectionPhoto(vm, api, refresh) {
       showAppToast('이미지는 5MB 이하만 올릴 수 있어요.');
       return;
     }
+    sheet.hidden = true;
     const previewUrl = URL.createObjectURL(file);
     fillInnerFromSrc(previewUrl);
     setLoading(true);
@@ -199,19 +247,27 @@ function sectionPhoto(vm, api, refresh) {
             ? 'JPG, PNG, WEBP만 올릴 수 있어요.'
             : r.error === 'no_profile'
               ? '프로필을 먼저 저장한 뒤 다시 시도해 주세요.'
-              : '업로드에 실패했어요. 잠시 후 다시 시도해 주세요.';
+              : r.error === 'avatar_required'
+                ? '파일을 선택해 주세요.'
+                : r.error === 'server_error'
+                  ? '서버 오류로 업로드에 실패했어요.'
+                  : r.status === 401
+                    ? '로그인이 필요해요.'
+                    : '업로드에 실패했어요. 잠시 후 다시 시도해 주세요.';
       showAppToast(msg);
       refresh();
       return;
     }
-    api.state.profilePhotoURL = r.photoURL;
+    const nextUrl = typeof r.photoURL === 'string' ? r.photoURL.trim() : '';
+    api.state.profilePhotoURL = nextUrl;
     const uid = api.state.user?.uid;
-    if (uid) patchUserRecord(uid, { profilePhotoURL: r.photoURL });
+    if (uid) patchUserRecord(uid, { profilePhotoURL: nextUrl });
     refresh();
   });
 
   box.appendChild(fileInput);
-  box.appendChild(wrapImg);
+  box.appendChild(stack);
+  box.appendChild(sheet);
   return box;
 }
 

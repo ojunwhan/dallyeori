@@ -269,16 +269,32 @@
   text-align: center;
 }
 
-.profile-avatar-wrap {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 8px;
+.profile-avatar-stack {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 10px;
 }
 
-.profile-avatar-wrap--clickable {
-  position: relative;
-  cursor: pointer;
-  touch-action: manipulation;
+.profile-avatar-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0;
+}
+
+.profile-avatar-edit-btn {
+  position: absolute;
+  right: -6px;
+  bottom: -4px;
+  z-index: 4;
+  min-width: auto;
+  width: auto;
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  line-height: 1;
 }
 
 .profile-avatar-inner {
