@@ -43,7 +43,10 @@ export function resolvePublicApiUrl(path) {
 }
 
 /**
- * API 서버에 저장된 정적 경로(/uploads/...)를 img src 등에 쓸 절대 URL로 변환합니다.
+ * API 서버에 저장된 정적 경로(/uploads/...)를 img src 등에 쓸 URL로 변환합니다.
+ * VITE_API_BASE_URL 이 있으면 그 호스트에 붙이고, 비우면 상대 경로(/uploads/...) 유지.
+ * 로컬: vite.config.js 가 /uploads 를 dallyeori-server 로 프록시.
+ * 라이브: nginx 가 /uploads/ 를 API 프로세스와 동일하게 프록시해야 함(deploy/nginx-uploads-proxy.example.conf).
  * @param {string} url
  * @returns {string}
  */

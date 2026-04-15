@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,18 +51,37 @@ function legalPageAliasPlugin() {
   };
 }
 
-export default defineConfig({
-  base: '/',
-  root: 'src',
-  publicDir: '../public',
-  envDir: '..',
-  plugins: [legalPageAliasPlugin()],
-  server: {
-    port: 5173,
-    strictPort: false,
-  },
-  build: {
-    outDir: '../dist',
-    emptyOutDir: true,
-  },
+/** 로컬에서 VITE_API_BASE_URL 비움 → 브라우저가 동일 출처로 /api, /uploads 요청 → Vite가 백엔드로 넘김 */
+function devApiProxy(proxyTarget) {
+  return {
+    '/api': { target: proxyTarget, changeOrigin: true },
+    '/uploads': { target: proxyTarget, changeOrigin: true },
+  };
+}
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, __dirname, '');
+  const proxyTarget = env.VITE_DEV_API_PROXY_TARGET || 'http://127.0.0.1:3100';
+
+  return {
+    base: '/',
+    root: 'src',
+    publicDir: '../public',
+    envDir: '..',
+    plugins: [legalPageAliasPlugin()],
+    server: {
+      port: 5173,
+      strictPort: false,
+      proxy: devApiProxy(proxyTarget),
+    },
+    preview: {
+      port: 4173,
+      strictPort: false,
+      proxy: devApiProxy(proxyTarget),
+    },
+    build: {
+      outDir: '../dist',
+      emptyOutDir: true,
+    },
+  };
 });
