@@ -81,6 +81,9 @@ export function mountSplash(root, api) {
 
   const wrap = document.createElement('div');
   wrap.className = 'app-screen';
+  wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+  wrap.style.minHeight = '100%';
 
   const title = document.createElement('h1');
   title.className = 'app-title';
@@ -125,9 +128,38 @@ export function mountSplash(root, api) {
     }
   });
 
+  const legal = document.createElement('div');
+  legal.className = 'app-muted';
+  legal.style.marginTop = 'auto';
+  legal.style.paddingTop = '28px';
+  legal.style.textAlign = 'center';
+  legal.style.fontSize = '0.75rem';
+  legal.style.lineHeight = '1.6';
+
+  const aPrivacy = document.createElement('a');
+  aPrivacy.href = '/privacy';
+  aPrivacy.textContent = '개인정보처리방침';
+  const privacyPath = document.createElement('span');
+  privacyPath.textContent = '(/privacy)';
+
+  const sep = document.createTextNode(' · ');
+
+  const aTerms = document.createElement('a');
+  aTerms.href = '/terms';
+  aTerms.textContent = '이용약관';
+  const termsPath = document.createElement('span');
+  termsPath.textContent = '(/terms)';
+
+  legal.appendChild(aPrivacy);
+  legal.appendChild(privacyPath);
+  legal.appendChild(sep);
+  legal.appendChild(aTerms);
+  legal.appendChild(termsPath);
+
   wrap.appendChild(title);
   wrap.appendChild(sub);
   wrap.appendChild(btnGoogle);
   wrap.appendChild(btnKakao);
+  wrap.appendChild(legal);
   root.appendChild(wrap);
 }
