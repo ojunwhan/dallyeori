@@ -285,6 +285,19 @@
   margin: 0;
 }
 
+.profile-avatar-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+}
+
 .profile-avatar-edit-btn {
   position: absolute;
   right: -6px;
@@ -295,6 +308,13 @@
   padding: 4px 8px;
   font-size: 0.9rem;
   line-height: 1;
+  cursor: pointer;
+}
+
+.profile-avatar-edit-btn--disabled {
+  pointer-events: none;
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .profile-avatar-inner {

@@ -119,9 +119,10 @@ function sectionPhoto(vm, api, refresh) {
 
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
-  fileInput.accept = 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp';
-  fileInput.style.display = 'none';
-  fileInput.setAttribute('aria-hidden', 'true');
+  fileInput.id = 'avatarFileInput';
+  fileInput.accept = 'image/*';
+  fileInput.className = 'profile-avatar-file-input';
+  fileInput.setAttribute('aria-label', '프로필 사진 파일 선택');
 
   const stack = document.createElement('div');
   stack.className = 'profile-avatar-stack';
@@ -140,71 +141,27 @@ function sectionPhoto(vm, api, refresh) {
   wrapImg.appendChild(inner);
   wrapImg.appendChild(loadingEl);
 
-  const editBtn = document.createElement('button');
-  editBtn.type = 'button';
-  editBtn.className = 'app-btn app-btn--inline profile-avatar-edit-btn';
-  editBtn.textContent = '✏️';
-  editBtn.setAttribute('aria-label', '사진 변경');
-  editBtn.title = '사진 변경';
+  const editLabel = document.createElement('label');
+  editLabel.htmlFor = 'avatarFileInput';
+  editLabel.className = 'app-btn app-btn--inline profile-avatar-edit-btn';
+  editLabel.textContent = '✏️';
+  editLabel.setAttribute('aria-label', '사진 변경');
+  editLabel.title = '사진 변경';
 
   stack.appendChild(wrapImg);
-  stack.appendChild(editBtn);
-
-  const sheet = document.createElement('div');
-  sheet.className = 'action-sheet';
-  sheet.hidden = true;
-  const sheetInner = document.createElement('div');
-  sheetInner.className = 'action-sheet-inner app-box';
-  sheet.appendChild(sheetInner);
-  sheet.addEventListener('click', (e) => {
-    if (e.target === sheet) sheet.hidden = true;
-  });
-
-  function openPhotoSheet() {
-    if (editBtn.disabled) return;
-    sheetInner.replaceChildren();
-    const h = document.createElement('div');
-    h.className = 'action-sheet-title';
-    h.textContent = '프로필 사진';
-    sheetInner.appendChild(h);
-
-    const bChange = document.createElement('button');
-    bChange.type = 'button';
-    bChange.className = 'app-btn';
-    bChange.style.marginTop = '8px';
-    bChange.textContent = '사진 변경';
-    bChange.addEventListener('click', () => {
-      sheet.hidden = true;
-      // 시트가 닫히는 동안 브라우저가 연속 click()을 취소하는 경우 방지 (모바일 웹뷰 등)
-      window.setTimeout(() => {
-        fileInput.click();
-      }, 100);
-    });
-    sheetInner.appendChild(bChange);
-
-    const bCancel = document.createElement('button');
-    bCancel.type = 'button';
-    bCancel.className = 'app-btn';
-    bCancel.style.marginTop = '8px';
-    bCancel.textContent = '취소';
-    bCancel.addEventListener('click', () => {
-      sheet.hidden = true;
-    });
-    sheetInner.appendChild(bCancel);
-
-    sheet.hidden = false;
-  }
-
-  editBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    openPhotoSheet();
-  });
+  stack.appendChild(editLabel);
 
   function setLoading(on) {
     loadingEl.hidden = !on;
     loadingEl.textContent = '업로드 중...';
     fileInput.disabled = on;
-    editBtn.disabled = on;
+    if (on) {
+      editLabel.setAttribute('aria-disabled', 'true');
+      editLabel.classList.add('profile-avatar-edit-btn--disabled');
+    } else {
+      editLabel.removeAttribute('aria-disabled');
+      editLabel.classList.remove('profile-avatar-edit-btn--disabled');
+    }
   }
 
   function fillInnerFromSrc(src) {
@@ -235,7 +192,6 @@ function sectionPhoto(vm, api, refresh) {
       showAppToast('이미지는 5MB 이하만 올릴 수 있어요.');
       return;
     }
-    sheet.hidden = true;
     const previewUrl = URL.createObjectURL(file);
     fillInnerFromSrc(previewUrl);
     setLoading(true);
@@ -270,7 +226,6 @@ function sectionPhoto(vm, api, refresh) {
 
   box.appendChild(fileInput);
   box.appendChild(stack);
-  box.appendChild(sheet);
   return box;
 }
 
