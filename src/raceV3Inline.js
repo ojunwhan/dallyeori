@@ -812,6 +812,8 @@ function onServerRaceResult(r){
   endT=0;
   removeFallOverlay();
   fallPaused=false;
+  raceT=TIME_LIMIT;
+  syncRace3D();
 }
 
 function wireNum(x,fallback){
