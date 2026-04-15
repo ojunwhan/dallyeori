@@ -3,6 +3,7 @@
  */
 
 import { LANGUAGES } from '../data/languages.js';
+import { flagToDisplayUrl } from '../utils/flagIcon.js';
 
 /**
  * @param {string} code
@@ -50,8 +51,32 @@ export function createLanguagePicker(selectedCode, onChange) {
   let documentMousedown = null;
 
   function updateTrigger() {
+    trigger.replaceChildren();
     const lang = LANGUAGES.find((l) => l.code === currentCode);
-    trigger.textContent = lang ? `${lang.flag} ${lang.nativeName}` : currentCode;
+    if (!lang) {
+      trigger.textContent = currentCode;
+    } else {
+      const url = flagToDisplayUrl(lang.flag, null);
+      if (url) {
+        const img = document.createElement('img');
+        img.className = 'lang-picker__trigger-flag';
+        img.src = url;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        trigger.appendChild(img);
+      } else if (lang.flag) {
+        const sp = document.createElement('span');
+        sp.className = 'lang-picker__trigger-flag lang-picker__trigger-flag--emoji';
+        sp.textContent = lang.flag;
+        sp.setAttribute('aria-hidden', 'true');
+        trigger.appendChild(sp);
+      }
+      const lab = document.createElement('span');
+      lab.className = 'lang-picker__trigger-label';
+      lab.textContent = lang.nativeName;
+      trigger.appendChild(lab);
+    }
     trigger.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
   }
 
@@ -67,7 +92,9 @@ export function createLanguagePicker(selectedCode, onChange) {
       };
     }
     const match = (l) =>
-      l.nativeName.toLowerCase().includes(term) || l.name.toLowerCase().includes(term);
+      l.nativeName.toLowerCase().includes(term) ||
+      l.name.toLowerCase().includes(term) ||
+      l.code.toLowerCase().includes(term);
     return {
       t1: LANGUAGES.filter((l) => l.tier === 1 && match(l)),
       t2: LANGUAGES.filter((l) => l.tier === 2 && match(l)),
@@ -77,15 +104,45 @@ export function createLanguagePicker(selectedCode, onChange) {
   function renderList() {
     listWrap.replaceChildren();
     const { t1, t2 } = filterLangs(search.value);
+    const t2Sorted = [...t2].sort((a, b) => a.code.localeCompare(b.code));
 
-    /** @param {{ code: string, flag: string, nativeName: string, tier: number }} lang */
+    /** @param {{ code: string, flag: string, name: string, nativeName: string, tier: number }} lang */
     function addItem(lang) {
       const item = document.createElement('div');
       item.className = 'lang-picker__item';
       item.setAttribute('role', 'option');
-      item.textContent = `${lang.flag} ${lang.nativeName}`;
       item.dataset.code = lang.code;
       if (lang.code === currentCode) item.classList.add('lang-picker__item--selected');
+
+      const url = flagToDisplayUrl(lang.flag, null);
+      if (url) {
+        const img = document.createElement('img');
+        img.className = 'lang-picker__item-flag';
+        img.src = url;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        item.appendChild(img);
+      } else if (lang.flag) {
+        const sp = document.createElement('span');
+        sp.className = 'lang-picker__item-flag lang-picker__item-flag--emoji';
+        sp.textContent = lang.flag;
+        sp.setAttribute('aria-hidden', 'true');
+        item.appendChild(sp);
+      }
+
+      const textWrap = document.createElement('div');
+      textWrap.className = 'lang-picker__item-text';
+      const nat = document.createElement('span');
+      nat.className = 'lang-picker__item-native';
+      nat.textContent = lang.nativeName;
+      const nm = document.createElement('span');
+      nm.className = 'lang-picker__item-name';
+      nm.textContent = lang.name;
+      textWrap.appendChild(nat);
+      textWrap.appendChild(nm);
+      item.appendChild(textWrap);
+
       item.addEventListener('click', (e) => {
         e.stopPropagation();
         currentCode = lang.code;
@@ -98,14 +155,14 @@ export function createLanguagePicker(selectedCode, onChange) {
     }
 
     for (const lang of t1) addItem(lang);
-    if (t1.length > 0 && t2.length > 0) {
+    if (t1.length > 0 && t2Sorted.length > 0) {
       const hr = document.createElement('hr');
       hr.className = 'lang-picker__divider';
       listWrap.appendChild(hr);
     }
-    for (const lang of t2) addItem(lang);
+    for (const lang of t2Sorted) addItem(lang);
 
-    if (t1.length === 0 && t2.length === 0) {
+    if (t1.length === 0 && t2Sorted.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'lang-picker__item';
       empty.style.cursor = 'default';

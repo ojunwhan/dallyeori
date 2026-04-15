@@ -3,35 +3,10 @@
  */
 
 import { createLanguagePicker } from '../components/languagePicker.js';
-import { LANGUAGES } from '../data/languages.js';
+import { createCountryPicker } from '../components/countryPicker.js';
 import { getToken, resolvePublicApiUrl } from '../services/auth.js';
 import { saveUserRecord, getUserRecord, ensureUserFromAuth } from '../services/db.js';
 import { postProfile, validateNicknameLocal } from '../services/profileApi.js';
-import { COUNTRY_CODES_REST, COUNTRY_TOP_20 } from '../data/countryCodesProfile.js';
-
-function fillLanguageSelect(select, selectedCode) {
-  const t1 = LANGUAGES.filter((l) => l.tier === 1);
-  const t2 = LANGUAGES.filter((l) => l.tier === 2);
-  for (const lang of t1) {
-    const opt = document.createElement('option');
-    opt.value = lang.code;
-    opt.textContent = `${lang.flag} ${lang.nativeName}`;
-    select.appendChild(opt);
-  }
-  const sep = document.createElement('option');
-  sep.disabled = true;
-  sep.value = '';
-  sep.textContent = '──────';
-  select.appendChild(sep);
-  for (const lang of t2) {
-    const opt = document.createElement('option');
-    opt.value = lang.code;
-    opt.textContent = `${lang.flag} ${lang.nativeName}`;
-    select.appendChild(opt);
-  }
-  const code = LANGUAGES.some((l) => l.code === selectedCode) ? selectedCode : 'ko';
-  select.value = code;
-}
 
 /**
  * @param {HTMLElement} root
@@ -93,30 +68,12 @@ export function mountProfileSetup(root, api) {
   countryLabel.style.display = 'block';
   countryLabel.style.marginTop = '12px';
 
-  const countrySelect = document.createElement('select');
-  countrySelect.className = 'app-input';
-  countrySelect.setAttribute('aria-label', '국가 선택');
-  const optCountryPlaceholder = document.createElement('option');
-  optCountryPlaceholder.value = '';
-  optCountryPlaceholder.textContent = '국가 선택 *';
-  countrySelect.appendChild(optCountryPlaceholder);
-  for (const c of COUNTRY_TOP_20) {
-    const o = document.createElement('option');
-    o.value = c.code;
-    o.textContent = `${c.labelKo} (${c.code})`;
-    countrySelect.appendChild(o);
-  }
-  const countrySep = document.createElement('option');
-  countrySep.disabled = true;
-  countrySep.value = '';
-  countrySep.textContent = '──── 기타 ────';
-  countrySelect.appendChild(countrySep);
-  for (const code of COUNTRY_CODES_REST) {
-    const o = document.createElement('option');
-    o.value = code;
-    o.textContent = code;
-    countrySelect.appendChild(o);
-  }
+  /** @type {string} */
+  let selectedCountry = '';
+  const countryPickerEl = createCountryPicker('', (code) => {
+    selectedCountry = code;
+  });
+  countryPickerEl.setAttribute('aria-label', '국가 선택');
 
   const countryError = document.createElement('p');
   countryError.className = 'profile-nick-error';
@@ -185,7 +142,7 @@ export function mountProfileSetup(root, api) {
   box.appendChild(langLabel);
   box.appendChild(langPickerEl);
   box.appendChild(countryLabel);
-  box.appendChild(countrySelect);
+  box.appendChild(countryPickerEl);
   box.appendChild(countryError);
   box.appendChild(genderLabel);
   box.appendChild(genderWrap);
@@ -206,7 +163,7 @@ export function mountProfileSetup(root, api) {
       api.navigate('splash');
       return;
     }
-    if (!countrySelect.value || !String(countrySelect.value).trim()) {
+    if (!selectedCountry || !String(selectedCountry).trim()) {
       countryError.textContent = '국가를 선택해 주세요.';
       countryError.hidden = false;
       return;
@@ -227,7 +184,7 @@ export function mountProfileSetup(root, api) {
       photoURL,
       language,
       selectedDuckId,
-      countryCode: String(countrySelect.value).trim().toUpperCase(),
+      countryCode: String(selectedCountry).trim().toUpperCase(),
       gender: selectedGender,
       bio: bioTrim.length > 0 ? bioTrim : null,
     };

@@ -3,28 +3,28 @@
  * 상위 20개(한글 라벨) + 나머지 코드 알파벳순
  */
 
-/** @type {{ code: string, labelKo: string }[]} */
+/** @type {{ code: string, labelKo: string, flag: string }[]} */
 export const COUNTRY_TOP_20 = [
-  { code: 'KR', labelKo: '한국' },
-  { code: 'JP', labelKo: '일본' },
-  { code: 'US', labelKo: '미국' },
-  { code: 'CN', labelKo: '중국' },
-  { code: 'GB', labelKo: '영국' },
-  { code: 'DE', labelKo: '독일' },
-  { code: 'FR', labelKo: '프랑스' },
-  { code: 'CA', labelKo: '캐나다' },
-  { code: 'AU', labelKo: '호주' },
-  { code: 'BR', labelKo: '브라질' },
-  { code: 'IN', labelKo: '인도' },
-  { code: 'ID', labelKo: '인도네시아' },
-  { code: 'VN', labelKo: '베트남' },
-  { code: 'TH', labelKo: '태국' },
-  { code: 'PH', labelKo: '필리핀' },
-  { code: 'MX', labelKo: '멕시코' },
-  { code: 'ES', labelKo: '스페인' },
-  { code: 'IT', labelKo: '이탈리아' },
-  { code: 'RU', labelKo: '러시아' },
-  { code: 'TR', labelKo: '터키' },
+  { code: 'KR', labelKo: '한국', flag: '🇰🇷' },
+  { code: 'JP', labelKo: '일본', flag: '🇯🇵' },
+  { code: 'US', labelKo: '미국', flag: '🇺🇸' },
+  { code: 'CN', labelKo: '중국', flag: '🇨🇳' },
+  { code: 'GB', labelKo: '영국', flag: '🇬🇧' },
+  { code: 'DE', labelKo: '독일', flag: '🇩🇪' },
+  { code: 'FR', labelKo: '프랑스', flag: '🇫🇷' },
+  { code: 'CA', labelKo: '캐나다', flag: '🇨🇦' },
+  { code: 'AU', labelKo: '호주', flag: '🇦🇺' },
+  { code: 'BR', labelKo: '브라질', flag: '🇧🇷' },
+  { code: 'IN', labelKo: '인도', flag: '🇮🇳' },
+  { code: 'ID', labelKo: '인도네시아', flag: '🇮🇩' },
+  { code: 'VN', labelKo: '베트남', flag: '🇻🇳' },
+  { code: 'TH', labelKo: '태국', flag: '🇹🇭' },
+  { code: 'PH', labelKo: '필리핀', flag: '🇵🇭' },
+  { code: 'MX', labelKo: '멕시코', flag: '🇲🇽' },
+  { code: 'ES', labelKo: '스페인', flag: '🇪🇸' },
+  { code: 'IT', labelKo: '이탈리아', flag: '🇮🇹' },
+  { code: 'RU', labelKo: '러시아', flag: '🇷🇺' },
+  { code: 'TR', labelKo: '터키', flag: '🇹🇷' },
 ];
 
 const TOP_SET = new Set(COUNTRY_TOP_20.map((x) => x.code));
