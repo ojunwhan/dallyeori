@@ -330,6 +330,10 @@ function navigate(screen, payload, navOpts = {}) {
 }
 
 window.addEventListener('popstate', (e) => {
+  if (window.__filePickerOpen) {
+    window.__filePickerOpen = false;
+    return;
+  }
   const st = e.state;
   const ev = /** @type {PopStateEvent} */ (e);
   console.log('[nav] popstate', {

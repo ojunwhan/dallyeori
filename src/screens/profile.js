@@ -184,6 +184,13 @@ function sectionPhoto(vm, api, refresh) {
 
   fillInnerFromSrc(vm.photoURL || '');
 
+  fileInput.addEventListener('click', () => {
+    window.__filePickerOpen = true;
+  });
+  fileInput.addEventListener('cancel', () => {
+    window.__filePickerOpen = false;
+  });
+
   fileInput.addEventListener('change', async (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -247,6 +254,7 @@ function sectionPhoto(vm, api, refresh) {
         }
       }
       setLoading(false);
+      window.__filePickerOpen = false;
     }
   });
 
