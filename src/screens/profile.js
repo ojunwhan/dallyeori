@@ -2,7 +2,7 @@
  * 프로필 화면 — 데이터는 profileViewModel, 여기서는 DOM만
  */
 
-import { logout } from '../services/auth.js';
+import { logout, getToken } from '../services/auth.js';
 import { createLanguagePicker } from '../components/languagePicker.js';
 import { LANGUAGES, getLanguageByCode } from '../data/languages.js';
 import {
@@ -184,44 +184,71 @@ function sectionPhoto(vm, api, refresh) {
 
   fillInnerFromSrc(vm.photoURL || '');
 
-  fileInput.addEventListener('change', async () => {
-    const file = fileInput.files && fileInput.files[0];
-    fileInput.value = '';
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      showAppToast('이미지는 5MB 이하만 올릴 수 있어요.');
-      return;
-    }
-    const previewUrl = URL.createObjectURL(file);
-    fillInnerFromSrc(previewUrl);
-    setLoading(true);
-    const r = await postProfileAvatar(file);
-    URL.revokeObjectURL(previewUrl);
-    setLoading(false);
-    if (!r.ok) {
-      const msg =
-        r.error === 'file_too_large'
-          ? '파일이 너무 커요 (최대 5MB).'
-          : r.error === 'bad_file_type'
-            ? 'JPG, PNG, WEBP만 올릴 수 있어요.'
-            : r.error === 'no_profile'
-              ? '프로필을 먼저 저장한 뒤 다시 시도해 주세요.'
-              : r.error === 'avatar_required'
-                ? '파일을 선택해 주세요.'
-                : r.error === 'server_error'
-                  ? '서버 오류로 업로드에 실패했어요.'
-                  : r.status === 401
-                    ? '로그인이 필요해요.'
-                    : '업로드에 실패했어요. 잠시 후 다시 시도해 주세요.';
-      showAppToast(msg);
+  fileInput.addEventListener('change', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    let previewUrl = '';
+    try {
+      const file = fileInput.files && fileInput.files[0];
+      fileInput.value = '';
+      if (!file) return;
+
+      const token = getToken();
+      if (!token) {
+        showAppToast('로그인이 필요해요.');
+        refresh();
+        return;
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        showAppToast('이미지는 5MB 이하만 올릴 수 있어요.');
+        return;
+      }
+
+      previewUrl = URL.createObjectURL(file);
+      fillInnerFromSrc(previewUrl);
+      setLoading(true);
+
+      const r = await postProfileAvatar(file);
+
+      if (!r.ok) {
+        const msg =
+          r.error === 'file_too_large'
+            ? '파일이 너무 커요 (최대 5MB).'
+            : r.error === 'bad_file_type'
+              ? 'JPG, PNG, WEBP만 올릴 수 있어요.'
+              : r.error === 'no_profile'
+                ? '프로필을 먼저 저장한 뒤 다시 시도해 주세요.'
+                : r.error === 'avatar_required'
+                  ? '파일을 선택해 주세요.'
+                  : r.error === 'server_error'
+                    ? '서버 오류로 업로드에 실패했어요.'
+                    : r.status === 401
+                      ? '로그인이 필요해요.'
+                      : '업로드에 실패했어요. 잠시 후 다시 시도해 주세요.';
+        showAppToast(msg);
+        refresh();
+        return;
+      }
+      const nextUrl = typeof r.photoURL === 'string' ? r.photoURL.trim() : '';
+      api.state.profilePhotoURL = nextUrl;
+      const uid = api.state.user?.uid;
+      if (uid) patchUserRecord(uid, { profilePhotoURL: nextUrl });
       refresh();
-      return;
+    } catch (err) {
+      console.error('[profile] avatarFileInput change', err);
+      showAppToast('사진 처리 중 오류가 났어요. 잠시 후 다시 시도해 주세요.');
+      refresh();
+    } finally {
+      if (previewUrl) {
+        try {
+          URL.revokeObjectURL(previewUrl);
+        } catch (revErr) {
+          console.error('[profile] avatarFileInput revokeObjectURL', revErr);
+        }
+      }
+      setLoading(false);
     }
-    const nextUrl = typeof r.photoURL === 'string' ? r.photoURL.trim() : '';
-    api.state.profilePhotoURL = nextUrl;
-    const uid = api.state.user?.uid;
-    if (uid) patchUserRecord(uid, { profilePhotoURL: nextUrl });
-    refresh();
   });
 
   box.appendChild(fileInput);

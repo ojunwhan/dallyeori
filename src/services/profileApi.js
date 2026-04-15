@@ -89,7 +89,8 @@ export async function postProfileAvatar(file) {
       return { ok: true, photoURL: data.photoURL };
     }
     return { ok: false, status: res.status, error: 'bad_response' };
-  } catch {
+  } catch (err) {
+    console.error('[profileApi] postProfileAvatar', err);
     return { ok: false, status: 0, error: 'network' };
   }
 }
