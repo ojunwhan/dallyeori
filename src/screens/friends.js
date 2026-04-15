@@ -19,7 +19,13 @@ import {
   sendRequest,
   enrichStaleFriendMeta,
 } from '../services/friends.js';
-import { emitAcceptFriendRequest, emitFriendRequestSent, ensureSocket } from '../services/socket.js';
+import {
+  emitAcceptFriendRequest,
+  emitFriendRequestSent,
+  emitSendBattleRequest,
+  ensureSocket,
+} from '../services/socket.js';
+import { showAppToast } from '../services/toast.js';
 import { isMutualHeart, markHeartNotificationsSeen, sendHeart } from '../services/likes.js';
 import {
   searchUsersDiscoveryV1,
@@ -71,6 +77,20 @@ function ensureHeartGiftAnimListener() {
 export function mountFriends(root, api) {
   ensureHeartGiftAnimListener();
   detachFriendsStorageListener?.();
+  /** @type {{ targetUid: string, tid: ReturnType<typeof setTimeout> } | null} */
+  let battleSendPending = null;
+  function resetBattleSendPending() {
+    if (battleSendPending?.tid) clearTimeout(battleSendPending.tid);
+    const t = battleSendPending?.targetUid;
+    battleSendPending = null;
+    if (t) {
+      for (const b of document.querySelectorAll(`button[data-battle-pending-for="${CSS.escape(t)}"]`)) {
+        b.disabled = false;
+        b.textContent = '대전 신청';
+        b.removeAttribute('data-battle-pending-for');
+      }
+    }
+  }
   const uid = api.state.user?.uid;
   if (uid) {
     markHeartNotificationsSeen(uid);
@@ -278,7 +298,9 @@ export function mountFriends(root, api) {
     giftOverlay.hidden = false;
   }
 
-  function openSheet(/** @type {{ id: string, nickname: string, duckId: string }} */ friend) {
+  function openSheet(
+    /** @type {{ id: string, nickname: string, duckId: string, online?: boolean }} */ friend,
+  ) {
     sheetInner.replaceChildren();
     const h = document.createElement('div');
     h.className = 'action-sheet-title';
@@ -296,7 +318,49 @@ export function mountFriends(root, api) {
       });
       sheetInner.appendChild(b);
     }
-    mk('대전 신청', () => window.alert('대전 연동은 추후 제공 예정이에요.'));
+    const battleBtn = document.createElement('button');
+    battleBtn.type = 'button';
+    battleBtn.className = 'app-btn';
+    battleBtn.style.marginTop = '8px';
+    battleBtn.textContent = '대전 신청';
+    if (battleSendPending?.targetUid === friend.id) {
+      battleBtn.disabled = true;
+      battleBtn.textContent = '신청 중...';
+      battleBtn.setAttribute('data-battle-pending-for', friend.id);
+    }
+    battleBtn.addEventListener('click', () => {
+      if (battleSendPending && battleSendPending.targetUid !== friend.id) {
+        showAppToast('이미 다른 친구에게 신청 중이에요');
+        return;
+      }
+      if (!friend.online) {
+        showAppToast('상대가 오프라인이에요');
+        return;
+      }
+      if (!ensureSocket()) return;
+      if (battleSendPending?.tid) clearTimeout(battleSendPending.tid);
+      emitSendBattleRequest(friend.id);
+      battleBtn.disabled = true;
+      battleBtn.textContent = '신청 중...';
+      battleBtn.setAttribute('data-battle-pending-for', friend.id);
+      battleSendPending = {
+        targetUid: friend.id,
+        tid: window.setTimeout(() => {
+          if (battleSendPending?.targetUid !== friend.id) return;
+          showAppToast('응답이 없어요');
+          const sk = ensureSocket();
+          if (sk?.connected) {
+            try {
+              sk.emit('cancelBattleRequest', { targetUid: friend.id });
+            } catch {
+              /* ignore */
+            }
+          }
+          resetBattleSendPending();
+        }, 15_000),
+      };
+    });
+    sheetInner.appendChild(battleBtn);
     mk('하트 선물', () => openGiftModal(friend.id));
     mk('메시지', () => api.navigate('chatRoom', { peerId: friend.id }));
     mk('삭제', () => {
@@ -767,9 +831,31 @@ export function mountFriends(root, api) {
     renderFriends();
     renderReq();
   };
+  /** @param {Event} ev */
+  const onFriendBattleClear = (ev) => {
+    const ce = /** @type {CustomEvent} */ (ev);
+    const d = ce.detail && typeof ce.detail === 'object' ? ce.detail : {};
+    const reason = typeof d.reason === 'string' ? d.reason : '';
+    const peerUid = typeof d.peerUid === 'string' ? d.peerUid : '';
+    const targetUid = typeof d.targetUid === 'string' ? d.targetUid : '';
+    if (!battleSendPending) return;
+    if (reason === 'accepted') {
+      resetBattleSendPending();
+      return;
+    }
+    if (reason === 'declined' && peerUid && battleSendPending.targetUid === peerUid) {
+      resetBattleSendPending();
+      return;
+    }
+    if (targetUid && battleSendPending.targetUid === targetUid) resetBattleSendPending();
+  };
   window.addEventListener('dallyeori-friends-updated', onFriendsStorageUpdated);
-  detachFriendsStorageListener = () =>
+  window.addEventListener('dallyeori-friend-battle-clear', onFriendBattleClear);
+  detachFriendsStorageListener = () => {
     window.removeEventListener('dallyeori-friends-updated', onFriendsStorageUpdated);
+    window.removeEventListener('dallyeori-friend-battle-clear', onFriendBattleClear);
+    resetBattleSendPending();
+  };
 
   function activateFriendsTab(which) {
     tabFriends.classList.toggle('is-active', which === 'friends');

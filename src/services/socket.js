@@ -355,6 +355,137 @@ function attachReceiveFriendRematchRelay(sock) {
   sock.on('receiveRematch', receiveRematchRelayHandler);
 }
 
+/** @param {unknown} data */
+function battleRequestReceivedHandler(data) {
+  if (guestQrFlowActive) return;
+  const o = data && typeof data === 'object' ? /** @type {Record<string, unknown>} */ (data) : {};
+  const senderUid = typeof o.senderUid === 'string' ? o.senderUid.trim() : '';
+  const senderName =
+    typeof o.senderName === 'string' && o.senderName.trim()
+      ? o.senderName.trim()
+      : senderUid;
+  if (!senderUid) return;
+  showBattleRequestReceivedModal(senderName, senderUid);
+}
+
+/** @param {string} senderName @param {string} senderUid */
+function showBattleRequestReceivedModal(senderName, senderUid) {
+  document.getElementById('dallyeori-battle-req-modal')?.remove();
+  const backdrop = document.createElement('div');
+  backdrop.id = 'dallyeori-battle-req-modal';
+  backdrop.setAttribute('role', 'dialog');
+  backdrop.setAttribute('aria-modal', 'true');
+  backdrop.style.cssText =
+    'position:fixed;inset:0;z-index:21000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+  const box = document.createElement('div');
+  box.className = 'app-box';
+  box.style.cssText =
+    'max-width:340px;width:100%;background:#1e2228;color:#eee;border-radius:16px;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.5);';
+  const title = document.createElement('div');
+  title.style.cssText = 'font-weight:800;font-size:1.1rem;margin-bottom:10px;text-align:center';
+  title.textContent = '대전 신청';
+  const msg = document.createElement('p');
+  msg.style.cssText = 'margin:0 0 16px;line-height:1.5;color:#bbb;text-align:center';
+  msg.textContent = `${senderName}님이 대전을 신청했어요!`;
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:10px;justify-content:center;flex-wrap:wrap';
+  const bOk = document.createElement('button');
+  bOk.type = 'button';
+  bOk.className = 'app-btn app-btn--primary';
+  bOk.textContent = '수락';
+  const bNo = document.createElement('button');
+  bNo.type = 'button';
+  bNo.className = 'app-btn';
+  bNo.textContent = '거절';
+  const close = () => {
+    document.getElementById('dallyeori-battle-req-modal')?.remove();
+  };
+  bOk.addEventListener('click', () => {
+    close();
+    emitSyncMatchProfileToServer();
+    const s = ensureSocket();
+    if (s?.connected) {
+      s.emit('acceptBattleRequest', {
+        targetUid: senderUid,
+        profile: buildLocalMatchProfilePayload(),
+      });
+    }
+  });
+  bNo.addEventListener('click', () => {
+    close();
+    const s = ensureSocket();
+    if (s?.connected) s.emit('declineBattleRequest', { targetUid: senderUid });
+  });
+  row.appendChild(bOk);
+  row.appendChild(bNo);
+  box.appendChild(title);
+  box.appendChild(msg);
+  box.appendChild(row);
+  backdrop.appendChild(box);
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) {
+      close();
+      const s = ensureSocket();
+      if (s?.connected) s.emit('declineBattleRequest', { targetUid: senderUid });
+    }
+  });
+  document.body.appendChild(backdrop);
+}
+
+/** @param {unknown} data */
+function battleRequestAcceptedHandler(data) {
+  window.dispatchEvent(
+    new CustomEvent('dallyeori-friend-battle-clear', { detail: { reason: 'accepted' } }),
+  );
+  if (data && typeof data === 'object') {
+    const d = /** @type {Record<string, unknown>} */ (data);
+    if (typeof d.roomId === 'string' && normalizeRaceSlot(d.slot) != null) {
+      globalMatchFoundBridge(data);
+    }
+  }
+}
+
+/** @param {unknown} data */
+function battleRequestDeclinedHandler(data) {
+  const o = data && typeof data === 'object' ? /** @type {Record<string, unknown>} */ (data) : {};
+  const peerUid = typeof o.peerUid === 'string' ? o.peerUid.trim() : '';
+  showAppToast('상대가 거절했어요');
+  window.dispatchEvent(
+    new CustomEvent('dallyeori-friend-battle-clear', { detail: { reason: 'declined', peerUid } }),
+  );
+}
+
+/** @param {unknown} d */
+function battleRequestFailedRelayHandler(d) {
+  const o = d && typeof d === 'object' ? /** @type {Record<string, unknown>} */ (d) : {};
+  const reason = typeof o.reason === 'string' ? o.reason : '';
+  const targetUid = typeof o.targetUid === 'string' ? o.targetUid.trim() : '';
+  window.dispatchEvent(
+    new CustomEvent('dallyeori-friend-battle-clear', { detail: { reason: reason || 'failed', targetUid } }),
+  );
+  if (reason === 'offline') showAppToast('상대가 오프라인이에요');
+  else if (reason === 'timeout') showAppToast('응답이 없어요');
+  else if (reason === 'expired') showAppToast('신청이 만료됐어요');
+  else if (reason === 'peer_offline') showAppToast('상대 접속이 끊겼어요');
+  else if (reason === 'unavailable') showAppToast('지금은 대전을 시작할 수 없어요');
+}
+
+/**
+ * 친구 대전 신청·수락·거절 이벤트 (로그인 게임 소켓)
+ * @param {import('socket.io-client').Socket} sock
+ */
+function attachFriendBattleRelay(sock) {
+  if (!sock || guestQrFlowActive) return;
+  sock.off('battleRequestReceived', battleRequestReceivedHandler);
+  sock.on('battleRequestReceived', battleRequestReceivedHandler);
+  sock.off('battleRequestAccepted', battleRequestAcceptedHandler);
+  sock.on('battleRequestAccepted', battleRequestAcceptedHandler);
+  sock.off('battleRequestDeclined', battleRequestDeclinedHandler);
+  sock.on('battleRequestDeclined', battleRequestDeclinedHandler);
+  sock.off('battleRequestFailed', battleRequestFailedRelayHandler);
+  sock.on('battleRequestFailed', battleRequestFailedRelayHandler);
+}
+
 /** @type {((data: object) => false | void) | null} */
 let _onServerMatchFoundNavigate = null;
 
@@ -497,6 +628,7 @@ export function connectQrGuestSocket(token) {
   attachReceiveHeartRelay(gameSocket);
   attachHeartEconomyRelay(gameSocket);
   attachReceiveFriendRematchRelay(gameSocket);
+  attachFriendBattleRelay(gameSocket);
   attachGlobalMatchFoundBridge(gameSocket);
   return gameSocket;
 }
@@ -544,6 +676,7 @@ export function ensureSocket() {
       attachReceiveHeartRelay(gameSocket);
       attachHeartEconomyRelay(gameSocket);
       attachReceiveFriendRematchRelay(gameSocket);
+      attachFriendBattleRelay(gameSocket);
       attachGlobalMatchFoundBridge(gameSocket);
       return gameSocket;
     } else {
@@ -574,6 +707,7 @@ export function ensureSocket() {
     attachReceiveHeartRelay(gameSocket);
     attachHeartEconomyRelay(gameSocket);
     attachReceiveFriendRematchRelay(gameSocket);
+    attachFriendBattleRelay(gameSocket);
     attachGlobalMatchFoundBridge(gameSocket);
     return gameSocket;
   }
@@ -584,6 +718,7 @@ export function ensureSocket() {
     attachReceiveHeartRelay(gameSocket);
     attachHeartEconomyRelay(gameSocket);
     attachReceiveFriendRematchRelay(gameSocket);
+    attachFriendBattleRelay(gameSocket);
     attachGlobalMatchFoundBridge(gameSocket);
     return gameSocket;
   }
@@ -616,6 +751,7 @@ export function ensureSocket() {
   attachReceiveHeartRelay(gameSocket);
   attachHeartEconomyRelay(gameSocket);
   attachReceiveFriendRematchRelay(gameSocket);
+  attachFriendBattleRelay(gameSocket);
   attachGlobalMatchFoundBridge(gameSocket);
   return gameSocket;
 }
@@ -657,6 +793,22 @@ export function emitAcceptFriendRequest(peerUid, requestId) {
   } else {
     s.once('connect', send);
   }
+}
+
+/**
+ * 친구 대전 신청 (서버가 상대에게 battleRequestReceived)
+ * @param {string} targetUid
+ */
+export function emitSendBattleRequest(targetUid) {
+  if (!targetUid) return;
+  const s = ensureSocket();
+  if (!s) return;
+  emitSyncMatchProfileToServer();
+  const send = () => {
+    if (s.connected) s.emit('sendBattleRequest', { targetUid });
+  };
+  if (s.connected) send();
+  else s.once('connect', send);
 }
 
 /** @param {string} targetUid */

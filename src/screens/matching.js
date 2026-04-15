@@ -121,7 +121,7 @@ export function mountMatching(root, api) {
   btnFriend.style.marginTop = '10px';
   btnFriend.textContent = '친구 대전';
   btnFriend.addEventListener('click', () => {
-    window.alert('준비 중입니다.');
+    api.navigate('friends');
   });
 
   menuLayer.appendChild(btnRandom);
