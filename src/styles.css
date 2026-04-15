@@ -1024,8 +1024,14 @@
 }
 
 .friends-find-more {
+  display: none;
   width: 100%;
   margin-top: 12px;
+  box-sizing: border-box;
+}
+
+.friends-find-more:not([hidden]) {
+  display: block;
 }
 
 .friends-subtitle {

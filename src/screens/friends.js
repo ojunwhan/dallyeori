@@ -381,6 +381,11 @@ export function mountFriends(root, api) {
   /** @type {boolean} */
   let findLastHadFullPage = false;
 
+  /** @param {boolean} visible */
+  function setFindLoadMoreVisible(visible) {
+    findLoadMore.hidden = !visible;
+  }
+
   function hasDiscoveryFilter() {
     const cc = String(countrySel.value || '')
       .trim()
@@ -392,13 +397,14 @@ export function mountFriends(root, api) {
     return hasCountry || g === 'M' || g === 'F';
   }
 
-  function showFindEmptyHint() {
+  /** 필터 미선택일 때만 — 검색 결과(카드)가 있을 때는 호출하지 않음 */
+  function showFindNoFilterHint() {
     findNextOffset = 0;
     findLastHadFullPage = false;
-    findLoadMore.hidden = true;
+    setFindLoadMoreVisible(false);
     findResults.replaceChildren();
     const hint = document.createElement('p');
-    hint.className = 'app-muted';
+    hint.className = 'app-muted friends-find-hint-welcome';
     hint.textContent = '국가 또는 성별을 선택하면 자동으로 검색돼요.';
     findResults.appendChild(hint);
   }
@@ -591,11 +597,11 @@ export function mountFriends(root, api) {
   async function runDiscoverySearch(/** @type {boolean} */ resetList) {
     if (!uid) {
       findResults.replaceChildren();
-      findLoadMore.hidden = true;
+      setFindLoadMoreVisible(false);
       return;
     }
     if (!hasDiscoveryFilter()) {
-      showFindEmptyHint();
+      showFindNoFilterHint();
       return;
     }
 
@@ -603,6 +609,7 @@ export function mountFriends(root, api) {
     if (resetList) {
       findNextOffset = 0;
       findResults.replaceChildren();
+      setFindLoadMoreVisible(false);
       const loading = document.createElement('p');
       loading.className = 'app-muted';
       loading.textContent = '검색 중…';
@@ -623,7 +630,8 @@ export function mountFriends(root, api) {
       p.className = 'app-muted';
       p.textContent = '검색에 실패했어요.';
       findResults.appendChild(p);
-      findLoadMore.hidden = true;
+      findLastHadFullPage = false;
+      setFindLoadMoreVisible(false);
       return;
     }
     for (const u of users) {
@@ -635,14 +643,13 @@ export function mountFriends(root, api) {
       findNextOffset = requestOffset;
     }
     findLastHadFullPage = users.length >= FIND_PAGE;
-    findLoadMore.hidden = !findLastHadFullPage;
     if (users.length === 0 && resetList) {
       const p = document.createElement('p');
       p.className = 'app-muted';
       p.textContent = '결과가 없어요.';
       findResults.appendChild(p);
-      findLoadMore.hidden = true;
     }
+    setFindLoadMoreVisible(users.length >= FIND_PAGE);
   }
 
   function onFindFiltersChanged() {
@@ -773,7 +780,7 @@ export function mountFriends(root, api) {
     panelReq.hidden = which !== 'req';
     if (which === 'find') {
       if (hasDiscoveryFilter()) void runDiscoverySearch(true);
-      else showFindEmptyHint();
+      else showFindNoFilterHint();
     }
     if (which === 'req') renderReq();
   }
