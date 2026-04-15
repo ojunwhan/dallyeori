@@ -240,7 +240,7 @@ let raceFinishPosted=false;
 })();
 
 // ═══ DESIGN ═══
-const TIME_LIMIT=13;
+const TIME_LIMIT=14;
 const CD_STEP_SEC=1,CD_START_VAL=2;
 /** true면 [input]/[physics] 로그 (프로덕션은 false) */
 const DEBUG_RACE_TAP=false;
