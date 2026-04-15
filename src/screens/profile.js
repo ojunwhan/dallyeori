@@ -175,7 +175,10 @@ function sectionPhoto(vm, api, refresh) {
     bChange.textContent = '사진 변경';
     bChange.addEventListener('click', () => {
       sheet.hidden = true;
-      fileInput.click();
+      // 시트가 닫히는 동안 브라우저가 연속 click()을 취소하는 경우 방지 (모바일 웹뷰 등)
+      window.setTimeout(() => {
+        fileInput.click();
+      }, 100);
     });
     sheetInner.appendChild(bChange);
 
