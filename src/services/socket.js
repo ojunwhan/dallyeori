@@ -184,6 +184,77 @@ export function getJwtUid() {
   return p && typeof p.uid === 'string' ? p.uid : '';
 }
 
+/** QR 게스트 한판더 → OAuth 후 재전송용 (raceV3Inline + app 부팅) */
+const PENDING_REMATCH_LS = 'dallyeori.pendingRematch';
+
+/**
+ * OAuth 로그인 직후(일반 JWT 소켓) — 저장된 한판더 의도가 있으면 raceEndingEntered 후 sendRematch 1회.
+ * 소켓 연결 후(uid 핸드셰이크 완료) 실행되도록 connect 콜백 사용.
+ */
+export function flushPendingRematchAfterLogin() {
+  if (guestQrFlowActive) return;
+  let raw;
+  try {
+    raw = localStorage.getItem(PENDING_REMATCH_LS);
+  } catch {
+    return;
+  }
+  if (!raw || typeof raw !== 'string') return;
+  let o;
+  try {
+    o = JSON.parse(raw);
+  } catch {
+    try {
+      localStorage.removeItem(PENDING_REMATCH_LS);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  const targetUid = o && typeof o.targetUid === 'string' ? o.targetUid.trim() : '';
+  const roomId = o && typeof o.roomId === 'string' ? o.roomId.trim() : '';
+  if (!targetUid || !roomId) {
+    try {
+      localStorage.removeItem(PENDING_REMATCH_LS);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  const s = ensureSocket();
+  if (!s) return;
+
+  const run = () => {
+    try {
+      s.emit('raceEndingEntered', { roomId });
+    } catch (e) {
+      console.warn('[socket] pendingRematch raceEndingEntered', e);
+    }
+    emitSyncMatchProfileToServer();
+    try {
+      s.emit('sendRematch', {
+        targetUid,
+        roomId,
+        profile: buildLocalMatchProfilePayload(),
+      });
+    } catch (e) {
+      console.warn('[socket] pendingRematch sendRematch', e);
+    }
+    try {
+      localStorage.removeItem(PENDING_REMATCH_LS);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  if (s.connected) {
+    queueMicrotask(run);
+  } else {
+    s.once('connect', run);
+  }
+}
+
 /** 로컬 DB + __dallyeoriMatchProfile — 서버 sync / sendRematch(profile) 공통 */
 function buildLocalMatchProfilePayload() {
   const uid = getJwtUid();

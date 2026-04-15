@@ -10,6 +10,7 @@ import {
   connectQrGuestSocket,
   emitRaceJoin,
   ensureSocket,
+  flushPendingRematchAfterLogin,
   getGameSocket,
   getJwtUid,
   getRaceJoinPayloadUid,
@@ -666,6 +667,7 @@ function boot() {
     });
     const bootSock = ensureSocket();
     console.log('[app] boot ensureSocket result:', !!bootSock, 'connected:', bootSock?.connected);
+    flushPendingRematchAfterLogin();
   } else {
     console.log('[dallyeori] app.js boot → splash');
     navigate('splash', undefined, { replaceHistory: true });

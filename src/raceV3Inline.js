@@ -1,4 +1,5 @@
 import { DUCKS_NINE, RACE_ENGINE_PHYSICS, TAP_STRIDE_M } from './constants.js';
+import { login } from './services/auth.js';
 import { spend } from './services/hearts.js';
 import { showAppToast } from './services/toast.js';
 import {
@@ -11,6 +12,70 @@ import {
   normalizeRaceSlot,
 } from './services/socket.js';
 import { createRace3DRenderer } from './race3DRenderer.js';
+
+const PENDING_REMATCH_LS = 'dallyeori.pendingRematch';
+
+/**
+ * QR 게스트 한판더 → 로그인 유도 (OAuth 전 rematch 의도 저장)
+ * @param {{ targetUid: string, roomId: string }} ctx
+ */
+function showQrGuestRematchLoginModal(ctx) {
+  const backdrop = document.createElement('div');
+  backdrop.setAttribute('role', 'dialog');
+  backdrop.setAttribute('aria-modal', 'true');
+  backdrop.style.cssText =
+    'position:fixed;inset:0;z-index:20000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+  const box = document.createElement('div');
+  box.className = 'app-box';
+  box.style.cssText =
+    'max-width:340px;width:100%;background:#1e2228;color:#eee;border-radius:16px;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.5);';
+  const title = document.createElement('div');
+  title.style.cssText = 'font-weight:800;font-size:1.1rem;margin-bottom:10px;';
+  title.textContent = '한판더';
+  const msg = document.createElement('p');
+  msg.className = 'app-muted';
+  msg.style.cssText = 'margin:0 0 16px;line-height:1.5;color:#bbb;';
+  msg.textContent = '한판더 하려면 로그인이 필요해요!';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;flex-direction:column;gap:10px;';
+  const mkBtn = (label, primary) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = primary ? 'app-btn app-btn--primary' : 'app-btn';
+    b.style.width = '100%';
+    b.textContent = label;
+    return b;
+  };
+  const bGoogle = mkBtn('구글로 로그인', true);
+  const bKakao = mkBtn('카카오로 로그인', false);
+  const bClose = mkBtn('닫기', false);
+  const go = (provider) => {
+    try {
+      localStorage.setItem(
+        PENDING_REMATCH_LS,
+        JSON.stringify({ targetUid: ctx.targetUid, roomId: ctx.roomId }),
+      );
+    } catch (e) {
+      console.warn('[race] pendingRematch save', e);
+    }
+    backdrop.remove();
+    void login(provider);
+  };
+  bGoogle.addEventListener('click', () => go('google'));
+  bKakao.addEventListener('click', () => go('kakao'));
+  bClose.addEventListener('click', () => backdrop.remove());
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  });
+  row.appendChild(bGoogle);
+  row.appendChild(bKakao);
+  row.appendChild(bClose);
+  box.appendChild(title);
+  box.appendChild(msg);
+  box.appendChild(row);
+  backdrop.appendChild(box);
+  document.body.appendChild(backdrop);
+}
 
 /**
  * dallyeori-v3.html 로직 동일 — iframe 없이 앱 페이지에서 실행
@@ -1160,6 +1225,16 @@ function syncRace3D() {
               : '');
           if (!targetUid) {
             showAppToast('상대방 정보가 없습니다.');
+            return;
+          }
+          if (appSt && appSt.qrGuestOneShot) {
+            const roomId =
+              serverRaceOpt && typeof serverRaceOpt.roomId === 'string' ? serverRaceOpt.roomId.trim() : '';
+            if (!roomId) {
+              showAppToast('방 정보가 없어 한판더를 이어갈 수 없어요.');
+              return;
+            }
+            showQrGuestRematchLoginModal({ targetUid, roomId });
             return;
           }
           const sock = getRaceIoSocket() || serverRaceOpt?.socket;
