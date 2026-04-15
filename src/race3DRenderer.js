@@ -441,7 +441,10 @@ export function createRace3DRenderer(hostEl, options = {}) {
 
   const playerCollarMat = /** @type {THREE.MeshStandardMaterial} */ (playerDuck.collar.material);
   const originalCollarColor = playerCollarMat.color.clone();
+  const oppCollarMat = /** @type {THREE.MeshStandardMaterial} */ (oppDuck.collar.material);
+  const originalOppCollarColor = oppCollarMat.color.clone();
   const whiteColorReused = new THREE.Color(0xffffff);
+  const redCollarPulse = new THREE.Color(0xff2222);
 
   let collarPulseActive = false;
   function setFloorRingVisible(v) {
@@ -449,6 +452,31 @@ export function createRace3DRenderer(hostEl, options = {}) {
     if (!collarPulseActive) {
       playerCollarMat.color.copy(originalCollarColor);
     }
+  }
+
+  /** setEnding 이후 승패 연출 — draw 제외 */
+  let endingAnimActive = false;
+  let endingAnimT0 = 0;
+  /** true면 플레이어 오리가 승자 */
+  let endingWinnerIsPlayer = true;
+
+  const END_BOUNCE_PERIOD = 0.3;
+  const END_SWAY_Z_PERIOD = 0.2;
+  const END_SCALE_PULSE_PERIOD = 0.25;
+  const END_COLLAR_PULSE_PERIOD = 0.15;
+  const END_CAM_SHAKE = 0.05;
+  const LOSER_SCALE_DURATION = 0.5;
+  const LOSER_FINAL_SCALE = 0.85;
+  const LOSER_TILT_RAD = (15 * Math.PI) / 180;
+
+  function resetEndingCelebration() {
+    endingAnimActive = false;
+    duckRoot.rotation.z = 0;
+    oppRoot.rotation.z = 0;
+    duckRoot.scale.set(1, 1, 1);
+    oppRoot.scale.set(1, 1, 1);
+    playerCollarMat.color.copy(originalCollarColor);
+    oppCollarMat.color.copy(originalOppCollarColor);
   }
 
   const cdOverlayEl = document.createElement('div');
@@ -543,6 +571,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
   }
 
   function setCountdown(val) {
+    resetEndingCelebration();
     resultOverlayEl.style.display = 'none';
     if (val === 0) {
       cdOverlayEl.textContent = 'GO!';
@@ -554,11 +583,13 @@ export function createRace3DRenderer(hostEl, options = {}) {
   }
 
   function setRacing() {
+    resetEndingCelebration();
     internalRacing = true;
     cdOverlayEl.textContent = '';
   }
 
   function setEnding(result, callbacks = {}) {
+    resetEndingCelebration();
     internalRacing = false;
     const w = result && result.winner;
     let main = 'DRAW!';
@@ -608,6 +639,12 @@ export function createRace3DRenderer(hostEl, options = {}) {
     btnWrap.appendChild(btnRecord);
     resultOverlayEl.appendChild(btnWrap);
     resultOverlayEl.style.pointerEvents = 'all';
+
+    if (w === 'win' || w === 'lose') {
+      endingAnimActive = true;
+      endingAnimT0 = clock.getElapsedTime();
+      endingWinnerIsPlayer = w === 'win';
+    }
   }
 
   function resize() {
@@ -639,6 +676,7 @@ export function createRace3DRenderer(hostEl, options = {}) {
   }
 
   function dispose() {
+    resetEndingCelebration();
     if (animId) cancelAnimationFrame(animId);
     animId = 0;
     renderer.dispose();
@@ -773,7 +811,9 @@ export function createRace3DRenderer(hostEl, options = {}) {
       tailPivot.rotation.y = Math.sin(id * 1.3) * 0.15;
       wingL.rotation.y = -0.15;
       wingR.rotation.y = 0.15;
-      duckRoot.position.y = duckRoot.position.y * (1 - dt * 6);
+      if (!endingAnimActive) {
+        duckRoot.position.y = duckRoot.position.y * (1 - dt * 6);
+      }
     }
 
     oppAnim.squashT = Math.max(0, oppAnim.squashT - dt * 5);
@@ -834,7 +874,9 @@ export function createRace3DRenderer(hostEl, options = {}) {
       oppDuck.tail.rotation.y = Math.sin(bid * 1.3) * 0.15;
       oppDuck.leftWing.rotation.y = -0.15;
       oppDuck.rightWing.rotation.y = 0.15;
-      oppRoot.position.y = oppRoot.position.y * (1 - dt * 6);
+      if (!endingAnimActive) {
+        oppRoot.position.y = oppRoot.position.y * (1 - dt * 6);
+      }
     }
 
     duckRoot.updateMatrixWorld(true);
@@ -848,10 +890,29 @@ export function createRace3DRenderer(hostEl, options = {}) {
     oppDuck.rightLeg.foot.getWorldPosition(_vFootWorld);
     oppFootShR.position.set(_vFootWorld.x, 0.01, _vFootWorld.z);
 
-    if (collarPulseActive) {
+    if (collarPulseActive && !endingAnimActive) {
       const t = clock.getElapsedTime();
       const pulse = (Math.sin(t * Math.PI * 2.8) + 1) / 2;
       playerCollarMat.color.copy(originalCollarColor).lerp(whiteColorReused, pulse * 0.85);
+    }
+
+    if (endingAnimActive) {
+      const tE = clock.getElapsedTime() - endingAnimT0;
+      const wRoot = endingWinnerIsPlayer ? duckRoot : oppRoot;
+      const lRoot = endingWinnerIsPlayer ? oppRoot : duckRoot;
+      wRoot.position.y = Math.sin(tE * ((2 * Math.PI) / END_BOUNCE_PERIOD)) * 0.3;
+      wRoot.rotation.z = Math.sin(tE * ((2 * Math.PI) / END_SWAY_Z_PERIOD)) * 0.25;
+      const sc = 1 + Math.sin(tE * ((2 * Math.PI) / END_SCALE_PULSE_PERIOD)) * 0.15;
+      wRoot.scale.set(sc, 1, sc);
+      const collarPulseT = (Math.sin(tE * ((2 * Math.PI) / END_COLLAR_PULSE_PERIOD)) + 1) / 2;
+      const winCollar = endingWinnerIsPlayer ? playerCollarMat : oppCollarMat;
+      const winOrig = endingWinnerIsPlayer ? originalCollarColor : originalOppCollarColor;
+      winCollar.color.copy(winOrig).lerp(redCollarPulse, collarPulseT);
+      const kL = Math.min(1, tE / LOSER_SCALE_DURATION);
+      const sL = 1 + (LOSER_FINAL_SCALE - 1) * kL;
+      lRoot.scale.set(sL, sL, sL);
+      const tiltSign = endingWinnerIsPlayer ? 1 : -1;
+      lRoot.rotation.z = tiltSign * LOSER_TILT_RAD;
     }
 
     /** 트랙 X 중앙 고정, Z만 내 오리 거리(시각 스케일) 따라 추적 */
@@ -861,6 +922,11 @@ export function createRace3DRenderer(hostEl, options = {}) {
     const camTargetPos = new THREE.Vector3(camX, 1.2, -camFollowDist);
     const camDesired = new THREE.Vector3(camX, 3.0, -camFollowDist + 5.5);
     camera.position.lerp(camDesired, 0.05);
+    if (endingAnimActive) {
+      camera.position.x += (Math.random() * 2 - 1) * END_CAM_SHAKE;
+      camera.position.y += (Math.random() * 2 - 1) * END_CAM_SHAKE;
+      camera.position.z += (Math.random() * 2 - 1) * END_CAM_SHAKE;
+    }
     camera.lookAt(camTargetPos);
 
     renderer.render(scene, camera);
