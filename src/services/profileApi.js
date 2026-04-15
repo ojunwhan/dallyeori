@@ -56,6 +56,44 @@ export async function fetchProfileMeV1() {
  * }} body
  * @returns {Promise<{ ok: true, profile: object } | { ok: false, status: number, error: string }>}
  */
+/**
+ * 프로필 아바타 이미지 업로드 (multipart, 필드명 avatar)
+ * @param {File} file
+ * @returns {Promise<{ ok: true, photoURL: string } | { ok: false, status: number, error: string }>}
+ */
+export async function postProfileAvatar(file) {
+  const t = getToken();
+  if (!t || !file) return { ok: false, status: 401, error: 'unauthorized' };
+  const fd = new FormData();
+  fd.append('avatar', file);
+  try {
+    const res = await fetch(resolvePublicApiUrl('/api/v1/profile/avatar'), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${t}` },
+      body: fd,
+    });
+    let data = {};
+    try {
+      data = await res.json();
+    } catch {
+      /* ignore */
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: res.status,
+        error: typeof data.error === 'string' ? data.error : 'unknown',
+      };
+    }
+    if (data && data.ok === true && typeof data.photoURL === 'string') {
+      return { ok: true, photoURL: data.photoURL };
+    }
+    return { ok: false, status: res.status, error: 'bad_response' };
+  } catch {
+    return { ok: false, status: 0, error: 'network' };
+  }
+}
+
 export async function postProfile(body) {
   const t = getToken();
   if (!t) return { ok: false, status: 401, error: 'unauthorized' };

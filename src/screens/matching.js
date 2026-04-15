@@ -3,6 +3,7 @@
  */
 
 import { DUCKS_NINE } from '../constants.js';
+import { resolveMediaUrl } from '../services/auth.js';
 import { ensureSocket, startMockRandomMatch } from '../services/socket.js';
 
 const RACE_DELAY_MS = 1000;
@@ -43,7 +44,7 @@ function createMatchPlayerCard(opts) {
   } else if (opts.photoURL) {
     const img = document.createElement('img');
     img.className = 'matching-player-avatar-img';
-    img.src = opts.photoURL;
+    img.src = resolveMediaUrl(opts.photoURL);
     img.alt = '';
     img.referrerPolicy = 'no-referrer';
     avatarWrap.appendChild(img);

@@ -11,8 +11,9 @@ import {
   persistLanguage,
 } from '../services/profileViewModel.js';
 import { getOverallStats } from '../services/raceHistory.js';
-import { getUserRecord } from '../services/db.js';
-import { postProfile, validateNicknameLocal } from '../services/profileApi.js';
+import { getUserRecord, patchUserRecord } from '../services/db.js';
+import { postProfile, postProfileAvatar, validateNicknameLocal } from '../services/profileApi.js';
+import { showAppToast } from '../services/toast.js';
 
 function fillLanguageSelect(select, selectedCode) {
   const t1 = LANGUAGES.filter((l) => l.tier === 1);
@@ -82,7 +83,7 @@ export function mountProfile(root, api) {
     const vm = buildProfileViewModel(state);
     main.replaceChildren();
     main.append(
-      sectionPhoto(vm),
+      sectionPhoto(vm, api, refresh),
       sectionNickname(vm, api, editingNickname, () => {
         editingNickname = false;
         refresh();
@@ -112,34 +113,105 @@ export function mountProfile(root, api) {
 }
 
 /** @param {import('../services/profileViewModel.js').ProfileViewModel} vm */
-function sectionPhoto(vm) {
+function sectionPhoto(vm, api, refresh) {
   const box = document.createElement('div');
   box.className = 'app-box profile-photo-section';
 
-  const wrapImg = document.createElement('div');
-  wrapImg.className = 'profile-avatar-wrap';
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp';
+  fileInput.style.display = 'none';
+  fileInput.setAttribute('aria-hidden', 'true');
 
-  if (vm.photoURL) {
-    const img = document.createElement('img');
-    img.className = 'profile-avatar-img';
-    img.src = vm.photoURL;
-    img.alt = '프로필';
-    img.referrerPolicy = 'no-referrer';
-    img.addEventListener('error', () => {
-      img.replaceWith(avatarPlaceholder());
-    });
-    wrapImg.appendChild(img);
-  } else {
-    wrapImg.appendChild(avatarPlaceholder());
+  const wrapImg = document.createElement('div');
+  wrapImg.className = 'profile-avatar-wrap profile-avatar-wrap--clickable';
+  wrapImg.setAttribute('role', 'button');
+  wrapImg.tabIndex = 0;
+  wrapImg.setAttribute('aria-label', '프로필 사진 변경');
+
+  const inner = document.createElement('div');
+  inner.className = 'profile-avatar-inner';
+
+  const loadingEl = document.createElement('div');
+  loadingEl.className = 'profile-avatar-loading';
+  loadingEl.hidden = true;
+  loadingEl.textContent = '업로드 중…';
+
+  wrapImg.appendChild(inner);
+  wrapImg.appendChild(loadingEl);
+
+  function setLoading(on) {
+    loadingEl.hidden = !on;
+    wrapImg.style.pointerEvents = on ? 'none' : '';
+    fileInput.disabled = on;
   }
 
-  const hint = document.createElement('p');
-  hint.className = 'app-muted profile-upload-hint';
-  hint.textContent =
-    '프로필 사진은 현재 구글 계정 이미지를 사용합니다. 업로드 기능은 추후 추가 예정입니다.';
+  function fillInnerFromSrc(src) {
+    inner.replaceChildren();
+    if (src) {
+      const img = document.createElement('img');
+      img.className = 'profile-avatar-img';
+      img.src = src;
+      img.alt = '프로필';
+      img.referrerPolicy = 'no-referrer';
+      img.addEventListener('error', () => {
+        inner.replaceChildren(avatarPlaceholder());
+      });
+      inner.appendChild(img);
+    } else {
+      inner.appendChild(avatarPlaceholder());
+    }
+  }
 
+  fillInnerFromSrc(vm.photoURL || '');
+
+  wrapImg.addEventListener('click', () => {
+    if (!loadingEl.hidden) return;
+    fileInput.click();
+  });
+  wrapImg.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (!loadingEl.hidden) return;
+      fileInput.click();
+    }
+  });
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      showAppToast('이미지는 5MB 이하만 올릴 수 있어요.');
+      return;
+    }
+    const previewUrl = URL.createObjectURL(file);
+    fillInnerFromSrc(previewUrl);
+    setLoading(true);
+    const r = await postProfileAvatar(file);
+    URL.revokeObjectURL(previewUrl);
+    setLoading(false);
+    if (!r.ok) {
+      const msg =
+        r.error === 'file_too_large'
+          ? '파일이 너무 커요 (최대 5MB).'
+          : r.error === 'bad_file_type'
+            ? 'JPG, PNG, WEBP만 올릴 수 있어요.'
+            : r.error === 'no_profile'
+              ? '프로필을 먼저 저장한 뒤 다시 시도해 주세요.'
+              : '업로드에 실패했어요. 잠시 후 다시 시도해 주세요.';
+      showAppToast(msg);
+      refresh();
+      return;
+    }
+    api.state.profilePhotoURL = r.photoURL;
+    const uid = api.state.user?.uid;
+    if (uid) patchUserRecord(uid, { profilePhotoURL: r.photoURL });
+    refresh();
+  });
+
+  box.appendChild(fileInput);
   box.appendChild(wrapImg);
-  box.appendChild(hint);
   return box;
 }
 

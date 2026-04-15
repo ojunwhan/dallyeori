@@ -5,6 +5,7 @@
 import { DUCKS_NINE } from '../constants.js';
 import { getBalance } from './hearts.js';
 import { getUserRecord, patchUserRecord } from './db.js';
+import { resolveMediaUrl } from './auth.js';
 
 /** @typedef {ReturnType<typeof buildProfileViewModel>} ProfileViewModel */
 
@@ -26,9 +27,9 @@ export function buildProfileViewModel(state) {
   const draws = Number(state.draws ?? rec?.draws ?? 0);
   const totalRaces = wins + losses + draws;
 
-  const photoURL =
-    (state.profilePhotoURL || rec?.profilePhotoURL || state.user?.photoURL || '').trim() ||
-    '';
+  const photoRaw =
+    (state.profilePhotoURL || rec?.profilePhotoURL || state.user?.photoURL || '').trim() || '';
+  const photoURL = resolveMediaUrl(photoRaw);
 
   const nickname = (state.nickname || rec?.nickname || state.user?.displayName || '').trim();
   const langCode = state.language || rec?.language || 'ko';

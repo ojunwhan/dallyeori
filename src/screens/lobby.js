@@ -4,6 +4,7 @@
  */
 
 import { DUCKS_NINE } from '../constants.js';
+import { resolveMediaUrl } from '../services/auth.js';
 import { getBalance } from '../services/hearts.js';
 import { getNewFriendRejectNotifCount } from '../services/friends.js';
 import { getNewHeartsCount } from '../services/likes.js';
@@ -37,7 +38,7 @@ export function createLobbyProfileSummary(api) {
   const avatarWrap = document.createElement('div');
   avatarWrap.className = 'lobby-profile-avatar-wrap';
 
-  const url = api.state.profilePhotoURL;
+  const url = resolveMediaUrl(api.state.profilePhotoURL || '');
   if (url) {
     const img = document.createElement('img');
     img.className = 'lobby-profile-avatar-img';

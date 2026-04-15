@@ -43,6 +43,18 @@ export function resolvePublicApiUrl(path) {
 }
 
 /**
+ * API 서버에 저장된 정적 경로(/uploads/...)를 img src 등에 쓸 절대 URL로 변환합니다.
+ * @param {string} url
+ * @returns {string}
+ */
+export function resolveMediaUrl(url) {
+  const u = typeof url === 'string' ? url.trim() : '';
+  if (!u) return '';
+  if (u.startsWith('/uploads/')) return resolvePublicApiUrl(u);
+  return u;
+}
+
+/**
  * OAuth 리다이렉트 후 URL 해시에서 JWT 저장
  * @returns {boolean} 토큰을 소비했으면 true
  */
