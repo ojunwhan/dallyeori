@@ -21,7 +21,13 @@ import {
 } from '../services/friends.js';
 import { emitAcceptFriendRequest, emitFriendRequestSent, ensureSocket } from '../services/socket.js';
 import { isMutualHeart, markHeartNotificationsSeen, sendHeart } from '../services/likes.js';
-import { searchUsersOnServer } from '../services/profileApi.js';
+import { searchUsersDiscoveryV1, postFriendRequestV1 } from '../services/profileApi.js';
+import {
+  LANGUAGES_FULL,
+  getLanguageByCode,
+  getCountryDisplayFromAlpha2,
+} from '../data/languagesFull.js';
+import { regionalEmojiToAlpha2 } from '../utils/flagIcon.js';
 
 /** @type {(() => void) | null} */
 let detachFriendsStorageListener = null;
@@ -30,6 +36,20 @@ let detachFriendsStorageListener = null;
 function duckLabel(duckId) {
   if (!duckId) return '—';
   return DUCKS_NINE.find((d) => d.id === duckId)?.name ?? duckId;
+}
+
+/** LANGUAGES_FULL 기준 리전 플래그 → alpha-2, 동일 국기(동일 alpha2) 한 번만 */
+function uniqueCountryOptionsFromLanguagesFull() {
+  const seenCc = new Set();
+  const list = [];
+  for (const row of LANGUAGES_FULL) {
+    const cc = regionalEmojiToAlpha2(row.flag);
+    if (!cc || seenCc.has(cc)) continue;
+    seenCc.add(cc);
+    list.push({ alpha2: cc, label: `${row.flag} ${row.name}` });
+  }
+  list.sort((a, b) => a.label.localeCompare(b.label, 'en'));
+  return list;
 }
 
 /** @param {HTMLElement} el */
@@ -92,35 +112,90 @@ export function mountFriends(root, api) {
     }
   }
 
-  const searchWrap = document.createElement('div');
-  searchWrap.className = 'friends-search-wrap';
-  const searchInput = document.createElement('input');
-  searchInput.type = 'search';
-  searchInput.className = 'app-input friends-search';
-  searchInput.placeholder = '닉네임 검색';
-  searchInput.autocomplete = 'off';
-  const searchResults = document.createElement('div');
-  searchResults.className = 'friends-search-results app-box';
-  searchResults.hidden = true;
-  searchWrap.appendChild(searchInput);
-  searchWrap.appendChild(searchResults);
-
   const tabRow = document.createElement('div');
   tabRow.className = 'friends-tabs';
   const tabFriends = document.createElement('button');
   tabFriends.type = 'button';
   tabFriends.className = 'friends-tab is-active';
   tabFriends.textContent = '내 친구';
+  const tabFind = document.createElement('button');
+  tabFind.type = 'button';
+  tabFind.className = 'friends-tab';
+  tabFind.textContent = '찾기';
   const tabReq = document.createElement('button');
   tabReq.type = 'button';
   tabReq.className = 'friends-tab';
   tabReq.textContent = '요청';
   tabRow.appendChild(tabFriends);
+  tabRow.appendChild(tabFind);
   tabRow.appendChild(tabReq);
 
   const panelFriends = document.createElement('div');
+  const panelFind = document.createElement('div');
+  panelFind.className = 'friends-find-panel';
+  panelFind.hidden = true;
+
+  const findSearchRow = document.createElement('div');
+  findSearchRow.className = 'friends-find-search-row';
+  const findSearchInput = document.createElement('input');
+  findSearchInput.type = 'search';
+  findSearchInput.className = 'app-input friends-find-search-input';
+  findSearchInput.placeholder = '닉네임 검색';
+  findSearchInput.autocomplete = 'off';
+  const findSearchBtn = document.createElement('button');
+  findSearchBtn.type = 'button';
+  findSearchBtn.className = 'app-btn app-btn--primary friends-find-search-btn';
+  findSearchBtn.textContent = '검색';
+  findSearchRow.appendChild(findSearchInput);
+  findSearchRow.appendChild(findSearchBtn);
+
+  const findFilters = document.createElement('div');
+  findFilters.className = 'friends-find-filters';
+  const countrySel = document.createElement('select');
+  countrySel.className = 'app-input friends-find-select';
+  countrySel.setAttribute('aria-label', '국가 필터');
+  const optAllCountry = document.createElement('option');
+  optAllCountry.value = '';
+  optAllCountry.textContent = '🌐 All Countries';
+  countrySel.appendChild(optAllCountry);
+  for (const c of uniqueCountryOptionsFromLanguagesFull()) {
+    const o = document.createElement('option');
+    o.value = c.alpha2;
+    o.textContent = c.label;
+    countrySel.appendChild(o);
+  }
+  const genderSel = document.createElement('select');
+  genderSel.className = 'app-input friends-find-select';
+  genderSel.setAttribute('aria-label', '성별 필터');
+  for (const { v, lab } of [
+    { v: '', lab: 'All' },
+    { v: 'M', lab: 'Male' },
+    { v: 'F', lab: 'Female' },
+  ]) {
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = lab;
+    genderSel.appendChild(o);
+  }
+  findFilters.appendChild(countrySel);
+  findFilters.appendChild(genderSel);
+
+  const findResults = document.createElement('div');
+  findResults.className = 'friends-find-results';
+  const findLoadMore = document.createElement('button');
+  findLoadMore.type = 'button';
+  findLoadMore.className = 'app-btn friends-find-more';
+  findLoadMore.textContent = '더 보기';
+  findLoadMore.hidden = true;
+
+  panelFind.appendChild(findSearchRow);
+  panelFind.appendChild(findFilters);
+  panelFind.appendChild(findResults);
+  panelFind.appendChild(findLoadMore);
+
   const panelReq = document.createElement('div');
   panelReq.hidden = true;
+
   const listFriends = document.createElement('div');
   listFriends.className = 'friends-list';
   panelFriends.appendChild(listFriends);
@@ -168,9 +243,10 @@ export function mountFriends(root, api) {
   back.addEventListener('click', () => api.navigate('lobby'));
 
   wrap.appendChild(title);
-  wrap.appendChild(searchWrap);
+  if (rejectStrip) wrap.appendChild(rejectStrip);
   wrap.appendChild(tabRow);
   wrap.appendChild(panelFriends);
+  wrap.appendChild(panelFind);
   wrap.appendChild(panelReq);
   wrap.appendChild(sheet);
   wrap.appendChild(giftOverlay);
@@ -313,101 +389,168 @@ export function mountFriends(root, api) {
     return card;
   }
 
-  let searchDebounceT = 0;
-  let searchSeq = 0;
+  let findOffset = 0;
+  const FIND_PAGE = 10;
+  let findSeq = 0;
+  /** @type {boolean} */
+  let findLastHadFullPage = false;
 
-  async function runServerSearch() {
+  /**
+   * @param {string | undefined} me
+   * @param {string} peerId
+   */
+  function isPendingOutTo(me, peerId) {
+    if (!me || !peerId) return false;
+    return getSentRequests(me).some((r) => r.toId === peerId);
+  }
+
+  /**
+   * @param {{ uid: string, nickname: string, language: string, countryCode: string, gender: string | null, isOnline: boolean, isFriend: boolean, isRequested: boolean }} u
+   */
+  function renderFindUserCard(u) {
+    const card = document.createElement('div');
+    card.className = 'friends-find-card app-box';
+
+    const nick = document.createElement('div');
+    nick.className = 'friends-find-card-nick';
+    nick.textContent = u.nickname || u.uid;
+
+    const langRow = document.createElement('div');
+    langRow.className = 'friends-find-card-meta';
+    const langEntry = getLanguageByCode(u.language || 'ko');
+    const langLine = langEntry ? `${langEntry.flag} ${langEntry.name}` : String(u.language || 'ko');
+    langRow.textContent = `언어: ${langLine}`;
+
+    const countryRow = document.createElement('div');
+    countryRow.className = 'friends-find-card-meta';
+    const cc = typeof u.countryCode === 'string' ? u.countryCode.trim().toUpperCase() : '';
+    const cDisp = getCountryDisplayFromAlpha2(cc);
+    countryRow.textContent =
+      cc && cDisp.nameEn ? `국가: ${cDisp.flag ? `${cDisp.flag} ` : ''}${cDisp.nameEn}` : '국가: —';
+
+    card.appendChild(nick);
+    card.appendChild(langRow);
+    card.appendChild(countryRow);
+
+    if (u.gender === 'M' || u.gender === 'F') {
+      const gRow = document.createElement('div');
+      gRow.className = 'friends-find-card-meta';
+      gRow.textContent = `성별: ${u.gender === 'M' ? 'Male' : 'Female'}`;
+      card.appendChild(gRow);
+    }
+
+    const row = document.createElement('div');
+    row.className = 'friends-find-card-actions';
+
+    if (u.isOnline) {
+      const dot = document.createElement('span');
+      dot.className = 'friend-online-dot';
+      dot.title = '온라인';
+      row.appendChild(dot);
+    }
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'app-btn app-btn--inline';
+    const peerId = u.uid;
+    const serverFriend = Boolean(u.isFriend);
+    const serverReq = Boolean(u.isRequested);
+    const localFriend = uid ? isFriend(uid, peerId) : false;
+    const localOut = uid ? isPendingOutTo(uid, peerId) : false;
+
+    if (serverFriend || localFriend) {
+      btn.textContent = '친구';
+      btn.disabled = true;
+    } else if (serverReq || localOut) {
+      btn.textContent = '요청중';
+      btn.disabled = true;
+    } else {
+      btn.textContent = '친구 신청';
+      btn.classList.add('app-btn--primary');
+      btn.addEventListener('click', async () => {
+        if (!uid) return;
+        const pr = await postFriendRequestV1(peerId);
+        if (!pr.ok) {
+          if (pr.error === 'incoming_pending') {
+            window.alert('상대가 먼저 요청했어요. 요청 탭에서 수락해 주세요.');
+          } else window.alert('요청에 실패했어요.');
+          return;
+        }
+        const r = sendRequest(uid, peerId, { nickname: u.nickname });
+        if (r.ok && r.requestId) emitFriendRequestSent(peerId, r.requestId);
+        if (r.ok) window.alert('친구 요청을 보냈어요.');
+        else if (r.message) window.alert(r.message);
+        else if (r.error === 'pending_out') window.alert('이미 요청 중이에요.');
+        else if (r.error === 'pending_in') {
+          window.alert('상대가 먼저 요청했다면 요청 탭에서 수락해 주세요.');
+        } else window.alert('요청할 수 없어요.');
+        void runDiscoverySearch(true);
+        renderReq();
+      });
+    }
+
+    row.appendChild(btn);
+    card.appendChild(row);
+    return card;
+  }
+
+  async function runDiscoverySearch(/** @type {boolean} */ resetOffset) {
     if (!uid) {
-      searchResults.hidden = true;
-      searchResults.replaceChildren();
+      findResults.replaceChildren();
+      findLoadMore.hidden = true;
       return;
     }
-    const q = searchInput.value.trim();
-    searchResults.replaceChildren();
-    if (!q) {
-      searchResults.hidden = true;
-      return;
+    if (resetOffset) findOffset = 0;
+    const seq = (findSeq += 1);
+    if (resetOffset) {
+      findResults.replaceChildren();
+      const loading = document.createElement('p');
+      loading.className = 'app-muted';
+      loading.textContent = '검색 중…';
+      findResults.appendChild(loading);
     }
-    const seq = (searchSeq += 1);
-    const loading = document.createElement('p');
-    loading.className = 'app-muted friends-search-loading';
-    loading.textContent = '검색 중…';
-    searchResults.appendChild(loading);
-    searchResults.hidden = false;
-    const { ok, users } = await searchUsersOnServer(q);
-    if (seq !== searchSeq) return;
-    searchResults.replaceChildren();
+    const { ok, users } = await searchUsersDiscoveryV1({
+      q: findSearchInput.value.trim(),
+      countryCode: countrySel.value,
+      gender: genderSel.value,
+      offset: findOffset,
+      limit: FIND_PAGE,
+    });
+    if (seq !== findSeq) return;
+    if (resetOffset) findResults.replaceChildren();
     if (!ok) {
       const p = document.createElement('p');
       p.className = 'app-muted';
       p.textContent = '검색에 실패했어요.';
-      searchResults.appendChild(p);
-      searchResults.hidden = false;
+      findResults.appendChild(p);
+      findLoadMore.hidden = true;
       return;
     }
-    if (users.length === 0) {
+    for (const u of users) {
+      findResults.appendChild(renderFindUserCard(u));
+    }
+    findLastHadFullPage = users.length >= FIND_PAGE;
+    findLoadMore.hidden = !findLastHadFullPage;
+    if (users.length === 0 && resetOffset) {
       const p = document.createElement('p');
       p.className = 'app-muted';
-      p.textContent = '검색 결과가 없어요.';
-      searchResults.appendChild(p);
-      searchResults.hidden = false;
-      return;
-    }
-    searchResults.hidden = false;
-    for (const u of users) {
-      const peerId = u.uid;
-      const duckMeta = DUCKS_NINE.find((d) => d.id === u.selectedDuckId);
-      const rw = document.createElement('div');
-      rw.className = 'friends-search-row';
-      const main = document.createElement('div');
-      main.className = 'friends-search-row-main';
-      const duckDot = document.createElement('span');
-      duckDot.className = 'friends-search-duck';
-      duckDot.style.backgroundColor = duckMeta?.color || '#666';
-      duckDot.title = duckLabel(u.selectedDuckId);
-      const meta = document.createElement('span');
-      meta.className = 'friends-search-meta';
-      meta.textContent = u.nickname;
-      main.appendChild(duckDot);
-      main.appendChild(meta);
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'app-btn app-btn--inline';
-      if (isFriend(uid, peerId)) {
-        btn.textContent = '친구';
-        btn.disabled = true;
-      } else {
-        btn.textContent = '요청';
-        btn.addEventListener('click', () => {
-          const r = sendRequest(uid, peerId);
-          if (r.ok && r.requestId) emitFriendRequestSent(peerId, r.requestId);
-          if (r.ok) window.alert('친구 요청을 보냈어요.');
-          else if (r.message) window.alert(r.message);
-          else if (r.error === 'pending_out') window.alert('이미 요청 중이에요.');
-          else if (r.error === 'pending_in') window.alert('상대가 먼저 요청했다면 요청 탭에서 수락해 주세요.');
-          else window.alert('요청할 수 없어요.');
-          void runServerSearch();
-          renderReq();
-        });
-      }
-      rw.appendChild(main);
-      rw.appendChild(btn);
-      searchResults.appendChild(rw);
+      p.textContent = '결과가 없어요.';
+      findResults.appendChild(p);
+      findLoadMore.hidden = true;
     }
   }
 
-  function scheduleSearch() {
-    window.clearTimeout(searchDebounceT);
-    searchDebounceT = window.setTimeout(() => void runServerSearch(), 300);
-  }
-
-  searchInput.addEventListener('input', scheduleSearch);
-  searchInput.addEventListener('keydown', (e) => {
+  findSearchBtn.addEventListener('click', () => void runDiscoverySearch(true));
+  findSearchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      window.clearTimeout(searchDebounceT);
-      void runServerSearch();
+      void runDiscoverySearch(true);
     }
+  });
+  findLoadMore.addEventListener('click', () => {
+    if (!findLastHadFullPage) return;
+    findOffset += FIND_PAGE;
+    void runDiscoverySearch(false);
   });
 
   function renderFriends() {
@@ -423,7 +566,7 @@ export function mountFriends(root, api) {
     if (list.length === 0) {
       const p = document.createElement('p');
       p.className = 'app-muted';
-      p.textContent = '아직 친구가 없어요. 검색에서 요청해 보세요!';
+      p.textContent = '아직 친구가 없어요. 찾기 탭에서 요청해 보세요!';
       listFriends.appendChild(p);
       return;
     }
@@ -514,19 +657,19 @@ export function mountFriends(root, api) {
   detachFriendsStorageListener = () =>
     window.removeEventListener('dallyeori-friends-updated', onFriendsStorageUpdated);
 
-  tabFriends.addEventListener('click', () => {
-    tabFriends.classList.add('is-active');
-    tabReq.classList.remove('is-active');
-    panelFriends.hidden = false;
-    panelReq.hidden = true;
-  });
-  tabReq.addEventListener('click', () => {
-    tabReq.classList.add('is-active');
-    tabFriends.classList.remove('is-active');
-    panelFriends.hidden = true;
-    panelReq.hidden = false;
-    renderReq();
-  });
+  function activateFriendsTab(which) {
+    tabFriends.classList.toggle('is-active', which === 'friends');
+    tabFind.classList.toggle('is-active', which === 'find');
+    tabReq.classList.toggle('is-active', which === 'req');
+    panelFriends.hidden = which !== 'friends';
+    panelFind.hidden = which !== 'find';
+    panelReq.hidden = which !== 'req';
+    if (which === 'req') renderReq();
+  }
+
+  tabFriends.addEventListener('click', () => activateFriendsTab('friends'));
+  tabFind.addEventListener('click', () => activateFriendsTab('find'));
+  tabReq.addEventListener('click', () => activateFriendsTab('req'));
 
   renderFriends();
   renderReq();

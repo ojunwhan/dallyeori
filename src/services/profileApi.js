@@ -84,10 +84,6 @@ export async function postProfile(body) {
 }
 
 /**
- * @param {string} query
- * @returns {Promise<{ ok: boolean, users: { uid: string, nickname: string, photoURL: string, selectedDuckId: string }[] }>}
- */
-/**
  * @param {string} peerUid
  * @returns {Promise<{ uid: string, nickname: string, photoURL: string, language: string, selectedDuckId: string } | null>}
  */
@@ -107,6 +103,37 @@ export async function fetchProfileByUid(peerUid) {
   }
 }
 
+/**
+ * 친구 찾기 (v1): 필터·페이징·온라인 우선은 서버에서 처리
+ * @param {{ q?: string, countryCode?: string, gender?: string, offset?: number, limit?: number }} opts
+ */
+export async function searchUsersDiscoveryV1(opts = {}) {
+  const t = getToken();
+  if (!t) return { ok: false, users: [] };
+  const params = new URLSearchParams();
+  const q = typeof opts.q === 'string' ? opts.q : '';
+  const countryCode = typeof opts.countryCode === 'string' ? opts.countryCode : '';
+  const gender = typeof opts.gender === 'string' ? opts.gender : '';
+  const offset = Number(opts.offset) || 0;
+  const limit = Number(opts.limit) || 10;
+  if (q) params.set('q', q);
+  if (countryCode) params.set('countryCode', countryCode);
+  if (gender) params.set('gender', gender);
+  params.set('offset', String(offset));
+  params.set('limit', String(limit));
+  const res = await fetch(resolvePublicApiUrl(`/api/v1/users/search?${params.toString()}`), {
+    headers: { Authorization: `Bearer ${t}` },
+  });
+  if (!res.ok) return { ok: false, users: [] };
+  try {
+    const data = await res.json();
+    const users = Array.isArray(data) ? data : [];
+    return { ok: true, users };
+  } catch {
+    return { ok: false, users: [] };
+  }
+}
+
 export async function searchUsersOnServer(query) {
   const t = getToken();
   if (!t) return { ok: false, users: [] };
@@ -122,4 +149,46 @@ export async function searchUsersOnServer(query) {
   } catch {
     return { ok: false, users: [] };
   }
+}
+
+/**
+ * POST /api/v1/friends/request/:uid
+ * @param {string} targetUid
+ * @returns {Promise<{ ok: true } | { ok: false, status: number, error: string }>}
+ */
+export async function postFriendRequestV1(targetUid) {
+  const t = getToken();
+  if (!t || !targetUid) return { ok: false, status: 401, error: 'unauthorized' };
+  const res = await fetch(
+    resolvePublicApiUrl(`/api/v1/friends/request/${encodeURIComponent(targetUid)}`),
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${t}` },
+    },
+  );
+  if (res.status === 409) {
+    try {
+      const d = await res.json();
+      return { ok: false, status: 409, error: typeof d.error === 'string' ? d.error : 'incoming_pending' };
+    } catch {
+      return { ok: false, status: 409, error: 'incoming_pending' };
+    }
+  }
+  if (!res.ok) {
+    let err = 'request_failed';
+    try {
+      const d = await res.json();
+      if (typeof d.error === 'string') err = d.error;
+    } catch {
+      /* ignore */
+    }
+    return { ok: false, status: res.status, error: err };
+  }
+  try {
+    const d = await res.json();
+    if (d && d.ok === true) return { ok: true };
+  } catch {
+    /* ignore */
+  }
+  return { ok: true };
 }

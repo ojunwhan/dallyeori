@@ -2,9 +2,10 @@
  * MONO `constants/languages.js` LANGUAGES 배열과 동일 (100개)
  */
 
-import { regionalEmojiToAlpha2 } from '../utils/flagIcon.js';
+import { regionalEmojiToAlpha2, alpha2ToRegionalFlag } from '../utils/flagIcon.js';
 
-export const LANGUAGES = [
+/** MONO 스펙명 LANGUAGES_FULL — 찾기 탭 국가 필터 등 */
+export const LANGUAGES_FULL = [
   // ===== Tier 1: 주요 언어 =====
   { code: 'ko', name: 'Korean', nativeName: '한국어', flag: '🇰🇷', tier: 1 },
   { code: 'en', name: 'English', nativeName: 'English', flag: '🇺🇸', tier: 1 },
@@ -108,11 +109,14 @@ export const LANGUAGES = [
   { code: 'zu', name: 'Zulu', nativeName: 'isiZulu', flag: '🇿🇦', tier: 2 },
 ];
 
+/** 기존 import 호환 — LANGUAGES_FULL와 동일 배열 */
+export const LANGUAGES = LANGUAGES_FULL;
+
 /**
  * @param {string} code
  */
 export function getLanguageByCode(code) {
-  return LANGUAGES.find((l) => l.code === code);
+  return LANGUAGES_FULL.find((l) => l.code === code);
 }
 
 /**
@@ -121,7 +125,51 @@ export function getLanguageByCode(code) {
  * @param {string} langCode
  */
 export function getCountryCodeByLanguage(langCode) {
-  const lang = LANGUAGES.find((l) => l.code === langCode);
+  const lang = LANGUAGES_FULL.find((l) => l.code === langCode);
   if (!lang) return '';
   return regionalEmojiToAlpha2(lang.flag) || '';
+}
+
+/**
+ * 리전 플래그 기준 중복 제거 국가 필터 옵션 (표시: flag + LANGUAGES_FULL.name 영문)
+ * @returns {{ countryCode: string, flag: string, labelName: string }[]}
+ */
+export function getUniqueCountryFilterOptions() {
+  /** @type {Map<string, { countryCode: string, flag: string, labelName: string }>} */
+  const byAlpha = new Map();
+  for (const lang of LANGUAGES_FULL) {
+    const a2 = regionalEmojiToAlpha2(lang.flag);
+    if (!a2) continue;
+    if (!byAlpha.has(a2)) {
+      byAlpha.set(a2, { countryCode: a2, flag: lang.flag, labelName: lang.name });
+    }
+  }
+  return [...byAlpha.values()].sort((a, b) => a.labelName.localeCompare(b.labelName));
+}
+
+/**
+ * @param {string} langCode
+ */
+export function getLanguageEnglishLabel(langCode) {
+  const l = getLanguageByCode(langCode);
+  return l ? `${l.flag} ${l.name}` : String(langCode || '');
+}
+
+/**
+ * @param {string} alpha2 ISO 3166-1 alpha-2
+ * @returns {{ flag: string, nameEn: string }}
+ */
+export function getCountryDisplayFromAlpha2(alpha2) {
+  const a2 = String(alpha2 || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(a2)) return { flag: '', nameEn: '' };
+  const lang = LANGUAGES_FULL.find((l) => regionalEmojiToAlpha2(l.flag) === a2);
+  const flag = lang?.flag || alpha2ToRegionalFlag(a2) || '';
+  let nameEn = a2;
+  try {
+    const dn = new Intl.DisplayNames(['en'], { type: 'region' });
+    nameEn = dn.of(a2) || a2;
+  } catch {
+    /* ignore */
+  }
+  return { flag, nameEn };
 }
