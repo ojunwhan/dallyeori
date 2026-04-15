@@ -2,6 +2,8 @@
  * 경주 기록 히스토리 — localStorage, 최대 500건
  */
 
+import { postRaceResultV1 } from './profileApi.js';
+
 const KEY = (uid) => `dallyeori.raceHistory.${uid}`;
 const MAX = 500;
 
@@ -68,6 +70,18 @@ export function saveRaceResult(state, last, opp) {
 
   const list = [entry, ...readAll(uid)];
   writeAll(uid, list);
+
+  const oppUid = opp?.userId != null && String(opp.userId).trim() ? String(opp.userId).trim() : null;
+  if (!state?.qrGuestOneShot && oppUid) {
+    void postRaceResultV1({
+      opponentUid: oppUid,
+      opponentNick: String(opp?.nickname ?? ''),
+      result: res,
+      myDistance: myD,
+      opponentDistance: opD,
+      duration,
+    });
+  }
 }
 
 /**

@@ -22,9 +22,9 @@ import {
 import { emitAcceptFriendRequest, emitFriendRequestSent, ensureSocket } from '../services/socket.js';
 import { isMutualHeart, markHeartNotificationsSeen, sendHeart } from '../services/likes.js';
 import {
-  searchUsersOnServer,
   searchUsersDiscoveryV1,
   postFriendRequestV1,
+  fetchRecentOpponentsV1,
 } from '../services/profileApi.js';
 import {
   getLanguageByCode,
@@ -124,20 +124,6 @@ export function mountFriends(root, api) {
   panelFind.className = 'friends-find-panel';
   panelFind.hidden = true;
 
-  const findSearchRow = document.createElement('div');
-  findSearchRow.className = 'friends-find-search-row';
-  const findSearchInput = document.createElement('input');
-  findSearchInput.type = 'search';
-  findSearchInput.className = 'app-input friends-find-search-input';
-  findSearchInput.placeholder = '닉네임 검색';
-  findSearchInput.autocomplete = 'off';
-  const findSearchBtn = document.createElement('button');
-  findSearchBtn.type = 'button';
-  findSearchBtn.className = 'app-btn app-btn--primary friends-find-search-btn';
-  findSearchBtn.textContent = '검색';
-  findSearchRow.appendChild(findSearchInput);
-  findSearchRow.appendChild(findSearchBtn);
-
   const findFilters = document.createElement('div');
   findFilters.className = 'friends-find-filters';
   const countrySel = document.createElement('select');
@@ -177,7 +163,6 @@ export function mountFriends(root, api) {
   findLoadMore.textContent = '더 보기';
   findLoadMore.hidden = true;
 
-  panelFind.appendChild(findSearchRow);
   panelFind.appendChild(findFilters);
   panelFind.appendChild(findResults);
   panelFind.appendChild(findLoadMore);
@@ -203,6 +188,18 @@ export function mountFriends(root, api) {
   panelReq.appendChild(listIncoming);
   panelReq.appendChild(reqOutgoingTitle);
   panelReq.appendChild(listOutgoing);
+
+  const reqRecentSection = document.createElement('div');
+  reqRecentSection.className = 'friends-recent-section';
+  reqRecentSection.hidden = true;
+  const reqRecentTitle = document.createElement('h3');
+  reqRecentTitle.className = 'friends-subtitle';
+  reqRecentTitle.textContent = '최근 게임 상대';
+  const reqRecentList = document.createElement('div');
+  reqRecentList.className = 'friends-recent-list';
+  reqRecentSection.appendChild(reqRecentTitle);
+  reqRecentSection.appendChild(reqRecentList);
+  panelReq.appendChild(reqRecentSection);
 
   const sheet = document.createElement('div');
   sheet.className = 'action-sheet';
@@ -378,11 +375,33 @@ export function mountFriends(root, api) {
     return card;
   }
 
-  let findOffset = 0;
+  let findNextOffset = 0;
   const FIND_PAGE = 10;
   let findSeq = 0;
   /** @type {boolean} */
   let findLastHadFullPage = false;
+
+  function hasDiscoveryFilter() {
+    const cc = String(countrySel.value || '')
+      .trim()
+      .toUpperCase();
+    const hasCountry = cc.length === 2 && /^[A-Z]{2}$/.test(cc);
+    const g = String(genderSel.value || '')
+      .trim()
+      .toUpperCase();
+    return hasCountry || g === 'M' || g === 'F';
+  }
+
+  function showFindEmptyHint() {
+    findNextOffset = 0;
+    findLastHadFullPage = false;
+    findLoadMore.hidden = true;
+    findResults.replaceChildren();
+    const hint = document.createElement('p');
+    hint.className = 'app-muted';
+    hint.textContent = '국가 또는 성별을 선택하면 자동으로 검색돼요.';
+    findResults.appendChild(hint);
+  }
 
   /**
    * @param {string | undefined} me
@@ -483,31 +502,123 @@ export function mountFriends(root, api) {
     return card;
   }
 
-  async function runDiscoverySearch(/** @type {boolean} */ resetOffset) {
+  /**
+   * @param {{ uid: string, nickname: string, language: string, countryCode: string, gender: string | null, isOnline: boolean, isFriend: boolean, isRequested: boolean }} u
+   */
+  function renderRecentOpponentCard(u) {
+    const card = document.createElement('div');
+    card.className = 'friends-find-card app-box friends-recent-card';
+
+    const rowTop = document.createElement('div');
+    rowTop.className = 'friends-recent-card-top';
+    const langEntry = getLanguageByCode(u.language || 'ko');
+    const flag = langEntry?.flag ? `${langEntry.flag} ` : '';
+    const nick = document.createElement('div');
+    nick.className = 'friends-find-card-nick';
+    nick.textContent = `${flag}${u.nickname || u.uid}`;
+    rowTop.appendChild(nick);
+    if (u.isOnline) {
+      const dot = document.createElement('span');
+      dot.className = 'friend-online-dot';
+      dot.title = '온라인';
+      rowTop.appendChild(dot);
+    }
+    card.appendChild(rowTop);
+
+    const row = document.createElement('div');
+    row.className = 'friends-find-card-actions';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'app-btn app-btn--inline';
+    const peerId = u.uid;
+    const serverFriend = Boolean(u.isFriend);
+    const serverReq = Boolean(u.isRequested);
+    const localFriend = uid ? isFriend(uid, peerId) : false;
+    const localOut = uid ? isPendingOutTo(uid, peerId) : false;
+
+    if (serverFriend || localFriend) {
+      btn.textContent = '친구';
+      btn.disabled = true;
+    } else if (serverReq || localOut) {
+      btn.textContent = '요청중';
+      btn.disabled = true;
+    } else {
+      btn.textContent = '친구 신청';
+      btn.classList.add('app-btn--primary');
+      btn.addEventListener('click', async () => {
+        if (!uid) return;
+        const pr = await postFriendRequestV1(peerId);
+        if (!pr.ok) {
+          if (pr.error === 'incoming_pending') {
+            window.alert('상대가 먼저 요청했어요. 요청 탭에서 수락해 주세요.');
+          } else window.alert('요청에 실패했어요.');
+          return;
+        }
+        const r = sendRequest(uid, peerId, { nickname: u.nickname });
+        if (r.ok && r.requestId) emitFriendRequestSent(peerId, r.requestId);
+        if (r.ok) window.alert('친구 요청을 보냈어요.');
+        else if (r.message) window.alert(r.message);
+        else if (r.error === 'pending_out') window.alert('이미 요청 중이에요.');
+        else if (r.error === 'pending_in') {
+          window.alert('상대가 먼저 요청했다면 요청 탭에서 수락해 주세요.');
+        } else window.alert('요청할 수 없어요.');
+        void refreshRecentOpponents();
+        renderReq();
+      });
+    }
+    row.appendChild(btn);
+    card.appendChild(row);
+    return card;
+  }
+
+  async function refreshRecentOpponents() {
+    reqRecentList.replaceChildren();
+    if (!uid) {
+      reqRecentSection.hidden = true;
+      return;
+    }
+    const { ok, users } = await fetchRecentOpponentsV1();
+    if (!ok || users.length === 0) {
+      reqRecentSection.hidden = true;
+      return;
+    }
+    reqRecentSection.hidden = false;
+    for (const u of users) {
+      reqRecentList.appendChild(renderRecentOpponentCard(/** @type {any} */ (u)));
+    }
+  }
+
+  async function runDiscoverySearch(/** @type {boolean} */ resetList) {
     if (!uid) {
       findResults.replaceChildren();
       findLoadMore.hidden = true;
       return;
     }
-    if (resetOffset) findOffset = 0;
+    if (!hasDiscoveryFilter()) {
+      showFindEmptyHint();
+      return;
+    }
+
     const seq = (findSeq += 1);
-    if (resetOffset) {
+    if (resetList) {
+      findNextOffset = 0;
       findResults.replaceChildren();
       const loading = document.createElement('p');
       loading.className = 'app-muted';
       loading.textContent = '검색 중…';
       findResults.appendChild(loading);
     }
+    const requestOffset = findNextOffset;
     const { ok, users } = await searchUsersDiscoveryV1({
-      q: findSearchInput.value.trim(),
       countryCode: countrySel.value,
       gender: genderSel.value,
-      offset: findOffset,
+      offset: requestOffset,
       limit: FIND_PAGE,
     });
     if (seq !== findSeq) return;
-    if (resetOffset) findResults.replaceChildren();
+    if (resetList) findResults.replaceChildren();
     if (!ok) {
+      findNextOffset = requestOffset;
       const p = document.createElement('p');
       p.className = 'app-muted';
       p.textContent = '검색에 실패했어요.';
@@ -518,9 +629,14 @@ export function mountFriends(root, api) {
     for (const u of users) {
       findResults.appendChild(renderFindUserCard(u));
     }
+    if (users.length > 0) {
+      findNextOffset = requestOffset + users.length;
+    } else if (!resetList) {
+      findNextOffset = requestOffset;
+    }
     findLastHadFullPage = users.length >= FIND_PAGE;
     findLoadMore.hidden = !findLastHadFullPage;
-    if (users.length === 0 && resetOffset) {
+    if (users.length === 0 && resetList) {
       const p = document.createElement('p');
       p.className = 'app-muted';
       p.textContent = '결과가 없어요.';
@@ -529,16 +645,13 @@ export function mountFriends(root, api) {
     }
   }
 
-  findSearchBtn.addEventListener('click', () => void runDiscoverySearch(true));
-  findSearchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      void runDiscoverySearch(true);
-    }
-  });
+  function onFindFiltersChanged() {
+    void runDiscoverySearch(true);
+  }
+  countrySel.addEventListener('change', onFindFiltersChanged);
+  genderSel.addEventListener('change', onFindFiltersChanged);
   findLoadMore.addEventListener('click', () => {
-    if (!findLastHadFullPage) return;
-    findOffset += FIND_PAGE;
+    if (!findLastHadFullPage || !hasDiscoveryFilter()) return;
     void runDiscoverySearch(false);
   });
 
@@ -567,7 +680,11 @@ export function mountFriends(root, api) {
   function renderReq() {
     listIncoming.replaceChildren();
     listOutgoing.replaceChildren();
-    if (!uid) return;
+    if (!uid) {
+      reqRecentSection.hidden = true;
+      reqRecentList.replaceChildren();
+      return;
+    }
     const inc = getPendingRequests(uid);
     const out = getSentRequests(uid);
     if (inc.length === 0) {
@@ -636,6 +753,7 @@ export function mountFriends(root, api) {
         listOutgoing.appendChild(box);
       }
     }
+    void refreshRecentOpponents();
   }
 
   const onFriendsStorageUpdated = () => {
@@ -653,6 +771,10 @@ export function mountFriends(root, api) {
     panelFriends.hidden = which !== 'friends';
     panelFind.hidden = which !== 'find';
     panelReq.hidden = which !== 'req';
+    if (which === 'find') {
+      if (hasDiscoveryFilter()) void runDiscoverySearch(true);
+      else showFindEmptyHint();
+    }
     if (which === 'req') renderReq();
   }
 

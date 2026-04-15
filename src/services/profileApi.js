@@ -105,18 +105,16 @@ export async function fetchProfileByUid(peerUid) {
 
 /**
  * 친구 찾기 (v1): 필터·페이징·온라인 우선은 서버에서 처리
- * @param {{ q?: string, countryCode?: string, gender?: string, offset?: number, limit?: number }} opts
+ * @param {{ countryCode?: string, gender?: string, offset?: number, limit?: number }} opts
  */
 export async function searchUsersDiscoveryV1(opts = {}) {
   const t = getToken();
   if (!t) return { ok: false, users: [] };
   const params = new URLSearchParams();
-  const q = typeof opts.q === 'string' ? opts.q : '';
   const countryCode = typeof opts.countryCode === 'string' ? opts.countryCode : '';
   const gender = typeof opts.gender === 'string' ? opts.gender : '';
   const offset = Number(opts.offset) || 0;
   const limit = Number(opts.limit) || 10;
-  if (q) params.set('q', q);
   if (countryCode) params.set('countryCode', countryCode);
   if (gender) params.set('gender', gender);
   params.set('offset', String(offset));
@@ -191,4 +189,56 @@ export async function postFriendRequestV1(targetUid) {
     /* ignore */
   }
   return { ok: true };
+}
+
+/**
+ * POST /api/v1/race/result
+ * @param {{
+ *   opponentUid: string,
+ *   opponentNick?: string,
+ *   result: 'win'|'lose'|'draw',
+ *   myDistance: number,
+ *   opponentDistance: number,
+ *   duration: number,
+ * }} body
+ * @returns {Promise<{ ok: true } | { ok: false }>}
+ */
+export async function postRaceResultV1(body) {
+  const t = getToken();
+  if (!t || !body?.opponentUid) return { ok: false };
+  try {
+    const res = await fetch(resolvePublicApiUrl('/api/v1/race/result'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${t}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return { ok: false };
+    const d = await res.json().catch(() => ({}));
+    return d && d.ok === true ? { ok: true } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * GET /api/v1/friends/recent-opponents
+ * @returns {Promise<{ ok: true, users: object[] } | { ok: false, users: [] }>}
+ */
+export async function fetchRecentOpponentsV1() {
+  const t = getToken();
+  if (!t) return { ok: false, users: [] };
+  try {
+    const res = await fetch(resolvePublicApiUrl('/api/v1/friends/recent-opponents'), {
+      headers: { Authorization: `Bearer ${t}` },
+    });
+    if (!res.ok) return { ok: false, users: [] };
+    const data = await res.json();
+    const users = Array.isArray(data) ? data : [];
+    return { ok: true, users };
+  } catch {
+    return { ok: false, users: [] };
+  }
 }

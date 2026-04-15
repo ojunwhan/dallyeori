@@ -915,8 +915,18 @@
   background: #1a1508;
 }
 
+.app-screen.friends-screen {
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
 .friends-find-panel {
   margin-bottom: 12px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .friends-find-search-row {
@@ -941,6 +951,36 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.friends-recent-section {
+  margin-top: 16px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.friends-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.friends-recent-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.friends-recent-card .friends-find-card-nick {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .friends-find-select {
