@@ -16,7 +16,44 @@ export function validateNicknameLocal(nickname) {
 }
 
 /**
- * @param {{ nickname: string, photoURL?: string, language?: string, selectedDuckId?: string }} body
+ * @returns {Promise<{
+ *   uid: string,
+ *   nickname: string,
+ *   photoURL: string,
+ *   selectedDuckId: string,
+ *   countryCode: string,
+ *   gender: string | null,
+ *   bio: string | null,
+ *   language: string,
+ *   lastSeenAt: string | null,
+ *   profileSetupComplete: boolean,
+ *   serverProfileComplete: boolean,
+ * } | null>}
+ */
+export async function fetchProfileMeV1() {
+  const t = getToken();
+  if (!t) return null;
+  const res = await fetch(resolvePublicApiUrl('/api/v1/profile/me'), {
+    headers: { Authorization: `Bearer ${t}` },
+  });
+  if (!res.ok) return null;
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {{
+ *   nickname: string,
+ *   photoURL?: string,
+ *   language?: string,
+ *   selectedDuckId?: string,
+ *   countryCode?: string,
+ *   gender?: string | null,
+ *   bio?: string | null,
+ * }} body
  * @returns {Promise<{ ok: true, profile: object } | { ok: false, status: number, error: string }>}
  */
 export async function postProfile(body) {

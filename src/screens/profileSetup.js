@@ -7,6 +7,7 @@ import { LANGUAGES } from '../data/languages.js';
 import { getToken, resolvePublicApiUrl } from '../services/auth.js';
 import { saveUserRecord, getUserRecord, ensureUserFromAuth } from '../services/db.js';
 import { postProfile, validateNicknameLocal } from '../services/profileApi.js';
+import { COUNTRY_CODES_REST, COUNTRY_TOP_20 } from '../data/countryCodesProfile.js';
 
 function fillLanguageSelect(select, selectedCode) {
   const t1 = LANGUAGES.filter((l) => l.tier === 1);
@@ -86,6 +87,97 @@ export function mountProfileSetup(root, api) {
     selectedLang = code;
   });
 
+  const countryLabel = document.createElement('label');
+  countryLabel.className = 'app-muted';
+  countryLabel.textContent = '국가';
+  countryLabel.style.display = 'block';
+  countryLabel.style.marginTop = '12px';
+
+  const countrySelect = document.createElement('select');
+  countrySelect.className = 'app-input';
+  countrySelect.setAttribute('aria-label', '국가 선택');
+  const optCountryPlaceholder = document.createElement('option');
+  optCountryPlaceholder.value = '';
+  optCountryPlaceholder.textContent = '국가 선택 *';
+  countrySelect.appendChild(optCountryPlaceholder);
+  for (const c of COUNTRY_TOP_20) {
+    const o = document.createElement('option');
+    o.value = c.code;
+    o.textContent = `${c.labelKo} (${c.code})`;
+    countrySelect.appendChild(o);
+  }
+  const countrySep = document.createElement('option');
+  countrySep.disabled = true;
+  countrySep.value = '';
+  countrySep.textContent = '──── 기타 ────';
+  countrySelect.appendChild(countrySep);
+  for (const code of COUNTRY_CODES_REST) {
+    const o = document.createElement('option');
+    o.value = code;
+    o.textContent = code;
+    countrySelect.appendChild(o);
+  }
+
+  const countryError = document.createElement('p');
+  countryError.className = 'profile-nick-error';
+  countryError.setAttribute('role', 'alert');
+  countryError.hidden = true;
+
+  const genderLabel = document.createElement('label');
+  genderLabel.className = 'app-muted';
+  genderLabel.textContent = '성별 (선택)';
+  genderLabel.style.display = 'block';
+  genderLabel.style.marginTop = '12px';
+
+  /** @type {string | null} */
+  let selectedGender = null;
+  const genderWrap = document.createElement('div');
+  genderWrap.style.display = 'flex';
+  genderWrap.style.flexWrap = 'wrap';
+  genderWrap.style.gap = '8px';
+  genderWrap.style.marginTop = '6px';
+  /** @type {HTMLButtonElement[]} */
+  const genderBtns = [];
+  function syncGenderButtons() {
+    for (const b of genderBtns) {
+      const v = b.dataset.genderVal;
+      const active = v === '' ? selectedGender === null : selectedGender === v;
+      b.classList.toggle('app-btn--primary', active);
+    }
+  }
+  for (const { label, val } of [
+    { label: '남성', val: 'M' },
+    { label: '여성', val: 'F' },
+    { label: '기타', val: 'X' },
+    { label: '선택안함', val: '' },
+  ]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'app-btn';
+    b.textContent = label;
+    b.dataset.genderVal = val;
+    b.addEventListener('click', () => {
+      selectedGender = val === '' ? null : val;
+      syncGenderButtons();
+    });
+    genderWrap.appendChild(b);
+    genderBtns.push(b);
+  }
+  syncGenderButtons();
+
+  const bioLabel = document.createElement('label');
+  bioLabel.className = 'app-muted';
+  bioLabel.textContent = '한줄소개 (선택)';
+  bioLabel.style.display = 'block';
+  bioLabel.style.marginTop = '12px';
+
+  const bioInput = document.createElement('input');
+  bioInput.type = 'text';
+  bioInput.className = 'app-input';
+  bioInput.maxLength = 100;
+  bioInput.placeholder = '한줄로 자기소개!';
+  bioInput.autocomplete = 'off';
+
   const box = document.createElement('div');
   box.className = 'app-box';
   box.appendChild(nickLabel);
@@ -93,6 +185,13 @@ export function mountProfileSetup(root, api) {
   box.appendChild(nickError);
   box.appendChild(langLabel);
   box.appendChild(langPickerEl);
+  box.appendChild(countryLabel);
+  box.appendChild(countrySelect);
+  box.appendChild(countryError);
+  box.appendChild(genderLabel);
+  box.appendChild(genderWrap);
+  box.appendChild(bioLabel);
+  box.appendChild(bioInput);
 
   const submit = document.createElement('button');
   submit.type = 'button';
@@ -102,8 +201,15 @@ export function mountProfileSetup(root, api) {
   submit.addEventListener('click', async () => {
     nickError.hidden = true;
     nickError.textContent = '';
+    countryError.hidden = true;
+    countryError.textContent = '';
     if (!rec) {
       api.navigate('splash');
+      return;
+    }
+    if (!countrySelect.value || !String(countrySelect.value).trim()) {
+      countryError.textContent = '국가를 선택해 주세요.';
+      countryError.hidden = false;
       return;
     }
     const nickname = nickInput.value.trim() || api.state.user?.displayName || '';
@@ -116,7 +222,16 @@ export function mountProfileSetup(root, api) {
     const language = selectedLang || 'ko';
     const selectedDuckId = rec.selectedDuckId || 'bori';
     const photoURL = api.state.user?.photoURL || rec.profilePhotoURL || '';
-    const body = { nickname: nv.nickname, photoURL, language, selectedDuckId };
+    const bioTrim = bioInput.value.trim();
+    const body = {
+      nickname: nv.nickname,
+      photoURL,
+      language,
+      selectedDuckId,
+      countryCode: String(countrySelect.value).trim().toUpperCase(),
+      gender: selectedGender,
+      bio: bioTrim.length > 0 ? bioTrim : null,
+    };
     const pr = await postProfile(body);
     if (!pr.ok) {
       if (pr.status === 409 && pr.error === 'nickname_taken') {

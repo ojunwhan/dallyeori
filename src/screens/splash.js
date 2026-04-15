@@ -9,13 +9,14 @@ import {
   getUserRecord,
   patchUserRecord,
 } from '../services/db.js';
+import { fetchProfileMeV1 } from '../services/profileApi.js';
 
 /**
  * 로그인 후 프로필 설정 여부에 따라 이동
  * @param {{ navigate: (s: string, p?: object, o?: object) => void, state: object }} api
  * @param {{ replaceHistory?: boolean }} [navOpts]
  */
-export function navigateAfterAuth(api, navOpts = {}) {
+export async function navigateAfterAuth(api, navOpts = {}) {
   const u = getCurrentUser();
   if (!u) {
     api.navigate('splash', undefined, { ...navOpts, replaceHistory: true });
@@ -37,6 +38,11 @@ export function navigateAfterAuth(api, navOpts = {}) {
       record = getUserRecord(u.uid);
     }
     if (record) applyUserRecordToAppState(api.state, record);
+    const me = await fetchProfileMeV1();
+    if (me && me.serverProfileComplete === false) {
+      api.navigate('profileSetup', undefined, { ...navOpts, replaceHistory: true });
+      return;
+    }
     api.navigate('lobby', undefined, { ...navOpts, replaceHistory: true });
     return;
   }
@@ -50,6 +56,11 @@ export function navigateAfterAuth(api, navOpts = {}) {
 
   const record = ensureUserFromAuth(u);
   applyUserRecordToAppState(api.state, record);
+  const me = await fetchProfileMeV1();
+  if (me && me.serverProfileComplete === false) {
+    api.navigate('profileSetup', undefined, { ...navOpts, replaceHistory: true });
+    return;
+  }
   api.navigate(record.profileSetupComplete ? 'lobby' : 'profileSetup', undefined, {
     ...navOpts,
     replaceHistory: true,
@@ -62,7 +73,9 @@ export function navigateAfterAuth(api, navOpts = {}) {
  */
 export function mountSplash(root, api) {
   if (getCurrentUser()) {
-    navigateAfterAuth(api, { replaceHistory: true });
+    void navigateAfterAuth(api, { replaceHistory: true }).catch((e) => {
+      console.warn('[splash] navigateAfterAuth', e);
+    });
     return;
   }
 
