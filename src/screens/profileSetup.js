@@ -148,7 +148,6 @@ export function mountProfileSetup(root, api) {
   for (const { label, val } of [
     { label: '남성', val: 'M' },
     { label: '여성', val: 'F' },
-    { label: '기타', val: 'X' },
     { label: '선택안함', val: '' },
   ]) {
     const b = document.createElement('button');
