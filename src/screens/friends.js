@@ -617,7 +617,7 @@ export function mountFriends(root, api) {
     }
     const requestOffset = findNextOffset;
     const { ok, users } = await searchUsersDiscoveryV1({
-      countryCode: countrySel.value,
+      countryCode: countrySel.value.toUpperCase(),
       gender: genderSel.value,
       offset: requestOffset,
       limit: FIND_PAGE,
