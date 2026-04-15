@@ -3,7 +3,7 @@
  */
 
 import { createLanguagePicker } from '../components/languagePicker.js';
-import { createCountryPicker } from '../components/countryPicker.js';
+import { getCountryCodeByLanguage } from '../data/languages.js';
 import { getToken, resolvePublicApiUrl } from '../services/auth.js';
 import { saveUserRecord, getUserRecord, ensureUserFromAuth } from '../services/db.js';
 import { postProfile, validateNicknameLocal } from '../services/profileApi.js';
@@ -53,7 +53,7 @@ export function mountProfileSetup(root, api) {
 
   const langLabel = document.createElement('label');
   langLabel.className = 'app-muted';
-  langLabel.textContent = '언어';
+  langLabel.textContent = '내 언어';
   langLabel.style.display = 'block';
   langLabel.style.marginTop = '12px';
 
@@ -61,24 +61,6 @@ export function mountProfileSetup(root, api) {
   const langPickerEl = createLanguagePicker(selectedLang, (code) => {
     selectedLang = code;
   });
-
-  const countryLabel = document.createElement('label');
-  countryLabel.className = 'app-muted';
-  countryLabel.textContent = '국가';
-  countryLabel.style.display = 'block';
-  countryLabel.style.marginTop = '12px';
-
-  /** @type {string} */
-  let selectedCountry = '';
-  const countryPickerEl = createCountryPicker('', (code) => {
-    selectedCountry = code;
-  });
-  countryPickerEl.setAttribute('aria-label', '국가 선택');
-
-  const countryError = document.createElement('p');
-  countryError.className = 'profile-nick-error';
-  countryError.setAttribute('role', 'alert');
-  countryError.hidden = true;
 
   const genderLabel = document.createElement('label');
   genderLabel.className = 'app-muted';
@@ -157,15 +139,8 @@ export function mountProfileSetup(root, api) {
   submit.addEventListener('click', async () => {
     nickError.hidden = true;
     nickError.textContent = '';
-    countryError.hidden = true;
-    countryError.textContent = '';
     if (!rec) {
       api.navigate('splash');
-      return;
-    }
-    if (!selectedCountry || !String(selectedCountry).trim()) {
-      countryError.textContent = '국가를 선택해 주세요.';
-      countryError.hidden = false;
       return;
     }
     const nickname = nickInput.value.trim() || api.state.user?.displayName || '';
@@ -176,6 +151,7 @@ export function mountProfileSetup(root, api) {
       return;
     }
     const language = selectedLang || 'ko';
+    const inferredCountry = getCountryCodeByLanguage(language);
     const selectedDuckId = rec.selectedDuckId || 'bori';
     const photoURL = api.state.user?.photoURL || rec.profilePhotoURL || '';
     const bioTrim = bioInput.value.trim();
@@ -184,7 +160,7 @@ export function mountProfileSetup(root, api) {
       photoURL,
       language,
       selectedDuckId,
-      countryCode: String(selectedCountry).trim().toUpperCase(),
+      countryCode: inferredCountry ? inferredCountry.toUpperCase() : '',
       gender: selectedGender,
       bio: bioTrim.length > 0 ? bioTrim : null,
     };

@@ -2,6 +2,8 @@
  * MONO `constants/languages.js` LANGUAGES 배열과 동일 (100개)
  */
 
+import { regionalEmojiToAlpha2 } from '../utils/flagIcon.js';
+
 export const LANGUAGES = [
   // ===== Tier 1: 주요 언어 =====
   { code: 'ko', name: 'Korean', nativeName: '한국어', flag: '🇰🇷', tier: 1 },
@@ -111,4 +113,15 @@ export const LANGUAGES = [
  */
 export function getLanguageByCode(code) {
   return LANGUAGES.find((l) => l.code === code);
+}
+
+/**
+ * 언어 항목의 리전 플래그 이모지 → ISO alpha-2 (예: ko→KR).
+ * 🏴 등 비리전 플래그는 빈 문자열.
+ * @param {string} langCode
+ */
+export function getCountryCodeByLanguage(langCode) {
+  const lang = LANGUAGES.find((l) => l.code === langCode);
+  if (!lang) return '';
+  return regionalEmojiToAlpha2(lang.flag) || '';
 }
