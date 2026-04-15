@@ -268,7 +268,8 @@ function navigate(screen, payload, navOpts = {}) {
         mountDuckSelect(appRoot, api);
         break;
       case 'profile':
-        mountProfile(appRoot, api);
+        screenUnmount = mountProfile(appRoot, api);
+        if (typeof screenUnmount !== 'function') screenUnmount = null;
         break;
       case 'friends':
         mountFriends(appRoot, api);

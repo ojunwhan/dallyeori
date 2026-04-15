@@ -298,6 +298,21 @@
   opacity: 0;
 }
 
+/* mountProfile: body 에 붙는 프로필 사진 file input (레이아웃·히트 영역 분리) */
+.profile-avatar-file-input--body {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .profile-avatar-edit-btn {
   position: absolute;
   right: -6px;

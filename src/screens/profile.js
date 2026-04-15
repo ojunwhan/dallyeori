@@ -40,13 +40,113 @@ function fillLanguageSelect(select, selectedCode) {
 }
 
 /**
+ * 프로필 사진용 body file input ↔ 현재 sectionPhoto UI 연결
+ * @type {{ fillFromSrc: (src: string) => void, setLoading: (on: boolean) => void }}
+ */
+const avatarUiBridge = {
+  fillFromSrc() {},
+  setLoading() {},
+};
+
+/**
  * @param {HTMLElement} root
  * @param {{ navigate: (s: string, p?: object) => void, state: object }} api
+ * @returns {() => void} 언마운트 시 body 의 file input 제거
  */
 export function mountProfile(root, api) {
   function getState() {
     return api?.state ?? {};
   }
+
+  const stale = document.getElementById('avatarFileInput');
+  if (stale) stale.remove();
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.id = 'avatarFileInput';
+  fileInput.accept = 'image/*';
+  fileInput.setAttribute('aria-label', '프로필 사진 파일 선택');
+  fileInput.className = 'profile-avatar-file-input profile-avatar-file-input--body';
+  document.body.appendChild(fileInput);
+
+  function handleAvatarFileClick() {
+    window.__filePickerOpen = true;
+  }
+  function handleAvatarFileCancel() {
+    window.__filePickerOpen = false;
+  }
+
+  /** @param {Event} e */
+  async function handleAvatarFileChange(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    let previewUrl = '';
+    try {
+      const file = fileInput.files && fileInput.files[0];
+      fileInput.value = '';
+      if (!file) return;
+
+      const token = getToken();
+      if (!token) {
+        showAppToast('로그인이 필요해요.');
+        return;
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        showAppToast('이미지는 5MB 이하만 올릴 수 있어요.');
+        return;
+      }
+
+      previewUrl = URL.createObjectURL(file);
+      avatarUiBridge.fillFromSrc(previewUrl);
+      avatarUiBridge.setLoading(true);
+
+      const r = await postProfileAvatar(file);
+
+      if (!r.ok) {
+        const msg =
+          r.error === 'file_too_large'
+            ? '파일이 너무 커요 (최대 5MB).'
+            : r.error === 'bad_file_type'
+              ? 'JPG, PNG, WEBP만 올릴 수 있어요.'
+              : r.error === 'no_profile'
+                ? '프로필을 먼저 저장한 뒤 다시 시도해 주세요.'
+                : r.error === 'avatar_required'
+                  ? '파일을 선택해 주세요.'
+                  : r.error === 'server_error'
+                    ? '서버 오류로 업로드에 실패했어요.'
+                    : r.status === 401
+                      ? '로그인이 필요해요.'
+                      : '업로드에 실패했어요. 잠시 후 다시 시도해 주세요.';
+        showAppToast(msg);
+        avatarUiBridge.fillFromSrc(buildProfileViewModel(api.state).photoURL || '');
+        return;
+      }
+      const nextUrl = typeof r.photoURL === 'string' ? r.photoURL.trim() : '';
+      api.state.profilePhotoURL = nextUrl;
+      const uid = api.state.user?.uid;
+      if (uid) patchUserRecord(uid, { profilePhotoURL: nextUrl });
+      avatarUiBridge.fillFromSrc(buildProfileViewModel(api.state).photoURL || '');
+    } catch (err) {
+      console.error('[profile] avatarFileInput change', err);
+      showAppToast('사진 처리 중 오류가 났어요. 잠시 후 다시 시도해 주세요.');
+      avatarUiBridge.fillFromSrc(buildProfileViewModel(api.state).photoURL || '');
+    } finally {
+      if (previewUrl) {
+        try {
+          URL.revokeObjectURL(previewUrl);
+        } catch (revErr) {
+          console.error('[profile] avatarFileInput revokeObjectURL', revErr);
+        }
+      }
+      avatarUiBridge.setLoading(false);
+      window.__filePickerOpen = false;
+    }
+  }
+
+  fileInput.addEventListener('click', handleAvatarFileClick);
+  fileInput.addEventListener('cancel', handleAvatarFileCancel);
+  fileInput.addEventListener('change', handleAvatarFileChange);
 
   const wrap = document.createElement('div');
   wrap.className = 'app-screen profile-screen';
@@ -83,7 +183,7 @@ export function mountProfile(root, api) {
     const vm = buildProfileViewModel(state);
     main.replaceChildren();
     main.append(
-      sectionPhoto(vm, api, refresh),
+      sectionPhoto(vm, api, fileInput, avatarUiBridge),
       sectionNickname(vm, api, editingNickname, () => {
         editingNickname = false;
         refresh();
@@ -110,19 +210,25 @@ export function mountProfile(root, api) {
   wrap.appendChild(out);
   root.appendChild(wrap);
   refresh();
+
+  return function unmountProfileAvatarInput() {
+    fileInput.removeEventListener('click', handleAvatarFileClick);
+    fileInput.removeEventListener('cancel', handleAvatarFileCancel);
+    fileInput.removeEventListener('change', handleAvatarFileChange);
+    fileInput.remove();
+    avatarUiBridge.fillFromSrc = () => {};
+    avatarUiBridge.setLoading = () => {};
+  };
 }
 
-/** @param {import('../services/profileViewModel.js').ProfileViewModel} vm */
-function sectionPhoto(vm, api, refresh) {
+/**
+ * @param {import('../services/profileViewModel.js').ProfileViewModel} vm
+ * @param {HTMLInputElement} fileInput document.body 에 붙은 type=file
+ * @param {{ fillFromSrc: (src: string) => void, setLoading: (on: boolean) => void }} avatarUi
+ */
+function sectionPhoto(vm, api, fileInput, avatarUi) {
   const box = document.createElement('div');
   box.className = 'app-box profile-photo-section';
-
-  const fileInput = document.createElement('input');
-  fileInput.type = 'file';
-  fileInput.id = 'avatarFileInput';
-  fileInput.accept = 'image/*';
-  fileInput.className = 'profile-avatar-file-input';
-  fileInput.setAttribute('aria-label', '프로필 사진 파일 선택');
 
   const stack = document.createElement('div');
   stack.className = 'profile-avatar-stack';
@@ -141,26 +247,26 @@ function sectionPhoto(vm, api, refresh) {
   wrapImg.appendChild(inner);
   wrapImg.appendChild(loadingEl);
 
-  const editLabel = document.createElement('label');
-  editLabel.htmlFor = 'avatarFileInput';
-  editLabel.className = 'app-btn app-btn--inline profile-avatar-edit-btn';
-  editLabel.textContent = '✏️';
-  editLabel.setAttribute('aria-label', '사진 변경');
-  editLabel.title = '사진 변경';
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'app-btn app-btn--inline profile-avatar-edit-btn';
+  editBtn.textContent = '✏️';
+  editBtn.setAttribute('aria-label', '사진 변경');
+  editBtn.title = '사진 변경';
 
   stack.appendChild(wrapImg);
-  stack.appendChild(editLabel);
+  stack.appendChild(editBtn);
 
   function setLoading(on) {
     loadingEl.hidden = !on;
     loadingEl.textContent = '업로드 중...';
     fileInput.disabled = on;
     if (on) {
-      editLabel.setAttribute('aria-disabled', 'true');
-      editLabel.classList.add('profile-avatar-edit-btn--disabled');
+      editBtn.setAttribute('aria-disabled', 'true');
+      editBtn.classList.add('profile-avatar-edit-btn--disabled');
     } else {
-      editLabel.removeAttribute('aria-disabled');
-      editLabel.classList.remove('profile-avatar-edit-btn--disabled');
+      editBtn.removeAttribute('aria-disabled');
+      editBtn.classList.remove('profile-avatar-edit-btn--disabled');
     }
   }
 
@@ -182,83 +288,19 @@ function sectionPhoto(vm, api, refresh) {
     }
   }
 
+  avatarUi.fillFromSrc = fillInnerFromSrc;
+  avatarUi.setLoading = setLoading;
+
   fillInnerFromSrc(vm.photoURL || '');
 
-  fileInput.addEventListener('click', () => {
+  editBtn.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (editBtn.disabled) return;
     window.__filePickerOpen = true;
-  });
-  fileInput.addEventListener('cancel', () => {
-    window.__filePickerOpen = false;
+    fileInput.click();
   });
 
-  fileInput.addEventListener('change', async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    let previewUrl = '';
-    try {
-      const file = fileInput.files && fileInput.files[0];
-      fileInput.value = '';
-      if (!file) return;
-
-      const token = getToken();
-      if (!token) {
-        showAppToast('로그인이 필요해요.');
-        return;
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        showAppToast('이미지는 5MB 이하만 올릴 수 있어요.');
-        return;
-      }
-
-      previewUrl = URL.createObjectURL(file);
-      fillInnerFromSrc(previewUrl);
-      setLoading(true);
-
-      const r = await postProfileAvatar(file);
-
-      if (!r.ok) {
-        const msg =
-          r.error === 'file_too_large'
-            ? '파일이 너무 커요 (최대 5MB).'
-            : r.error === 'bad_file_type'
-              ? 'JPG, PNG, WEBP만 올릴 수 있어요.'
-              : r.error === 'no_profile'
-                ? '프로필을 먼저 저장한 뒤 다시 시도해 주세요.'
-                : r.error === 'avatar_required'
-                  ? '파일을 선택해 주세요.'
-                  : r.error === 'server_error'
-                    ? '서버 오류로 업로드에 실패했어요.'
-                    : r.status === 401
-                      ? '로그인이 필요해요.'
-                      : '업로드에 실패했어요. 잠시 후 다시 시도해 주세요.';
-        showAppToast(msg);
-        fillInnerFromSrc(buildProfileViewModel(api.state).photoURL || '');
-        return;
-      }
-      const nextUrl = typeof r.photoURL === 'string' ? r.photoURL.trim() : '';
-      api.state.profilePhotoURL = nextUrl;
-      const uid = api.state.user?.uid;
-      if (uid) patchUserRecord(uid, { profilePhotoURL: nextUrl });
-      refresh();
-    } catch (err) {
-      console.error('[profile] avatarFileInput change', err);
-      showAppToast('사진 처리 중 오류가 났어요. 잠시 후 다시 시도해 주세요.');
-      fillInnerFromSrc(buildProfileViewModel(api.state).photoURL || '');
-    } finally {
-      if (previewUrl) {
-        try {
-          URL.revokeObjectURL(previewUrl);
-        } catch (revErr) {
-          console.error('[profile] avatarFileInput revokeObjectURL', revErr);
-        }
-      }
-      setLoading(false);
-      window.__filePickerOpen = false;
-    }
-  });
-
-  box.appendChild(fileInput);
   box.appendChild(stack);
   return box;
 }
