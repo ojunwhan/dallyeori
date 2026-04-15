@@ -137,7 +137,9 @@ export function mountSplash(root, api) {
   legal.style.lineHeight = '1.6';
 
   const aPrivacy = document.createElement('a');
-  aPrivacy.href = '/privacy';
+  aPrivacy.setAttribute('href', '/privacy');
+  aPrivacy.setAttribute('target', '_blank');
+  aPrivacy.setAttribute('rel', 'noopener noreferrer');
   aPrivacy.textContent = '개인정보처리방침';
   const privacyPath = document.createElement('span');
   privacyPath.textContent = '(/privacy)';
@@ -145,7 +147,9 @@ export function mountSplash(root, api) {
   const sep = document.createTextNode(' · ');
 
   const aTerms = document.createElement('a');
-  aTerms.href = '/terms';
+  aTerms.setAttribute('href', '/terms');
+  aTerms.setAttribute('target', '_blank');
+  aTerms.setAttribute('rel', 'noopener noreferrer');
   aTerms.textContent = '이용약관';
   const termsPath = document.createElement('span');
   termsPath.textContent = '(/terms)';
