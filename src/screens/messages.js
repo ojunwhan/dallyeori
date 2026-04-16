@@ -4,6 +4,8 @@
 
 import { getConversationList } from '../services/chat.js';
 import { getMockUser } from '../services/mockUsers.js';
+import { resolveMediaUrl } from '../services/auth.js';
+import { openAvatarLightbox } from '../components/avatarLightbox.js';
 
 const HIDDEN_CHATS_KEY = 'dallyeori-hidden-chats';
 
@@ -234,8 +236,27 @@ export function mountMessages(root, api) {
       });
 
       const av = document.createElement('div');
-      av.className = 'messages-av';
-      av.textContent = (u?.nickname ?? row.peerId).slice(0, 1);
+      const rowPhoto = (row.profilePhotoURL || u?.profilePhotoURL || '').trim();
+      if (rowPhoto) {
+        av.className = 'messages-av messages-av--photo';
+        const img = document.createElement('img');
+        img.className = 'messages-av-img';
+        img.src = resolveMediaUrl(rowPhoto);
+        img.alt = '';
+        img.referrerPolicy = 'no-referrer';
+        img.draggable = false;
+        img.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+        img.addEventListener('mousedown', (e) => e.stopPropagation());
+        img.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          openAvatarLightbox(rowPhoto, { displayName: row.nickname || u?.nickname || row.peerId });
+        });
+        av.appendChild(img);
+      } else {
+        av.className = 'messages-av';
+        av.textContent = (u?.nickname ?? row.peerId).slice(0, 1);
+      }
 
       const mid = document.createElement('div');
       mid.className = 'messages-mid';

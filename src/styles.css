@@ -1150,6 +1150,19 @@
   flex-shrink: 0;
 }
 
+.friend-avatar-ph--photo {
+  padding: 0;
+  overflow: hidden;
+}
+
+.friend-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+  display: block;
+}
+
 .friend-card-mid {
   flex: 1;
   min-width: 0;
@@ -1291,6 +1304,19 @@
   flex-shrink: 0;
 }
 
+.messages-av--photo {
+  padding: 0;
+  overflow: hidden;
+}
+
+.messages-av-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+  display: block;
+}
+
 .messages-mid {
   flex: 1;
   min-width: 0;
@@ -1360,6 +1386,19 @@
   align-items: center;
   justify-content: center;
   font-weight: 800;
+}
+
+.chat-header-av--photo {
+  padding: 0;
+  overflow: hidden;
+}
+
+.chat-header-av-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+  display: block;
 }
 
 .chat-header-names {
@@ -1759,6 +1798,21 @@
 .result-opponent-label {
   font-size: 0.75rem;
   margin-bottom: 6px;
+}
+
+.result-opponent-photo-wrap {
+  margin-bottom: 10px;
+  max-width: 120px;
+}
+
+.result-opponent-photo-img {
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: 12px;
+  cursor: pointer;
+  display: block;
+  background: #1a1a1a;
 }
 
 .result-opponent-nick {

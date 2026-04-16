@@ -334,6 +334,13 @@ window.addEventListener('popstate', (e) => {
     window.__filePickerOpen = false;
     return;
   }
+  if (typeof globalThis.__dallyeoriConsumeAvatarLightboxPopstate === 'function') {
+    try {
+      if (globalThis.__dallyeoriConsumeAvatarLightboxPopstate()) return;
+    } catch (err) {
+      console.warn('[nav] avatar lightbox popstate', err);
+    }
+  }
   const st = e.state;
   const ev = /** @type {PopStateEvent} */ (e);
   console.log('[nav] popstate', {

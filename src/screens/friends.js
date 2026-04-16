@@ -37,6 +37,8 @@ import {
   getCountryDisplayFromAlpha2,
   getUniqueCountryFilterOptions,
 } from '../data/languagesFull.js';
+import { resolveMediaUrl } from '../services/auth.js';
+import { openAvatarLightbox } from '../components/avatarLightbox.js';
 
 /** @type {(() => void) | null} */
 let detachFriendsStorageListener = null;
@@ -384,8 +386,24 @@ export function mountFriends(root, api) {
     row.className = 'friend-card-row';
 
     const av = document.createElement('div');
-    av.className = 'friend-avatar-ph';
-    av.textContent = f.nickname.slice(0, 1);
+    const friendPhoto = typeof f.photoURL === 'string' ? f.photoURL.trim() : '';
+    if (friendPhoto) {
+      av.className = 'friend-avatar-ph friend-avatar-ph--photo';
+      const img = document.createElement('img');
+      img.className = 'friend-avatar-img';
+      img.src = resolveMediaUrl(friendPhoto);
+      img.alt = '';
+      img.referrerPolicy = 'no-referrer';
+      img.draggable = false;
+      img.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        openAvatarLightbox(friendPhoto, { displayName: f.nickname });
+      });
+      av.appendChild(img);
+    } else {
+      av.className = 'friend-avatar-ph';
+      av.textContent = f.nickname.slice(0, 1);
+    }
 
     const mid = document.createElement('div');
     mid.className = 'friend-card-mid';

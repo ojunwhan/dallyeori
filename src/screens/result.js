@@ -7,7 +7,8 @@ import { sendRequest, isFriend } from '../services/friends.js';
 import { rewardForRace, syncHeartBalanceFromServer } from '../services/hearts.js';
 import { isMutualHeart, sendHeart } from '../services/likes.js';
 import { MOCK_USERS } from '../services/mockUsers.js';
-import { decodeJWT, getToken } from '../services/auth.js';
+import { decodeJWT, getToken, resolveMediaUrl } from '../services/auth.js';
+import { openAvatarLightbox } from '../components/avatarLightbox.js';
 import { recordRaceOutcome } from '../services/profileViewModel.js';
 import {
   emitFriendRequestSent,
@@ -353,6 +354,28 @@ export function mountResult(root, api) {
     oppLabel.className = 'result-opponent-label app-muted';
     oppLabel.textContent = '상대';
     oppCard.appendChild(oppLabel);
+
+    const oppPhotoRaw =
+      typeof opp?.profilePhotoURL === 'string'
+        ? opp.profilePhotoURL.trim()
+        : typeof opp?.photoURL === 'string'
+          ? opp.photoURL.trim()
+          : '';
+    if (oppPhotoRaw) {
+      const photoWrap = document.createElement('div');
+      photoWrap.className = 'result-opponent-photo-wrap';
+      const oimg = document.createElement('img');
+      oimg.className = 'result-opponent-photo-img';
+      oimg.src = resolveMediaUrl(oppPhotoRaw);
+      oimg.alt = '';
+      oimg.referrerPolicy = 'no-referrer';
+      oimg.draggable = false;
+      oimg.addEventListener('click', () => {
+        openAvatarLightbox(oppPhotoRaw, { displayName: opp?.nickname || '' });
+      });
+      photoWrap.appendChild(oimg);
+      oppCard.appendChild(photoWrap);
+    }
 
     const oppNick = document.createElement('div');
     oppNick.className = 'result-opponent-nick';

@@ -13,6 +13,8 @@ import {
 } from '../services/chat.js';
 import { showAppToast } from '../services/toast.js';
 import { getMockUser } from '../services/mockUsers.js';
+import { resolveMediaUrl } from '../services/auth.js';
+import { openAvatarLightbox } from '../components/avatarLightbox.js';
 
 /**
  * @param {HTMLElement} root
@@ -54,8 +56,23 @@ export function mountChatRoom(root, api) {
   headRow.className = 'chat-header-row';
 
   const av = document.createElement('div');
-  av.className = 'chat-header-av';
-  av.textContent = peerNick.slice(0, 1);
+  const peerPhoto = (peer?.profilePhotoURL || '').trim();
+  if (peerPhoto) {
+    av.className = 'chat-header-av chat-header-av--photo';
+    const img = document.createElement('img');
+    img.className = 'chat-header-av-img';
+    img.src = resolveMediaUrl(peerPhoto);
+    img.alt = '';
+    img.referrerPolicy = 'no-referrer';
+    img.draggable = false;
+    img.addEventListener('click', () => {
+      openAvatarLightbox(peerPhoto, { displayName: peerNick });
+    });
+    av.appendChild(img);
+  } else {
+    av.className = 'chat-header-av';
+    av.textContent = peerNick.slice(0, 1);
+  }
 
   const names = document.createElement('div');
   names.className = 'chat-header-names';
