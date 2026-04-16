@@ -1014,6 +1014,29 @@
   box-sizing: border-box;
 }
 
+.friends-nick-search-wrap {
+  margin-bottom: 12px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.friends-nick-search-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.friends-nick-remote-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.friends-nick-remote-title:not([hidden]) {
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+
 .friends-find-search-row {
   display: flex;
   gap: 8px;

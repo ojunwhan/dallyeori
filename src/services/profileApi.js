@@ -144,16 +144,18 @@ export async function fetchProfileByUid(peerUid) {
 
 /**
  * 친구 찾기 (v1): 필터·페이징·온라인 우선은 서버에서 처리
- * @param {{ countryCode?: string, gender?: string, offset?: number, limit?: number }} opts
+ * @param {{ q?: string, countryCode?: string, gender?: string, offset?: number, limit?: number }} opts
  */
 export async function searchUsersDiscoveryV1(opts = {}) {
   const t = getToken();
   if (!t) return { ok: false, users: [] };
   const params = new URLSearchParams();
+  const nickQ = typeof opts.q === 'string' ? opts.q.trim() : '';
   const countryCode = typeof opts.countryCode === 'string' ? opts.countryCode : '';
   const gender = typeof opts.gender === 'string' ? opts.gender : '';
   const offset = Number(opts.offset) || 0;
   const limit = Number(opts.limit) || 10;
+  if (nickQ) params.set('q', nickQ);
   if (countryCode) params.set('countryCode', countryCode);
   if (gender) params.set('gender', gender);
   params.set('offset', String(offset));
