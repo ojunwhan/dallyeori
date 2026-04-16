@@ -49,101 +49,57 @@ function isSupportedAvatarInputFile(/** @type {File} */ file) {
 }
 
 /**
+ * FileReader data URL → Image → canvas (blob: URL 미사용, 안드로이드 호환).
+ * 정사각 center-crop, 한 변 최대 1024(작은 원본은 업스케일 없음) → WebP 우선, 실패 시 JPEG.
  * @param {File} file
- * @returns {Promise<HTMLImageElement>}
- */
-function loadViaImageElement(file) {
-  const url = URL.createObjectURL(file);
-  const img = new Image();
-  return new Promise((resolve, reject) => {
-    img.onload = () => {
-      try {
-        URL.revokeObjectURL(url);
-      } catch {
-        /* ignore */
-      }
-      resolve(img);
-    };
-    img.onerror = () => {
-      try {
-        URL.revokeObjectURL(url);
-      } catch {
-        /* ignore */
-      }
-      reject(new Error('image_load_failed'));
-    };
-    img.src = url;
-  });
-}
-
-/**
- * EXIF 반영 후 정사각 center-crop, 긴 변 최대 1024(작은 원본은 업스케일 없음) → WebP 우선, 실패 시 JPEG.
- * @param {File} file
- * @returns {Promise<{ blob: Blob, filename: string, mime: string } | null>}
+ * @returns {Promise<File | null>}
  */
 async function prepareProfileAvatarUploadBlob(file) {
-  /** @type {ImageBitmap | HTMLImageElement | undefined} */
-  let source;
-  try {
-    try {
-      source = await createImageBitmap(file, { imageOrientation: 'from-image' });
-    } catch (e1) {
-      console.warn('[avatar] createImageBitmap with options failed', e1);
-      try {
-        source = await createImageBitmap(file);
-      } catch (e2) {
-        console.warn('[avatar] createImageBitmap fallback failed', e2);
-        source = await loadViaImageElement(file);
-      }
-    }
-
-    const W = source.width;
-    const H = source.height;
-    const side = Math.min(W, H);
-    const sx = (W - side) / 2;
-    const sy = (H - side) / 2;
-    const outSize = Math.min(1024, side);
-    const canvas = document.createElement('canvas');
-    canvas.width = outSize;
-    canvas.height = outSize;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('no_canvas');
-    ctx.drawImage(source, sx, sy, side, side, 0, 0, outSize, outSize);
-
-    const webpBlob = await new Promise((resolve) => {
-      canvas.toBlob((b) => resolve(b), 'image/webp', 0.9);
-    });
-    const jpegBlob = await new Promise((resolve) => {
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92);
-    });
-
-    /** @type {Blob | null | undefined} */
-    let outBlob = webpBlob && webpBlob.size > 0 ? webpBlob : null;
-    let filename = 'avatar.webp';
-    let mime = 'image/webp';
-    if (!outBlob) {
-      outBlob = jpegBlob && jpegBlob.size > 0 ? jpegBlob : null;
-      filename = 'avatar.jpg';
-      mime = 'image/jpeg';
-    }
-
-    if (!outBlob) {
-      alert('이미지 변환에 실패했습니다. 다른 사진을 시도해주세요.');
-      return null;
-    }
-    if (!outBlob.size) {
-      throw new Error('empty_blob');
-    }
-    return { blob: outBlob, filename, mime };
-  } finally {
-    if (source && typeof source.close === 'function') {
-      try {
-        source.close();
-      } catch {
-        /* ignore */
-      }
-    }
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('file_read_failed'));
+    reader.readAsDataURL(file);
+  });
+  if (typeof dataUrl !== 'string') {
+    throw new Error('file_read_invalid');
   }
+
+  const img = await new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('image_decode_failed'));
+    image.src = dataUrl;
+  });
+
+  const cropSide = Math.min(img.naturalWidth, img.naturalHeight);
+  const outSize = Math.min(1024, cropSide);
+  const sx = (img.naturalWidth - cropSide) / 2;
+  const sy = (img.naturalHeight - cropSide) / 2;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = outSize;
+  canvas.height = outSize;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('no_canvas');
+  ctx.drawImage(img, sx, sy, cropSide, cropSide, 0, 0, outSize, outSize);
+
+  let blob = await new Promise((r) => {
+    canvas.toBlob(r, 'image/webp', 0.9);
+  });
+  let ext = 'webp';
+  if (!blob || !blob.size) {
+    blob = await new Promise((r) => {
+      canvas.toBlob(r, 'image/jpeg', 0.92);
+    });
+    ext = 'jpg';
+  }
+  if (!blob || !blob.size) {
+    alert('이미지 변환에 실패했습니다. 다른 사진을 시도해주세요.');
+    return null;
+  }
+  const mime = blob.type || (ext === 'webp' ? 'image/webp' : 'image/jpeg');
+  return new File([blob], `avatar.${ext}`, { type: mime });
 }
 
 /**
@@ -191,22 +147,6 @@ export function mountProfile(root, api) {
     try {
       const file = fileInput.files && fileInput.files[0];
       fileInput.value = '';
-
-      alert(
-        '[DEBUG] file info:\n' +
-          'name: ' +
-          (file?.name || 'null') +
-          '\n' +
-          'type: ' +
-          (file?.type || 'null') +
-          '\n' +
-          'size: ' +
-          (file?.size || 0) +
-          '\n' +
-          'blobURL: ' +
-          (file ? URL.createObjectURL(file) : 'no file'),
-      );
-
       if (!file) return;
 
       const token = getToken();
@@ -229,19 +169,18 @@ export function mountProfile(root, api) {
       avatarUiBridge.fillFromSrc(previewUrl);
       avatarUiBridge.setLoading(true);
 
-      const prepared = await prepareProfileAvatarUploadBlob(file);
-      if (!prepared) {
+      const uploadFile = await prepareProfileAvatarUploadBlob(file);
+      if (!uploadFile) {
         avatarUiBridge.fillFromSrc(buildProfileViewModel(api.state).photoURL || '');
         return;
       }
 
-      if (prepared.blob.size > 5 * 1024 * 1024) {
+      if (uploadFile.size > 5 * 1024 * 1024) {
         alert('5MB 이하 이미지만 가능합니다');
         avatarUiBridge.fillFromSrc(buildProfileViewModel(api.state).photoURL || '');
         return;
       }
 
-      const uploadFile = new File([prepared.blob], prepared.filename, { type: prepared.mime });
       const r = await postProfileAvatar(uploadFile);
 
       if (!r.ok) {
