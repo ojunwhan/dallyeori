@@ -293,7 +293,8 @@ function receiveFriendRequestRelayHandler(data) {
       : nickRaw || senderUid;
   const photoURL = typeof o.photoURL === 'string' ? o.photoURL : '';
   const duckId = typeof o.duckId === 'string' && o.duckId.trim() ? o.duckId.trim() : '';
-  const myUid = getJwtUid();
+  /** QR 게스트는 JWT가 localStorage가 아니라 게스트 소켓 토큰에만 있음 — getJwtUid()만 쓰면 수신 무시됨 */
+  const myUid = getRaceJoinPayloadUid();
   if (!myUid || !senderUid || !requestId) return;
   showFriendRequestToast(senderName);
   applyIncomingFriendRequest(myUid, {
@@ -313,7 +314,7 @@ function friendAcceptedRelayHandler(data) {
   const nickname = typeof o.nickname === 'string' ? o.nickname : '';
   const photoURL = typeof o.photoURL === 'string' ? o.photoURL : '';
   const duckId = typeof o.duckId === 'string' ? o.duckId : '';
-  const myUid = getJwtUid();
+  const myUid = getRaceJoinPayloadUid();
   if (!myUid || !peerUid) return;
   applyFriendAccepted(myUid, { peerUid, requestId, nickname, photoURL, duckId });
 }
