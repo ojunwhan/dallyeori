@@ -146,7 +146,6 @@ export function mountProfile(root, api) {
     let previewUrl = '';
     try {
       const file = fileInput.files && fileInput.files[0];
-      fileInput.value = '';
       if (!file) return;
 
       const token = getToken();
@@ -223,6 +222,11 @@ export function mountProfile(root, api) {
       }
       avatarUiBridge.setLoading(false);
       window.__filePickerOpen = false;
+      try {
+        fileInput.value = '';
+      } catch {
+        /* ignore */
+      }
     }
   }
 
