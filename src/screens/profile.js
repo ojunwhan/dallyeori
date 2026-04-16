@@ -49,20 +49,56 @@ function isSupportedAvatarInputFile(/** @type {File} */ file) {
 }
 
 /**
+ * @param {File} file
+ * @returns {Promise<HTMLImageElement>}
+ */
+function loadViaImageElement(file) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  return new Promise((resolve, reject) => {
+    img.onload = () => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        /* ignore */
+      }
+      resolve(img);
+    };
+    img.onerror = () => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        /* ignore */
+      }
+      reject(new Error('image_load_failed'));
+    };
+    img.src = url;
+  });
+}
+
+/**
  * EXIF 반영 후 정사각 center-crop, 긴 변 최대 1024(작은 원본은 업스케일 없음) → WebP 우선, 실패 시 JPEG.
  * @param {File} file
- * @returns {Promise<{ blob: Blob, filename: string, mime: string }>}
+ * @returns {Promise<{ blob: Blob, filename: string, mime: string } | null>}
  */
 async function prepareProfileAvatarUploadBlob(file) {
-  let bmp;
+  /** @type {ImageBitmap | HTMLImageElement | undefined} */
+  let source;
   try {
-    bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  } catch {
-    throw new Error('unsupported_bitmap');
-  }
-  try {
-    const W = bmp.width;
-    const H = bmp.height;
+    try {
+      source = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch (e1) {
+      console.warn('[avatar] createImageBitmap with options failed', e1);
+      try {
+        source = await createImageBitmap(file);
+      } catch (e2) {
+        console.warn('[avatar] createImageBitmap fallback failed', e2);
+        source = await loadViaImageElement(file);
+      }
+    }
+
+    const W = source.width;
+    const H = source.height;
     const side = Math.min(W, H);
     const sx = (W - side) / 2;
     const sy = (H - side) / 2;
@@ -72,26 +108,40 @@ async function prepareProfileAvatarUploadBlob(file) {
     canvas.height = outSize;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('no_canvas');
-    ctx.drawImage(bmp, sx, sy, side, side, 0, 0, outSize, outSize);
+    ctx.drawImage(source, sx, sy, side, side, 0, 0, outSize, outSize);
 
     const webpBlob = await new Promise((resolve) => {
       canvas.toBlob((b) => resolve(b), 'image/webp', 0.9);
     });
-    if (webpBlob && webpBlob.size > 0) {
-      return { blob: webpBlob, filename: 'avatar.webp', mime: 'image/webp' };
-    }
     const jpegBlob = await new Promise((resolve) => {
       canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92);
     });
-    if (jpegBlob && jpegBlob.size > 0) {
-      return { blob: jpegBlob, filename: 'avatar.jpg', mime: 'image/jpeg' };
+
+    /** @type {Blob | null | undefined} */
+    let outBlob = webpBlob && webpBlob.size > 0 ? webpBlob : null;
+    let filename = 'avatar.webp';
+    let mime = 'image/webp';
+    if (!outBlob) {
+      outBlob = jpegBlob && jpegBlob.size > 0 ? jpegBlob : null;
+      filename = 'avatar.jpg';
+      mime = 'image/jpeg';
     }
-    throw new Error('encode_failed');
+
+    if (!outBlob) {
+      alert('이미지 변환에 실패했습니다. 다른 사진을 시도해주세요.');
+      return null;
+    }
+    if (!outBlob.size) {
+      throw new Error('empty_blob');
+    }
+    return { blob: outBlob, filename, mime };
   } finally {
-    try {
-      bmp.close();
-    } catch {
-      /* ignore */
+    if (source && typeof source.close === 'function') {
+      try {
+        source.close();
+      } catch {
+        /* ignore */
+      }
     }
   }
 }
@@ -163,12 +213,8 @@ export function mountProfile(root, api) {
       avatarUiBridge.fillFromSrc(previewUrl);
       avatarUiBridge.setLoading(true);
 
-      let prepared;
-      try {
-        prepared = await prepareProfileAvatarUploadBlob(file);
-      } catch (prepErr) {
-        console.error('[profile] avatar prepare', prepErr);
-        alert('지원하지 않는 이미지 형식입니다.');
+      const prepared = await prepareProfileAvatarUploadBlob(file);
+      if (!prepared) {
         avatarUiBridge.fillFromSrc(buildProfileViewModel(api.state).photoURL || '');
         return;
       }
@@ -209,8 +255,8 @@ export function mountProfile(root, api) {
       if (uid) patchUserRecord(uid, { profilePhotoURL: nextUrl });
       avatarUiBridge.fillFromSrc(buildProfileViewModel(api.state).photoURL || '');
     } catch (err) {
-      console.error('[profile] avatarFileInput change', err);
-      showAppToast('사진 처리 중 오류가 났어요. 잠시 후 다시 시도해 주세요.');
+      console.error('[avatar] upload prepare failed', err);
+      alert('사진 처리 실패: ' + (err && typeof err.message === 'string' ? err.message : 'unknown'));
       avatarUiBridge.fillFromSrc(buildProfileViewModel(api.state).photoURL || '');
     } finally {
       if (previewUrl) {
