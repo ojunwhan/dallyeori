@@ -1064,6 +1064,29 @@
   box-sizing: border-box;
 }
 
+.friends-find-nick-results {
+  margin-bottom: 14px;
+}
+
+.friends-find-nick-card .friends-find-nick-card-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.friends-find-nick-card .friends-find-nick-mid {
+  flex: 1;
+  min-width: 0;
+}
+
+.friends-find-nick-card .friends-find-nick-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .friends-recent-section {
   margin-top: 16px;
   max-width: 100%;

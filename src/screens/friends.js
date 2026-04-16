@@ -144,6 +144,19 @@ export function mountFriends(root, api) {
   panelFind.className = 'friends-find-panel';
   panelFind.hidden = true;
 
+  const findNickSearchWrap = document.createElement('div');
+  findNickSearchWrap.className = 'friends-nick-search-wrap';
+  const findNickSearchInput = document.createElement('input');
+  findNickSearchInput.type = 'search';
+  findNickSearchInput.className = 'app-input friends-find-search-input friends-nick-search-input';
+  findNickSearchInput.placeholder = '닉네임으로 검색';
+  findNickSearchInput.setAttribute('aria-label', '닉네임으로 검색');
+  findNickSearchInput.autocomplete = 'off';
+  findNickSearchWrap.appendChild(findNickSearchInput);
+
+  const findNickResults = document.createElement('div');
+  findNickResults.className = 'friends-find-nick-results friends-nick-remote-list';
+
   const findFilters = document.createElement('div');
   findFilters.className = 'friends-find-filters';
   const countrySel = document.createElement('select');
@@ -183,6 +196,8 @@ export function mountFriends(root, api) {
   findLoadMore.textContent = '더 보기';
   findLoadMore.hidden = true;
 
+  panelFind.appendChild(findNickSearchWrap);
+  panelFind.appendChild(findNickResults);
   panelFind.appendChild(findFilters);
   panelFind.appendChild(findResults);
   panelFind.appendChild(findLoadMore);
@@ -479,6 +494,7 @@ export function mountFriends(root, api) {
   let findNextOffset = 0;
   const FIND_PAGE = 10;
   let findSeq = 0;
+  let findNickSearchSeq = 0;
   /** @type {boolean} */
   let findLastHadFullPage = false;
 
@@ -614,11 +630,156 @@ export function mountFriends(root, api) {
     return card;
   }
 
+  /**
+   * 찾기 탭 — 닉네임 검색 전용 행 (이니셜 아바타 + 닉네임 + 친구요청)
+   * @param {{ uid: string, nickname: string, language: string, countryCode: string, gender: string | null, isOnline: boolean, isFriend: boolean, isRequested: boolean }} u
+   * @param {(() => void) | undefined} afterRequest
+   */
+  function renderFindNickSearchCard(u, afterRequest) {
+    const card = document.createElement('div');
+    card.className = 'friends-find-nick-card friends-find-card app-box';
+
+    const topRow = document.createElement('div');
+    topRow.className = 'friends-find-nick-card-row';
+
+    const av = document.createElement('div');
+    av.className = 'friend-avatar-ph';
+    const dispNick = u.nickname || u.uid || '?';
+    av.textContent = dispNick.slice(0, 1);
+
+    const mid = document.createElement('div');
+    mid.className = 'friends-find-nick-mid';
+    const nick = document.createElement('div');
+    nick.className = 'friends-find-card-nick';
+    nick.textContent = dispNick;
+    mid.appendChild(nick);
+
+    const btnWrap = document.createElement('div');
+    btnWrap.className = 'friends-find-nick-actions';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'app-btn app-btn--inline';
+    const peerId = u.uid;
+    const serverFriend = Boolean(u.isFriend);
+    const serverReq = Boolean(u.isRequested);
+    const localFriend = uid ? isFriend(uid, peerId) : false;
+    const localOut = uid ? isPendingOutTo(uid, peerId) : false;
+
+    if (serverFriend || localFriend) {
+      btn.textContent = '친구';
+      btn.disabled = true;
+    } else if (serverReq || localOut) {
+      btn.textContent = '요청됨';
+      btn.disabled = true;
+    } else {
+      btn.textContent = '친구요청';
+      btn.classList.add('app-btn--primary');
+      btn.addEventListener('click', async () => {
+        if (!uid) return;
+        const pr = await postFriendRequestV1(peerId);
+        if (!pr.ok) {
+          if (pr.error === 'incoming_pending') {
+            window.alert('상대가 먼저 요청했어요. 요청 탭에서 수락해 주세요.');
+          } else window.alert('요청에 실패했어요.');
+          return;
+        }
+        const r = sendRequest(uid, peerId, { nickname: u.nickname });
+        if (r.ok && r.requestId) emitFriendRequestSent(peerId, r.requestId);
+        if (r.ok) {
+          btn.textContent = '요청됨';
+          btn.disabled = true;
+          btn.classList.remove('app-btn--primary');
+          showAppToast('친구 요청을 보냈어요.');
+        } else if (r.message) window.alert(r.message);
+        else if (r.error === 'pending_out') window.alert('이미 요청 중이에요.');
+        else if (r.error === 'pending_in') {
+          window.alert('상대가 먼저 요청했다면 요청 탭에서 수락해 주세요.');
+        } else window.alert('요청할 수 없어요.');
+        if (typeof afterRequest === 'function') afterRequest();
+        else {
+          void runFindTabNicknameSearch();
+          renderReq();
+        }
+      });
+    }
+
+    btnWrap.appendChild(btn);
+
+    topRow.appendChild(av);
+    topRow.appendChild(mid);
+    if (u.isOnline) {
+      const dot = document.createElement('span');
+      dot.className = 'friend-online-dot';
+      dot.title = '온라인';
+      topRow.appendChild(dot);
+    }
+    topRow.appendChild(btnWrap);
+    card.appendChild(topRow);
+    return card;
+  }
+
   /** @type {ReturnType<typeof setTimeout> | null} */
   let nickSearchDebounce = null;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let findTabNickSearchDebounce = null;
 
   function getFriendsNickSearchQuery() {
     return String(nickSearchInput.value || '').trim();
+  }
+
+  function getFindTabNickSearchQuery() {
+    return String(findNickSearchInput.value || '').trim();
+  }
+
+  async function runFindTabNicknameSearch() {
+    findNickResults.replaceChildren();
+    if (!uid) {
+      const p = document.createElement('p');
+      p.className = 'app-muted';
+      p.textContent = '로그인 후 이용할 수 있어요.';
+      findNickResults.appendChild(p);
+      return;
+    }
+    const seq = (findNickSearchSeq += 1);
+    const q = getFindTabNickSearchQuery();
+    if (!q) {
+      return;
+    }
+    const loading = document.createElement('p');
+    loading.className = 'app-muted';
+    loading.textContent = '검색 중…';
+    findNickResults.appendChild(loading);
+    const { ok, users } = await searchUsersDiscoveryV1({
+      q,
+      offset: 0,
+      limit: 20,
+    });
+    if (seq !== findNickSearchSeq) return;
+    findNickResults.replaceChildren();
+    if (!ok) {
+      const p = document.createElement('p');
+      p.className = 'app-muted';
+      p.textContent = '검색에 실패했어요.';
+      findNickResults.appendChild(p);
+      return;
+    }
+    const filtered = users.filter((/** @type {{ uid?: string }} */ x) => x && x.uid !== uid);
+    if (filtered.length === 0) {
+      const p = document.createElement('p');
+      p.className = 'app-muted';
+      p.textContent = '일치하는 유저가 없어요.';
+      findNickResults.appendChild(p);
+      return;
+    }
+    const afterFindNickRequest = () => {
+      renderFriends();
+      void runFindTabNicknameSearch();
+      renderReq();
+    };
+    for (const u of filtered) {
+      findNickResults.appendChild(renderFindNickSearchCard(/** @type {any} */ (u), afterFindNickRequest));
+    }
   }
 
   async function runFriendsNicknameSearch() {
@@ -676,6 +837,14 @@ export function mountFriends(root, api) {
     nickSearchDebounce = setTimeout(() => {
       nickSearchDebounce = null;
       void runFriendsNicknameSearch();
+    }, 380);
+  });
+
+  findNickSearchInput.addEventListener('input', () => {
+    if (findTabNickSearchDebounce != null) clearTimeout(findTabNickSearchDebounce);
+    findTabNickSearchDebounce = setTimeout(() => {
+      findTabNickSearchDebounce = null;
+      void runFindTabNicknameSearch();
     }, 380);
   });
 
@@ -839,12 +1008,14 @@ export function mountFriends(root, api) {
       friendsNickSearchWrap.hidden = true;
       friendsNickRemoteTitle.hidden = true;
       friendsNickRemoteList.hidden = true;
+      findNickSearchInput.disabled = true;
       const p = document.createElement('p');
       p.className = 'app-muted';
       p.textContent = '로그인 후 친구 기능을 이용할 수 있어요.';
       listFriends.appendChild(p);
       return;
     }
+    findNickSearchInput.disabled = false;
     friendsNickSearchWrap.hidden = false;
     const qRaw = getFriendsNickSearchQuery();
     const q = qRaw.toLowerCase();
@@ -960,6 +1131,9 @@ export function mountFriends(root, api) {
   const onFriendsStorageUpdated = () => {
     renderFriends();
     renderReq();
+    if (!panelFind.hidden && getFindTabNickSearchQuery()) {
+      void runFindTabNicknameSearch();
+    }
   };
   /** @param {Event} ev */
   const onFriendBattleClear = (ev) => {
@@ -995,6 +1169,7 @@ export function mountFriends(root, api) {
     panelFind.hidden = which !== 'find';
     panelReq.hidden = which !== 'req';
     if (which === 'find') {
+      if (getFindTabNickSearchQuery()) void runFindTabNicknameSearch();
       if (hasDiscoveryFilter()) void runDiscoverySearch(true);
       else showFindNoFilterHint();
     }
