@@ -191,6 +191,22 @@ export function mountProfile(root, api) {
     try {
       const file = fileInput.files && fileInput.files[0];
       fileInput.value = '';
+
+      alert(
+        '[DEBUG] file info:\n' +
+          'name: ' +
+          (file?.name || 'null') +
+          '\n' +
+          'type: ' +
+          (file?.type || 'null') +
+          '\n' +
+          'size: ' +
+          (file?.size || 0) +
+          '\n' +
+          'blobURL: ' +
+          (file ? URL.createObjectURL(file) : 'no file'),
+      );
+
       if (!file) return;
 
       const token = getToken();
@@ -212,21 +228,6 @@ export function mountProfile(root, api) {
       previewUrl = URL.createObjectURL(file);
       avatarUiBridge.fillFromSrc(previewUrl);
       avatarUiBridge.setLoading(true);
-
-      alert(
-        '[DEBUG] file info:\n' +
-          'name: ' +
-          (file?.name || 'null') +
-          '\n' +
-          'type: ' +
-          (file?.type || 'null') +
-          '\n' +
-          'size: ' +
-          (file?.size || 0) +
-          '\n' +
-          'blobURL: ' +
-          (file ? URL.createObjectURL(file) : 'no file'),
-      );
 
       const prepared = await prepareProfileAvatarUploadBlob(file);
       if (!prepared) {
