@@ -5,6 +5,7 @@
 import { DUCKS_NINE } from '../constants.js';
 import { giftToFriend } from '../services/hearts.js';
 import {
+  acceptFriendRequest,
   acceptRequest,
   cancelSentRequest,
   formatFriendRejectLine,
@@ -14,17 +15,14 @@ import {
   getSentRequests,
   isFriend,
   markFriendRejectNotifsSeen,
+  rejectFriendRequest,
+  rejectIncomingRequestLocalOnly,
   rejectRequest,
   removeFriend,
   sendRequest,
   enrichStaleFriendMeta,
 } from '../services/friends.js';
-import {
-  emitAcceptFriendRequest,
-  emitFriendRequestSent,
-  emitSendBattleRequest,
-  ensureSocket,
-} from '../services/socket.js';
+import { emitFriendRequestSent, emitSendBattleRequest, ensureSocket } from '../services/socket.js';
 import { showAppToast } from '../services/toast.js';
 import { isMutualHeart, markHeartNotificationsSeen, sendHeart } from '../services/likes.js';
 import {
@@ -898,21 +896,32 @@ export function mountFriends(root, api) {
         bOk.className = 'app-btn app-btn--inline';
         bOk.textContent = '수락';
         bOk.addEventListener('click', () => {
-          const ar = acceptRequest(uid, r.requestId);
-          if (ar.ok && ar.peerUid && ar.requestId) {
+          void (async () => {
             ensureSocket();
-            emitAcceptFriendRequest(ar.peerUid, ar.requestId);
-          }
-          if (ar.ok) renderFriends();
-          renderReq();
+            const ok = await acceptFriendRequest(r.requestId, r.fromId);
+            if (!ok) {
+              showAppToast('서버에 수락을 반영하지 못했어요. 네트워크를 확인해 주세요.');
+              renderReq();
+              return;
+            }
+            const ar = acceptRequest(uid, r.requestId);
+            if (!ar.ok) showAppToast('로컬 목록 갱신에 실패했어요.');
+            if (ar.ok) renderFriends();
+            renderReq();
+          })();
         });
         const bNo = document.createElement('button');
         bNo.type = 'button';
         bNo.className = 'app-btn app-btn--inline';
         bNo.textContent = '거절';
         bNo.addEventListener('click', () => {
-          rejectRequest(uid, r.requestId);
-          renderReq();
+          void (async () => {
+            ensureSocket();
+            const ok = await rejectFriendRequest(r.requestId);
+            if (ok) rejectIncomingRequestLocalOnly(uid, r.requestId);
+            else rejectRequest(uid, r.requestId);
+            renderReq();
+          })();
         });
         btns.appendChild(bOk);
         btns.appendChild(bNo);

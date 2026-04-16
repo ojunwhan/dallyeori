@@ -6,7 +6,8 @@
 import { DUCKS_NINE } from '../constants.js';
 import { resolveMediaUrl } from '../services/auth.js';
 import { getBalance } from '../services/hearts.js';
-import { getNewFriendRejectNotifCount } from '../services/friends.js';
+import { flushServerFriendNotificationsToClient, getNewFriendRejectNotifCount } from '../services/friends.js';
+import { ensureSocket } from '../services/socket.js';
 import { getNewHeartsCount } from '../services/likes.js';
 import { getTotalUnreadCount } from '../services/chat.js';
 
@@ -270,6 +271,12 @@ export function mountLobby(root, api) {
   wrap.appendChild(bottom);
 
   root.appendChild(wrap);
+
+  const lobbyUid = api.state.user?.uid;
+  if (lobbyUid) {
+    ensureSocket();
+    void flushServerFriendNotificationsToClient(lobbyUid);
+  }
 
   if (!lobbyChatUpdateListenerBound) {
     lobbyChatUpdateListenerBound = true;

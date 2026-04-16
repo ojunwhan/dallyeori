@@ -7,7 +7,12 @@ import { decodeJWT, getToken } from './auth.js';
 import { getUserRecord } from './db.js';
 import { DUCKS_NINE } from '../constants.js';
 import { getRandomMockUser } from './mockUsers.js';
-import { applyIncomingFriendRequest, applyFriendAccepted } from './friends.js';
+import {
+  applyIncomingFriendRequest,
+  applyFriendAccepted,
+  applyServerFriendRequestRejected,
+} from './friends.js';
+import { markSocialNotificationsReadV1 } from './profileApi.js';
 import {
   showAppToast,
   showFriendRequestToast,
@@ -319,6 +324,44 @@ function friendAcceptedRelayHandler(data) {
   applyFriendAccepted(myUid, { peerUid, requestId, nickname, photoURL, duckId });
 }
 
+/** @param {unknown} data */
+function friendRequestAcceptedResultHandler(data) {
+  const o = data && typeof data === 'object' ? /** @type {Record<string, unknown>} */ (data) : {};
+  const fromUid = typeof o.fromUid === 'string' ? o.fromUid.trim() : '';
+  const toUid = typeof o.toUid === 'string' ? o.toUid.trim() : '';
+  const requestId = typeof o.requestId === 'string' ? o.requestId.trim() : '';
+  const toName =
+    typeof o.toName === 'string' && o.toName.trim() ? o.toName.trim() : toUid || '상대';
+  const myUid = getRaceJoinPayloadUid();
+  if (!myUid || !fromUid || !toUid || !requestId || fromUid !== myUid) return;
+  showAppToast(`${toName}님이 친구요청을 수락했습니다!`);
+  applyFriendAccepted(myUid, {
+    peerUid: toUid,
+    requestId,
+    nickname: toName,
+    photoURL: '',
+    duckId: 'bori',
+  });
+  void markSocialNotificationsReadV1([requestId]);
+  window.dispatchEvent(new Event('dallyeori-friends-updated'));
+}
+
+/** @param {unknown} data */
+function friendRequestRejectedResultHandler(data) {
+  const o = data && typeof data === 'object' ? /** @type {Record<string, unknown>} */ (data) : {};
+  const requestId = typeof o.requestId === 'string' ? o.requestId.trim() : '';
+  const rejectorName =
+    typeof o.rejectorName === 'string' && o.rejectorName.trim() ? o.rejectorName.trim() : '';
+  const myUid = getRaceJoinPayloadUid();
+  if (!myUid || !requestId) return;
+  applyServerFriendRequestRejected(myUid, requestId);
+  showAppToast(
+    rejectorName ? `${rejectorName}님이 친구 요청을 거절했습니다` : '상대가 친구 요청을 거절했습니다',
+  );
+  void markSocialNotificationsReadV1([requestId]);
+  window.dispatchEvent(new Event('dallyeori-friends-updated'));
+}
+
 function removeRematchInviteOverlay() {
   document.getElementById('dallyeori-rematch-invite')?.remove();
 }
@@ -352,6 +395,10 @@ function attachReceiveFriendRematchRelay(sock) {
   sock.on('receiveFriendRequest', receiveFriendRequestRelayHandler);
   sock.off('friendAccepted', friendAcceptedRelayHandler);
   sock.on('friendAccepted', friendAcceptedRelayHandler);
+  sock.off('friendRequestAccepted', friendRequestAcceptedResultHandler);
+  sock.on('friendRequestAccepted', friendRequestAcceptedResultHandler);
+  sock.off('friendRequestRejected', friendRequestRejectedResultHandler);
+  sock.on('friendRequestRejected', friendRequestRejectedResultHandler);
   sock.off('receiveRematch', receiveRematchRelayHandler);
   sock.on('receiveRematch', receiveRematchRelayHandler);
 }
@@ -777,23 +824,83 @@ export function emitFriendRequestSent(targetUid, requestId) {
 }
 
 /**
- * 친구 요청 수락 — 서버가 양쪽에 friendAccepted 전달
- * @param {string} peerUid 요청 보낸 사람 uid (수락자가 아님)
+ * 친구 요청 수락 — 서버 DB + 소켓 (requestId 필수, 레거시 호환용 peerUid 선택)
  * @param {string} requestId
+ * @param {string} [legacyPeerUid] 서버에 JSON 레코드 없을 때만 사용
+ * @returns {Promise<boolean>} 서버 ack ok 여부
  */
-export function emitAcceptFriendRequest(peerUid, requestId) {
-  if (!peerUid || !requestId) return;
+export function emitAcceptFriendRequest(requestId, legacyPeerUid) {
+  const rid = typeof requestId === 'string' ? requestId.trim() : '';
+  if (!rid) return Promise.resolve(false);
   const s = ensureSocket();
-  if (!s) return;
-  const payload = { peerUid, requestId };
-  const send = () => {
-    if (s.connected) s.emit('acceptFriendRequest', payload);
-  };
-  if (s.connected) {
-    send();
-  } else {
-    s.once('connect', send);
-  }
+  if (!s) return Promise.resolve(false);
+  const peer = typeof legacyPeerUid === 'string' && legacyPeerUid.trim() ? legacyPeerUid.trim() : '';
+  const payload = peer ? { requestId: rid, peerUid: peer } : { requestId: rid };
+  return new Promise((resolve) => {
+    const run = () => {
+      if (!s.connected) {
+        resolve(false);
+        return;
+      }
+      let settled = false;
+      const t = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(false);
+      }, 8000);
+      try {
+        s.emit('acceptFriendRequest', payload, (/** @type {{ ok?: boolean }} */ res) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(t);
+          resolve(Boolean(res && res.ok === true));
+        });
+      } catch {
+        window.clearTimeout(t);
+        resolve(false);
+      }
+    };
+    if (s.connected) run();
+    else s.once('connect', run);
+  });
+}
+
+/**
+ * @param {string} requestId
+ * @returns {Promise<boolean>}
+ */
+export function emitRejectFriendRequest(requestId) {
+  const rid = typeof requestId === 'string' ? requestId.trim() : '';
+  if (!rid) return Promise.resolve(false);
+  const s = ensureSocket();
+  if (!s) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const run = () => {
+      if (!s.connected) {
+        resolve(false);
+        return;
+      }
+      let settled = false;
+      const t = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(false);
+      }, 8000);
+      try {
+        s.emit('rejectFriendRequest', { requestId: rid }, (/** @type {{ ok?: boolean }} */ res) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(t);
+          resolve(Boolean(res && res.ok === true));
+        });
+      } catch {
+        window.clearTimeout(t);
+        resolve(false);
+      }
+    };
+    if (s.connected) run();
+    else s.once('connect', run);
+  });
 }
 
 /**

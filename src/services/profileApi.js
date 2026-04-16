@@ -283,3 +283,48 @@ export async function fetchRecentOpponentsV1() {
     return { ok: false, users: [] };
   }
 }
+
+/**
+ * GET /api/v1/notifications
+ * @returns {Promise<{ ok: true, pendingReceived: object[], unreadResults: object[] } | { ok: false, pendingReceived: [], unreadResults: [] }>}
+ */
+export async function fetchSocialNotificationsV1() {
+  const t = getToken();
+  if (!t) return { ok: false, pendingReceived: [], unreadResults: [] };
+  try {
+    const res = await fetch(resolvePublicApiUrl('/api/v1/notifications'), {
+      headers: { Authorization: `Bearer ${t}` },
+    });
+    if (!res.ok) return { ok: false, pendingReceived: [], unreadResults: [] };
+    const data = await res.json().catch(() => ({}));
+    const pendingReceived = Array.isArray(data.pendingReceived) ? data.pendingReceived : [];
+    const unreadResults = Array.isArray(data.unreadResults) ? data.unreadResults : [];
+    return { ok: true, pendingReceived, unreadResults };
+  } catch {
+    return { ok: false, pendingReceived: [], unreadResults: [] };
+  }
+}
+
+/**
+ * POST /api/v1/notifications/mark-read
+ * @param {string[]} requestIds
+ */
+export async function markSocialNotificationsReadV1(requestIds) {
+  const t = getToken();
+  if (!t || !Array.isArray(requestIds) || requestIds.length === 0) return { ok: false };
+  try {
+    const res = await fetch(resolvePublicApiUrl('/api/v1/notifications/mark-read'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${t}`,
+      },
+      body: JSON.stringify({ requestIds }),
+    });
+    if (!res.ok) return { ok: false };
+    const d = await res.json().catch(() => ({}));
+    return d && d.ok === true ? { ok: true } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}

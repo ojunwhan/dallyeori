@@ -3,7 +3,8 @@
  */
 
 import { getMockUser, searchMockUsersByNickname, shouldAutoRejectFriendRequest } from './mockUsers.js';
-import { fetchProfileByUid } from './profileApi.js';
+import { fetchProfileByUid, fetchSocialNotificationsV1, markSocialNotificationsReadV1 } from './profileApi.js';
+import { showAppToast } from './toast.js';
 
 const SOCIAL_KEY = 'dallyeori.social.v1';
 const REJ_KEY = (uid) => `dallyeori.friends.rejections.${uid}`;
@@ -283,8 +284,9 @@ export function sendRequest(myUid, targetId, peerMeta = null) {
  * 소켓으로 받은 친구 요청을 로컬 social 저장소에 반영 (보낸 쪽 requestId와 동일해야 함)
  * @param {string} myUid
  * @param {{ senderUid: string, requestId: string, nickname?: string, photoURL?: string, duckId?: string }} detail
+ * @param {{ skipMockAutoReject?: boolean }} [opts]
  */
-export function applyIncomingFriendRequest(myUid, detail) {
+export function applyIncomingFriendRequest(myUid, detail, opts) {
   const senderUid = detail && typeof detail.senderUid === 'string' ? detail.senderUid : '';
   const requestId = detail && typeof detail.requestId === 'string' ? detail.requestId : '';
   const fromNickname =
@@ -319,7 +321,7 @@ export function applyIncomingFriendRequest(myUid, detail) {
   if (fromDuckId) row.fromDuckId = fromDuckId;
   social.requests.push(row);
   writeSocial(social);
-  scheduleMockAutoReject(requestId, senderUid, myUid);
+  if (!opts?.skipMockAutoReject) scheduleMockAutoReject(requestId, senderUid, myUid);
   window.dispatchEvent(new Event('dallyeori-friends-updated'));
 }
 
@@ -425,6 +427,113 @@ export function rejectRequest(myUid, requestId) {
   writeSocial(social);
   applyRejectAndNotify(r.fromUid, r.toUid);
   return { ok: true };
+}
+
+/**
+ * 서버 rejectFriendRequest 처리 후 로컬 pending만 정리 (발신자 알림은 서버 소켓)
+ * @param {string} myUid
+ * @param {string} requestId
+ */
+export function rejectIncomingRequestLocalOnly(myUid, requestId) {
+  const social = readSocial();
+  const r = social.requests.find((x) => x.id === requestId && x.toUid === myUid && x.status === 'pending');
+  if (!r) return { ok: false, error: 'not_found' };
+  r.status = 'rejected';
+  writeSocial(social);
+  window.dispatchEvent(new Event('dallyeori-friends-updated'));
+  return { ok: true };
+}
+
+/**
+ * 서버가 보낸 friendRequestRejected 수신·REST 동기화 시 — 보낸 요청 row 만 갱신
+ * @param {string} myUid
+ * @param {string} requestId
+ */
+export function applyServerFriendRequestRejected(myUid, requestId) {
+  if (!myUid || !requestId) return;
+  const social = readSocial();
+  const r = social.requests.find((x) => x.id === requestId && x.fromUid === myUid && x.status === 'pending');
+  if (!r) return;
+  r.status = 'rejected';
+  writeSocial(social);
+  recordOutgoingRejected(myUid, r.toUid);
+  window.dispatchEvent(new Event('dallyeori-friends-updated'));
+}
+
+/**
+ * 로비 진입 시 — 서버에만 남은 수락/거절 결과 토스트 + 로컬 반영 + readByFrom
+ * @param {string} myUid
+ */
+/**
+ * 서버 소켓 — 친구 요청 수락 (동적 import 로 socket ↔ friends 순환 참조 방지)
+ * @param {string} requestId
+ * @param {string} [legacyPeerUid]
+ * @returns {Promise<boolean>}
+ */
+export async function acceptFriendRequest(requestId, legacyPeerUid) {
+  const { emitAcceptFriendRequest } = await import('./socket.js');
+  return emitAcceptFriendRequest(requestId, legacyPeerUid);
+}
+
+/**
+ * @param {string} requestId
+ * @returns {Promise<boolean>}
+ */
+export async function rejectFriendRequest(requestId) {
+  const { emitRejectFriendRequest } = await import('./socket.js');
+  return emitRejectFriendRequest(requestId);
+}
+
+export async function flushServerFriendNotificationsToClient(myUid) {
+  if (!myUid) return;
+  const pack = await fetchSocialNotificationsV1();
+  if (!pack.ok) return;
+
+  for (const p of pack.pendingReceived) {
+    const fromUid = typeof p.fromUid === 'string' ? p.fromUid : '';
+    const id = typeof p.id === 'string' ? p.id : '';
+    const nick = typeof p.fromName === 'string' ? p.fromName.trim() : '';
+    if (!fromUid || !id) continue;
+    applyIncomingFriendRequest(
+      myUid,
+      {
+        senderUid: fromUid,
+        requestId: id,
+        nickname: nick || fromUid,
+        photoURL: '',
+        duckId: 'bori',
+      },
+      { skipMockAutoReject: true },
+    );
+  }
+
+  const idsToMark = [];
+  for (const u of pack.unreadResults) {
+    const id = typeof u.id === 'string' ? u.id : '';
+    if (!id) continue;
+    idsToMark.push(id);
+    const toName = typeof u.toName === 'string' && u.toName.trim() ? u.toName.trim() : String(u.toUid || '');
+    if (u.status === 'accepted') {
+      applyFriendAccepted(myUid, {
+        peerUid: typeof u.toUid === 'string' ? u.toUid : '',
+        requestId: id,
+        nickname: toName,
+        photoURL: '',
+        duckId: 'bori',
+      });
+      showAppToast(`${toName}님이 친구요청을 수락했습니다!`);
+    } else if (u.status === 'rejected') {
+      applyServerFriendRequestRejected(myUid, id);
+      showAppToast(`${toName}님이 친구요청을 거절했습니다`);
+    }
+  }
+
+  if (idsToMark.length > 0) {
+    await markSocialNotificationsReadV1(idsToMark);
+  }
+  if (pack.pendingReceived.length > 0 || idsToMark.length > 0) {
+    window.dispatchEvent(new Event('dallyeori-friends-updated'));
+  }
 }
 
 /**
