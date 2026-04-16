@@ -213,6 +213,21 @@ export function mountProfile(root, api) {
       avatarUiBridge.fillFromSrc(previewUrl);
       avatarUiBridge.setLoading(true);
 
+      alert(
+        '[DEBUG] file info:\n' +
+          'name: ' +
+          (file?.name || 'null') +
+          '\n' +
+          'type: ' +
+          (file?.type || 'null') +
+          '\n' +
+          'size: ' +
+          (file?.size || 0) +
+          '\n' +
+          'blobURL: ' +
+          (file ? URL.createObjectURL(file) : 'no file'),
+      );
+
       const prepared = await prepareProfileAvatarUploadBlob(file);
       if (!prepared) {
         avatarUiBridge.fillFromSrc(buildProfileViewModel(api.state).photoURL || '');
