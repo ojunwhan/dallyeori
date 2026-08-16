@@ -64,6 +64,9 @@
   min-height: 100%;
   padding: 16px;
   padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
+  box-sizing: border-box;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 /* 오리 선택 — 도감 느낌의 거의 흰 바닥 (아리(흰 오리)가 묻히지 않게 극연회색) */
@@ -509,11 +512,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 12px 8px;
+  gap: 4px;
+  padding: 6px 2px;
   cursor: pointer;
   text-align: center;
   touch-action: manipulation;
+  min-width: 0;
 }
 
 .duck-cell--disabled {
@@ -526,7 +530,8 @@
   border: none;
 }
 .duck-cell .duck-circle--face {
-  width: 92px;
+  width: 100%;
+  max-width: 100px;
   transition: transform 0.12s ease;
 }
 .duck-cell--active .duck-circle--face {

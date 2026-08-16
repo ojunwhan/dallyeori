@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>오리선택 레이아웃 검증</title>
+<link rel="stylesheet" href="./styles.css">
+<style>
+  html, body { margin: 0; }
+  .frame { max-width: 375px; margin: 0 auto; min-height: 760px;
+    background: linear-gradient(180deg, var(--sky-top), var(--sky-bot)); outline: 2px solid #f00; }
+</style>
+<div class="frame"><div id="app-root" style="position:static">
+  <div class="app-screen duck-select-screen">
+    <h1 class="app-title">오리 선택</h1>
+    <p class="app-muted duck-select-sub">함께 달릴 오리를 골라주세요. 언제든 바꿀 수 있어요!</p>
+    <div class="duck-select-grid" id="dsg"></div>
+  </div>
+</div></div>
+<script type="module">
+  import { applyDuckFace } from './data/duckFaces.js';
+  import { DUCKS_NINE } from './constants.js';
+  const dsg = document.getElementById('dsg');
+  DUCKS_NINE.forEach((d, i) => {
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'duck-cell' + (i === 5 ? ' duck-cell--active' : '');
+    const c = document.createElement('div');
+    c.className = 'duck-circle';
+    applyDuckFace(c, d.id);
+    cell.appendChild(c);
+    const n = document.createElement('div');
+    n.className = 'duck-name';
+    n.textContent = d.name;
+    cell.appendChild(n);
+    const m = document.createElement('div');
+    m.className = 'duck-meta';
+    if (i === 5) {
+      const b = document.createElement('span');
+      b.className = 'duck-badge duck-badge--use';
+      b.textContent = '✓ 사용 중';
+      m.appendChild(b);
+    }
+    cell.appendChild(m);
+    dsg.appendChild(cell);
+  });
+</script>
