@@ -168,10 +168,17 @@ export function mountRaceV3Game(hostEl, options) {
       fail.remove();
     };
   }
+  if (!document.getElementById('dlyr-gamefont')) {
+    const _lk = document.createElement('link');
+    _lk.id = 'dlyr-gamefont';
+    _lk.rel = 'stylesheet';
+    _lk.href = 'https://fonts.googleapis.com/css2?family=Luckiest+Guy&family=Jua&display=swap';
+    document.head.appendChild(_lk);
+  }
   const hudEl = document.createElement('div');
   hudEl.id = 'race-hud';
   hudEl.style.cssText =
-    'position:fixed;top:10px;left:50%;transform:translateX(-50%);color:#fff;font-family:ui-monospace,monospace,system-ui;font-size:15px;background:rgba(0,0,0,0.5);padding:8px 20px;border-radius:16px;z-index:10;text-align:center;pointer-events:none;font-variant-numeric:tabular-nums;';
+    "position:fixed;top:10px;left:50%;transform:translateX(-50%);font-family:'Jua',system-ui;background:linear-gradient(180deg,#ffffff,#e9f3ff);padding:5px 24px 8px;border-radius:22px;z-index:10;text-align:center;pointer-events:none;font-variant-numeric:tabular-nums;border:2.5px solid #4aa3ff;box-shadow:0 4px 0 #cfe4fb,0 6px 14px rgba(0,0,0,.18);";
   hostEl.appendChild(hudEl);
 
   const DUCK_FOOTPRINT_SVG =
@@ -241,7 +248,7 @@ let raceFinishPosted=false;
 
 // ═══ DESIGN ═══
 const TIME_LIMIT=15;
-const CD_STEP_SEC=1,CD_START_VAL=2;
+const CD_STEP_SEC=1,CD_START_VAL=3;
 /** true면 [input]/[physics] 로그 (프로덕션은 false) */
 const DEBUG_RACE_TAP=false;
 const PH=RACE_ENGINE_PHYSICS;
@@ -281,18 +288,27 @@ function playStationCountdownBeep(cd){
   g.connect(ac.destination);
   g.gain.setValueAtTime(0.0001,t0);
   if(cd===0){
-    g.gain.exponentialRampToValueAtTime(0.28,t0+0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001,t0+0.42);
-    const freqs=[523.25,659.25,783.99];
-    for(let i=0;i<3;i++){
-      const o=ac.createOscillator();
-      o.type='sine';
-      o.frequency.setValueAtTime(freqs[i],t0+i*0.07);
-      o.connect(g);
-      o.start(t0+i*0.07);
-      o.stop(t0+i*0.07+0.11);
+    // "빠아앙!" 출발 — 경기장 에어혼(톱니 하모닉 지속) + 상승 팡파레
+    const hornF=[220,330,440,660];
+    hornF.forEach((hf,hi)=>{
+      const o=ac.createOscillator();o.type='sawtooth';
+      o.frequency.setValueAtTime(hf*0.96,t0);o.frequency.linearRampToValueAtTime(hf,t0+0.05);
+      o.frequency.setValueAtTime(hf,t0+0.42);o.frequency.linearRampToValueAtTime(hf*0.9,t0+0.56);
+      const hg=ac.createGain();hg.gain.setValueAtTime(0.0001,t0);
+      hg.gain.exponentialRampToValueAtTime(hi===0?0.24:0.12,t0+0.03);
+      hg.gain.setValueAtTime(hi===0?0.24:0.12,t0+0.42);
+      hg.gain.exponentialRampToValueAtTime(0.0001,t0+0.6);
+      o.connect(hg);hg.connect(ac.destination);o.start(t0);o.stop(t0+0.62);
+    });
+    g.gain.exponentialRampToValueAtTime(0.24,t0+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+0.5);
+    const freqs=[523.25,659.25,783.99,1046.5];
+    for(let i=0;i<4;i++){
+      const o=ac.createOscillator();o.type='sine';
+      o.frequency.setValueAtTime(freqs[i],t0+i*0.06);
+      o.connect(g);o.start(t0+i*0.06);o.stop(t0+i*0.06+0.12);
     }
-    hapticLight(14);
+    hapticLight(45);
     return;
   }
   g.gain.exponentialRampToValueAtTime(0.26,t0+0.008);
@@ -362,9 +378,49 @@ function playTapFeedback(kind){
     else navigator.vibrate([20,10,20]);
   }
 }
+/** 승리 함성 — 군중 "와아아~" 합성(밴드패스 노이즈 스웰 + 목소리 톤 레이어 + 휘슬) */
+function playCrowdCheer(){
+  ensureAudio();
+  if(!ac)return;
+  const t0=ac.currentTime;
+  const dur=2.6;
+  const nlen=Math.floor(ac.sampleRate*dur);
+  const buf=ac.createBuffer(1,nlen,ac.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<nlen;i++)d[i]=Math.random()*2-1;
+  const src=ac.createBufferSource();src.buffer=buf;
+  const bp=ac.createBiquadFilter();bp.type='bandpass';bp.frequency.value=1100;bp.Q.value=0.7;
+  const g=ac.createGain();
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.exponentialRampToValueAtTime(0.34,t0+0.28);
+  g.gain.setValueAtTime(0.34,t0+0.9);
+  g.gain.exponentialRampToValueAtTime(0.15,t0+1.8);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  src.connect(bp);bp.connect(g);g.connect(ac.destination);src.start(t0);src.stop(t0+dur);
+  for(let k=0;k<6;k++){
+    const o=ac.createOscillator();o.type='sawtooth';
+    const f=200+Math.random()*300;
+    o.frequency.setValueAtTime(f*0.8,t0+Math.random()*0.2);
+    o.frequency.linearRampToValueAtTime(f,t0+0.32);
+    const og=ac.createGain();og.gain.setValueAtTime(0.0001,t0);
+    og.gain.exponentialRampToValueAtTime(0.04,t0+0.32);
+    og.gain.exponentialRampToValueAtTime(0.0001,t0+1.6+Math.random());
+    const of=ac.createBiquadFilter();of.type='bandpass';of.frequency.value=f*3;of.Q.value=4;
+    o.connect(of);of.connect(og);og.connect(ac.destination);o.start(t0);o.stop(t0+2.4);
+  }
+  for(let w=0;w<2;w++){
+    const o=ac.createOscillator();o.type='sine';
+    const st=t0+0.5+w*0.45;
+    o.frequency.setValueAtTime(1800,st);o.frequency.linearRampToValueAtTime(2500,st+0.12);
+    const wg=ac.createGain();wg.gain.setValueAtTime(0.05,st);wg.gain.exponentialRampToValueAtTime(0.0001,st+0.4);
+    o.connect(wg);wg.connect(ac.destination);o.start(st);o.stop(st+0.42);
+  }
+}
 
 // ═══ STATE ═══
 let state='ready',cdVal=CD_START_VAL,cdT=0,raceT=0,winner=null,endT=0,flowAcc=0;
+/** 오프라인 타이머 — 프레임(dt) 누적 대신 실제 시계 기준. 렉이 나도 게임 시간이 실제와 일치 */
+let raceStartMs=0,racePausedMs=0,cdStartMs=0;
 let padGlowL=0,padGlowR=0;
 let fallPaused=false;
 let fallOverlayEl=null;
@@ -513,8 +569,7 @@ function tapReadyWarmupJog(foot){
     p.rightLegTarget=0.7;
     p.leftLegTarget=-0.3;
   }
-  playSlap();
-  hapticLight(10);
+  playTapFeedback('good');
   bumpPadGlow(foot);
   P.bodySwTgt=foot==='L'?0.68:-0.68;
   playerSquash=true;
@@ -559,8 +614,7 @@ function tap(foot){
       p.rightLegTarget=0.7;
       p.leftLegTarget=-0.3;
     }
-    playSlap();
-    hapticLight(10);
+    playTapFeedback('good');
     bumpPadGlow(foot);
     P.bodySwTgt=foot==='L'?0.68:-0.68;
     playerSquash=true;
@@ -738,11 +792,13 @@ function startCD(){
   state='countdown';
   cdVal=CD_START_VAL;
   cdT=0;
+  cdStartMs=performance.now();
 }
 /** iframe(embed)에서는 호출 무시 */
 function reset(){
   if(EMBED_APP)return;
   raceFinishPosted=false;P=mk(false);CPU=mk(true);raceT=0;winner=null;endT=0;flowAcc=0;state='ready';
+  raceStartMs=0;racePausedMs=0;
   padGlowL=0;padGlowR=0;
   fallPaused=false;playerFallAnim=0;slipFxUntil=0;removeFallOverlay();
 }
@@ -920,9 +976,10 @@ function update(dt){
       }else{
         _cdGoRecoverAcc=0;
       }
-    }else if(!srvCd&&cdT>=CD_STEP_SEC){
-      cdT=0;
-      cdVal--;
+    }else if(!srvCd){
+      const cdElapsed=(performance.now()-cdStartMs)/1000;
+      const nv=CD_START_VAL-Math.floor(cdElapsed/CD_STEP_SEC);
+      if(nv<cdVal)cdVal=nv;
       if(cdVal<0)state='racing';
     }
     return;
@@ -946,7 +1003,10 @@ function update(dt){
       if(!fallPaused)flowAcc+=((P.v+CPU.v)/2)*55*dt;
       updAnim(CPU,dt);
     }else if(!fallPaused){
-      raceT+=dt;
+      if(!raceStartMs)raceStartMs=performance.now();
+      raceT=(performance.now()-raceStartMs)/1000-racePausedMs/1000;
+    }else{
+      racePausedMs+=dt*1000;
     }
     if(!srv&&raceT>=TIME_LIMIT){
       raceT=TIME_LIMIT;
@@ -959,6 +1019,7 @@ function update(dt){
       endT=0;
       removeFallOverlay();
       fallPaused=false;
+      if(winner==='YOU')playCrowdCheer();
     }else if(!srv&&!fallPaused){
       updDuck(P,dt);
       CPU.tapT+=dt;
@@ -1308,8 +1369,8 @@ function syncRace3D() {
   const rem = Math.max(0, TIME_LIMIT - raceT);
   if (state === 'racing' || state === 'ending' || state === 'result') {
     hudEl.innerHTML =
-      `<div style="font-size:24px;font-weight:bold;line-height:1.2">${rem.toFixed(2)}초</div>` +
-      `<div style="font-size:15px;line-height:1.35;margin-top:6px;opacity:0.95">나(${hudLabelMe()}): ${P.dist.toFixed(3)}m | 상대(${hudLabelOpp()}): ${CPU.dist.toFixed(3)}m</div>`;
+      `<div style="font-size:30px;line-height:1.05;color:#ff8a1e">${rem.toFixed(2)}<span style="font-size:18px">초</span></div>` +
+      `<div style="font-size:14px;line-height:1.3;margin-top:2px;color:#1f6fd0">나(${hudLabelMe()}) <span style="color:#e8611c">${P.dist.toFixed(3)}m</span> · 상대(${hudLabelOpp()}) <span style="color:#e8611c">${CPU.dist.toFixed(3)}m</span></div>`;
   } else {
     hudEl.innerHTML = '';
   }
