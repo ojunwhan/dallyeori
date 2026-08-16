@@ -69,9 +69,15 @@
   overflow-x: hidden;
 }
 
-/* 오리 선택 — 도감 느낌의 거의 흰 바닥 (아리(흰 오리)가 묻히지 않게 극연회색) */
+/* 오리 선택 — 원본 이미지와 동일한 회색 바닥 (#918f94), 오리 색이 원본처럼 생생 */
 .duck-select-screen {
-  background: #f6f7f9;
+  background: #918f94;
+}
+.duck-select-screen .app-title {
+  color: #fff;
+}
+.duck-select-screen .duck-select-sub {
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .app-box {
@@ -578,13 +584,30 @@
   height: 100%;
   object-fit: contain;
   object-position: center bottom;
-  filter: drop-shadow(0 7px 5px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.14));
   pointer-events: none;
+  z-index: 1;
+}
+/* 발밑에 지는 타원 그림자 — '오려 붙인' 느낌 대신 바닥에 서 있는 접지감 */
+.duck-circle--face::after {
+  content: '';
+  position: absolute;
+  left: 24%;
+  right: 24%;
+  bottom: 1%;
+  height: 6%;
+  background: radial-gradient(50% 50% at 50% 50%, rgba(0, 0, 0, 0.22), transparent 72%);
+  filter: blur(2px);
+  z-index: 0;
 }
 
 .duck-name {
+  font-family: var(--font-game);
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: 1.02rem;
+  color: #fff;
+  letter-spacing: 0.2px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 .duck-meta {
