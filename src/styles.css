@@ -679,20 +679,15 @@
   touch-action: manipulation;
   font: inherit;
   color: inherit;
-  background: var(--card);
-  border: 1.5px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
-  padding: 18px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 4px;
 }
 
 .lobby-duck-circle {
   width: 140px;
-}
-.lobby-duck-preview {
-  background: transparent;
-  border: none;
-  cursor: pointer;
 }
 
 .lobby-duck-circle--empty {
