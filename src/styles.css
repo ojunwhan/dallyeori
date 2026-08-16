@@ -1,6 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=Jua&family=Luckiest+Guy&display=swap');
+
 /**
- * Phase 0 — 최소 스타일 (검정 배경 · 흰 텍스트 · 박스)
+ * 게임 톤 디자인 시스템 — 경주(하늘·연두·둥근·발랄)와 통일
+ * 색·모서리·그림자·폰트를 CSS 변수로 정의 → 전 화면 일괄 반영
  */
+:root {
+  --sky-top: #8fd3f4;
+  --sky-bot: #cdeecd;
+  --card: #ffffff;
+  --card-2: #eef6ff;
+  --ink: #17403a;
+  --ink-2: #5f7168;
+  --line: #d6e6df;
+  --blue: #48a8ff;
+  --blue-d: #1f6fd0;
+  --orange: #ff9f2e;
+  --orange-d: #e8611c;
+  --yellow: #ffe24d;
+  --gold: #f0c14b;
+  --gold-d: #b8860b;
+  --green: #25c85a;
+  --red: #ff5a6a;
+  --radius: 16px;
+  --radius-sm: 12px;
+  --pill: 999px;
+  --shadow-card: 0 4px 14px rgba(20, 60, 45, 0.12);
+  --font-game: 'Jua', 'Apple SD Gothic Neo', system-ui, sans-serif;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -10,9 +37,10 @@
   inset: 0;
   z-index: 2;
   overflow: auto;
-  background: #000;
-  color: #fff;
-  font-family: system-ui, sans-serif;
+  background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-bot) 100%);
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: var(--font-game);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -29,7 +57,7 @@
 }
 
 #app-root a {
-  color: #9cf;
+  color: var(--blue-d);
 }
 
 .app-screen {
@@ -39,50 +67,64 @@
 }
 
 .app-box {
-  border: 1px solid #444;
-  border-radius: 4px;
-  padding: 12px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
   margin-bottom: 12px;
-  background: #0a0a0a;
+  background: var(--card);
+  box-shadow: var(--shadow-card);
 }
 
 .app-btn {
   display: inline-block;
-  padding: 10px 16px;
-  border: 1px solid #666;
-  background: #111;
-  color: #fff;
+  padding: 12px 16px;
+  border: none;
+  background: #fff;
+  color: var(--ink);
   font: inherit;
+  font-family: var(--font-game);
+  font-weight: 400;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   width: 100%;
   text-align: center;
   touch-action: manipulation;
+  box-shadow: 0 3px 0 var(--line), 0 5px 10px rgba(20, 60, 45, 0.1);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
 }
 
 .app-btn:active {
-  background: #222;
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--line), 0 2px 5px rgba(20, 60, 45, 0.1);
 }
 
 .app-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
+  box-shadow: none;
 }
 
 .app-btn--primary {
-  border-color: #888;
-  background: #1a1a1a;
+  background: linear-gradient(180deg, var(--orange) 0%, var(--orange-d) 100%);
+  color: #fff;
+  box-shadow: 0 4px 0 #c44f13, 0 6px 14px rgba(200, 80, 20, 0.28);
+}
+
+.app-btn--primary:active {
+  box-shadow: 0 1px 0 #c44f13, 0 3px 7px rgba(200, 80, 20, 0.28);
 }
 
 .app-title {
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: 1.5rem;
+  font-weight: 400;
+  font-family: var(--font-game);
   margin-bottom: 12px;
+  color: var(--ink);
 }
 
 .app-muted {
-  color: #888;
+  color: var(--ink-2);
   font-size: 0.875rem;
 }
 
@@ -91,18 +133,24 @@
   width: 100%;
   margin-top: 4px;
   margin-bottom: 8px;
-  padding: 10px 12px;
-  border: 1px solid #555;
-  border-radius: 4px;
-  background: #111;
-  color: #fff;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--ink);
   font: inherit;
+}
+
+.app-input:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(72, 168, 255, 0.2);
 }
 
 .app-btn--inline {
   width: auto;
   display: inline-block;
-  padding: 6px 12px;
+  padding: 8px 14px;
   font-size: 0.8rem;
 }
 
@@ -542,7 +590,11 @@
   touch-action: manipulation;
   font: inherit;
   color: inherit;
-  background: #0a0a0a;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 12px 14px;
 }
 
 .lobby-profile-avatar-wrap {
@@ -562,14 +614,14 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: #222;
-  border: 2px solid #555;
+  background: var(--card-2);
+  border: 2px solid var(--blue);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.1rem;
   font-weight: 700;
-  color: #aaa;
+  color: var(--blue-d);
 }
 
 .lobby-profile-meta {
@@ -606,7 +658,11 @@
   touch-action: manipulation;
   font: inherit;
   color: inherit;
-  background: #0a0a0a;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 18px 14px;
 }
 
 .lobby-duck-circle {
@@ -741,27 +797,28 @@
 .lobby-nav-cell {
   flex: 1 1 calc(50% - 4px);
   min-width: 0;
+  position: relative;
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 4px;
 }
 
 .lobby-nav-badge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: #e53935;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--red);
   color: #fff;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  margin-left: 6px;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   pointer-events: none;
-  flex-shrink: 0;
 }
 
 .lobby-nav-badge[hidden] {
@@ -771,20 +828,24 @@
 .lobby-bottom-menu__btn {
   flex: 1;
   min-width: 0;
-  padding: 12px 8px;
-  border: 1px solid #555;
-  background: #141414;
-  color: #e0e0e0;
+  padding: 13px 8px;
+  border: none;
+  background: #fff;
+  color: var(--ink);
   font: inherit;
-  font-size: 0.85rem;
-  font-weight: 600;
-  border-radius: 4px;
+  font-family: var(--font-game);
+  font-size: 0.95rem;
+  font-weight: 400;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   touch-action: manipulation;
+  box-shadow: 0 3px 0 var(--line), 0 4px 8px rgba(20, 60, 45, 0.1);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
 }
 
 .lobby-bottom-menu__btn:active {
-  background: #222;
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--line);
 }
 
 .app-toast {
@@ -984,20 +1045,22 @@
 
 .friends-tab {
   flex: 1;
-  padding: 10px;
-  border: 1px solid #444;
-  background: #111;
-  color: #aaa;
+  padding: 11px;
+  border: 1.5px solid var(--line);
+  background: #fff;
+  color: var(--ink-2);
   font: inherit;
-  font-weight: 600;
-  border-radius: 4px;
+  font-family: var(--font-game);
+  font-weight: 400;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .friends-tab.is-active {
-  border-color: #c9a227;
-  color: #e8a035;
-  background: #1a1508;
+  border-color: transparent;
+  color: #fff;
+  background: linear-gradient(180deg, var(--orange), var(--orange-d));
+  box-shadow: 0 3px 0 #c44f13;
 }
 
 .app-screen.friends-screen {
@@ -1187,8 +1250,9 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: #222;
-  border: 2px solid #444;
+  background: var(--card-2);
+  border: 2px solid var(--blue);
+  color: var(--blue-d);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1235,21 +1299,25 @@
 .friend-mutual-badge {
   margin-top: 4px;
   font-size: 0.75rem;
-  color: #f9a;
+  color: #e0518a;
   font-weight: 700;
 }
 
 .friend-heart-row {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #2a2a2a;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1.5px solid var(--line);
+  display: flex;
+  gap: 8px;
 }
 
 .friend-heart-btn--icon {
-  min-width: 44px;
+  min-width: 46px;
+  flex: 0 0 auto;
   padding: 8px 12px;
   font-size: 1.1rem;
   line-height: 1;
+  color: var(--red);
 }
 
 .friend-req-card {
@@ -1335,14 +1403,20 @@
   cursor: pointer;
   font: inherit;
   color: inherit;
-  background: #0a0a0a;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 12px 14px;
 }
 
 .messages-av {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: #222;
+  background: var(--card-2);
+  border: 2px solid var(--blue);
+  color: var(--blue-d);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1380,7 +1454,7 @@
 }
 
 .messages-unread {
-  background: #c44;
+  background: var(--red);
   color: #fff;
   font-size: 0.7rem;
   font-weight: 800;
@@ -1391,6 +1465,8 @@
   align-items: center;
   justify-content: center;
   padding: 0 6px;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .messages-preview {
@@ -1427,7 +1503,9 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: #222;
+  background: var(--card-2);
+  border: 2px solid var(--blue);
+  color: var(--blue-d);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1478,19 +1556,20 @@
 }
 
 .chat-tone-chip {
-  padding: 4px 8px;
-  border: 1px solid #444;
-  background: #111;
-  color: #888;
+  padding: 5px 10px;
+  border: 1.5px solid var(--line);
+  background: #fff;
+  color: var(--ink-2);
   font: inherit;
   font-size: 0.72rem;
-  border-radius: 4px;
+  border-radius: var(--pill);
   cursor: pointer;
 }
 
 .chat-tone-chip.is-active {
-  border-color: #a67c00;
-  color: #e8a035;
+  border-color: var(--orange);
+  color: #fff;
+  background: var(--orange);
 }
 
 .chat-scroll {
@@ -1498,10 +1577,10 @@
   min-height: 200px;
   max-height: 48vh;
   overflow-y: auto;
-  padding: 8px 4px;
-  border: 1px solid #333;
-  border-radius: 4px;
-  background: #080808;
+  padding: 10px 6px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card-2);
 }
 
 .chat-msg-row {
@@ -1532,14 +1611,16 @@
 }
 
 .chat-msg--mine .chat-bubble {
-  background: #2a4a7f;
+  background: linear-gradient(180deg, var(--blue) 0%, var(--blue-d) 100%);
   color: #fff;
   border-bottom-right-radius: 4px;
+  box-shadow: 0 2px 6px rgba(31, 111, 208, 0.25);
 }
 
 .chat-msg--theirs .chat-bubble {
-  background: #2a2a2a;
-  color: #fff;
+  background: #fff;
+  color: var(--ink);
+  border: 1.5px solid var(--line);
   border-bottom-left-radius: 4px;
 }
 
@@ -1563,8 +1644,9 @@
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  background: #111;
-  border-top: 1px solid #333;
+  background: var(--card);
+  border-top: 1.5px solid var(--line);
+  border-radius: 0 0 var(--radius) var(--radius);
 }
 
 .chat-input-row .app-btn--primary {
@@ -1577,27 +1659,27 @@
   margin: 0;
   width: auto;
   max-width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #555;
-  border-radius: 4px;
-  background: #1a1a1a;
-  color: #fff;
+  padding: 11px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--pill);
+  background: #fff;
+  color: var(--ink);
   font: inherit;
   font-size: 1rem;
 }
 
 .chat-input::placeholder {
-  color: #888;
+  color: var(--ink-2);
 }
 
 .chat-voice-btn {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border: 1px solid #555;
-  border-radius: 4px;
-  background: #1a1a1a;
-  color: #fff;
+  width: 40px;
+  height: 40px;
+  border: 1.5px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink);
   font-size: 1.1rem;
   cursor: pointer;
   display: flex;
@@ -1629,10 +1711,11 @@
   flex: 1;
   min-width: 0;
   text-align: center;
-  padding: 8px 4px;
-  border: 1px solid #333;
-  border-radius: 6px;
-  background: #0c0c0c;
+  padding: 12px 6px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
 }
 
 .matching-player-avatar-wrap {
@@ -1654,18 +1737,20 @@
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: 2px solid #555;
+  border: 2px solid var(--blue);
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 800;
   font-size: 1.2rem;
-  background: #1a1a1a;
-  color: #888;
+  background: var(--card-2);
+  color: var(--blue-d);
 }
 
 .matching-player-avatar-q {
   border-style: dashed;
+  border-color: var(--line);
+  color: var(--ink-2);
   font-size: 1.5rem;
 }
 
@@ -1746,7 +1831,8 @@
 .matching-loading-text {
   margin: 0;
   font-size: 0.95rem;
-  color: #aaa;
+  color: var(--ink-2);
+  font-family: var(--font-game);
 }
 
 @keyframes matching-spin {
@@ -1773,25 +1859,34 @@
 }
 
 .result-outcome {
-  font-size: 2rem;
-  font-weight: 800;
+  font-size: min(15vw, 60px);
+  font-weight: 400;
+  font-family: var(--font-game);
   text-align: center;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  margin: 4px 0 6px;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  margin: 8px 0 6px;
 }
 
 .result-outcome--win {
-  color: #6d6;
-  text-shadow: 0 0 24px rgba(80, 200, 120, 0.35);
+  color: #ffcf33;
+  -webkit-text-stroke: 2px #e8611c;
+  paint-order: stroke fill;
+  text-shadow: 0 4px 0 #b8430a, 0 8px 16px rgba(0, 0, 0, 0.2);
 }
 
 .result-outcome--lose {
-  color: #e66;
+  color: #9ac8ff;
+  -webkit-text-stroke: 2px #2a6bd6;
+  paint-order: stroke fill;
+  text-shadow: 0 4px 0 #1b4c9e;
 }
 
 .result-outcome--draw {
-  color: #ccc;
+  color: #c6f24d;
+  -webkit-text-stroke: 2px #3f9e2f;
+  paint-order: stroke fill;
+  text-shadow: 0 4px 0 #2e7d32;
 }
 
 .result-heart-reward {
@@ -1812,8 +1907,8 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 8px 12px;
-  padding: 6px 0;
-  border-bottom: 1px solid #2a2a2a;
+  padding: 8px 0;
+  border-bottom: 1.5px solid var(--line);
   font-size: 0.95rem;
 }
 
@@ -1829,12 +1924,13 @@
 }
 
 .result-stat-label {
-  color: #888;
+  color: var(--ink-2);
   min-width: 3.5rem;
 }
 
 .result-stat-value {
-  color: #fff;
+  color: var(--ink);
+  font-weight: 700;
 }
 
 .result-opponent-card {
@@ -2488,8 +2584,8 @@
   margin-bottom: 0;
 }
 .ranking-row.is-me {
-  border-color: #69a;
-  box-shadow: 0 0 0 1px rgba(100, 200, 255, 0.25);
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(72, 168, 255, 0.3);
 }
 .ranking-row--golden-seat {
   border-color: #a08030;
@@ -2497,7 +2593,8 @@
 .ranking-rank {
   font-weight: 800;
   min-width: 2.5rem;
-  color: #ddd;
+  color: var(--ink);
+  font-family: var(--font-game);
 }
 .ranking-row-mid {
   flex: 1;
@@ -2603,4 +2700,53 @@
 }
 .terrain-card-desc {
   font-size: 0.8rem;
+}
+
+/* 로그인 — 브랜드 버튼 (구글·카카오·애플) */
+.login-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-family: var(--font-game);
+  font-size: 1.05rem;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.12), 0 5px 10px rgba(0, 0, 0, 0.08);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.login-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+}
+
+.login-btn--google {
+  background: #fff;
+  color: #3c4043;
+  border: 1.5px solid #dadce0;
+}
+
+.login-btn--kakao {
+  background: #fee500;
+  color: #191600;
+}
+
+.login-btn--apple {
+  background: #000;
+  color: #fff;
+  border: 1.5px solid #383838;
+}
+
+.login-btn__logo {
+  font-size: 1.15rem;
+  line-height: 1;
+  font-weight: 700;
 }

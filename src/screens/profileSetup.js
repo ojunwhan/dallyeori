@@ -123,9 +123,6 @@ export function mountProfileSetup(root, api) {
   box.appendChild(nickError);
   box.appendChild(langLabel);
   box.appendChild(langPickerEl);
-  box.appendChild(countryLabel);
-  box.appendChild(countryPickerEl);
-  box.appendChild(countryError);
   box.appendChild(genderLabel);
   box.appendChild(genderWrap);
   box.appendChild(bioLabel);
