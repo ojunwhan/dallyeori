@@ -66,6 +66,11 @@
   padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
 }
 
+/* 오리 선택 — 도감 느낌의 거의 흰 바닥 (아리(흰 오리)가 묻히지 않게 극연회색) */
+.duck-select-screen {
+  background: #f6f7f9;
+}
+
 .app-box {
   border: 1.5px solid var(--line);
   border-radius: var(--radius);
