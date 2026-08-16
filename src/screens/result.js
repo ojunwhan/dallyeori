@@ -4,6 +4,7 @@
 
 import { DUCKS_NINE } from '../constants.js';
 import { sendRequest, isFriend } from '../services/friends.js';
+import { applyDuckFace } from '../data/duckFaces.js';
 import { rewardForRace, syncHeartBalanceFromServer } from '../services/hearts.js';
 import { isMutualHeart, sendHeart } from '../services/likes.js';
 import { MOCK_USERS } from '../services/mockUsers.js';
@@ -390,6 +391,7 @@ export function mountResult(root, api) {
       circle.style.backgroundColor = opp.duckColor;
       if (opp.duckId === 'duri') circle.classList.add('duck-circle--dark');
       if (opp.duckId === 'ari') circle.classList.add('duck-circle--light');
+      applyDuckFace(circle, opp.duckId);
     } else {
       circle.classList.add('result-opponent-duck-circle--empty');
     }

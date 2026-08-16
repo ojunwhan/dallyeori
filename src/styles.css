@@ -538,6 +538,16 @@
   border-color: #888;
 }
 
+/* 오리 전신 카드 — 파스텔 배경(JS가 background에 오리 이미지+그라데이션 주입) */
+.duck-circle--face {
+  border: none;
+  border-radius: 24%;
+  overflow: hidden;
+  aspect-ratio: 3 / 4;
+  height: auto !important;
+  box-shadow: var(--shadow-card);
+}
+
 .duck-name {
   font-weight: 700;
   font-size: 0.9rem;
@@ -1770,7 +1780,7 @@
 }
 
 .matching-player-duck-circle {
-  width: 36px;
+  width: 52px;
   height: 36px;
 }
 
@@ -1971,7 +1981,7 @@
 }
 
 .result-opponent-duck-circle {
-  width: 40px;
+  width: 52px;
   height: 40px;
 }
 
@@ -2687,9 +2697,28 @@
   gap: 10px;
 }
 .terrain-select-card {
+  position: relative;
   text-align: left;
   cursor: pointer;
   margin-bottom: 0;
+}
+
+.terrain-select-card--soon {
+  opacity: 0.62;
+  filter: grayscale(0.35);
+}
+
+.terrain-soon-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  background: var(--ink-2);
+  color: #fff;
+  padding: 3px 8px;
+  border-radius: var(--pill);
 }
 .terrain-card-stars {
   font-size: 0.9rem;

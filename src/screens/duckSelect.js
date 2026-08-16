@@ -5,6 +5,7 @@
 
 import { DUCKS_NINE } from '../constants.js';
 import { patchUserRecord } from '../services/db.js';
+import { applyDuckFace } from '../data/duckFaces.js';
 
 // ═══ 데이터 (shop 등에서 재사용) ═══
 
@@ -112,6 +113,7 @@ export function mountDuckSelect(root, api) {
       circle.style.backgroundColor = duck.color;
       if (duck.id === 'duri') circle.classList.add('duck-circle--dark');
       if (duck.id === 'ari') circle.classList.add('duck-circle--light');
+      applyDuckFace(circle, duck.id);
 
       const name = document.createElement('div');
       name.className = 'duck-name';

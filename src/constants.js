@@ -41,15 +41,16 @@ export const DUCK_PURCHASE_HEARTS = 50;
  */
 export const DUCKS_NINE = Object.freeze(
   /** @type {readonly DuckDef[]} */ ([
-    { id: 'tori', name: '토리', color: '#FF3B30', price: DUCK_PURCHASE_HEARTS },
-    { id: 'sori', name: '소리', color: '#FF9500', price: DUCK_PURCHASE_HEARTS },
-    { id: 'mari', name: '마리', color: '#FFD700', price: DUCK_PURCHASE_HEARTS },
-    { id: 'nuri', name: '누리', color: '#34C759', price: DUCK_PURCHASE_HEARTS },
-    { id: 'bori', name: '보리', color: '#007AFF', price: DUCK_PURCHASE_HEARTS },
-    { id: 'yuri', name: '유리', color: '#283593', price: DUCK_PURCHASE_HEARTS },
-    { id: 'nari', name: '나리', color: '#AF52DE', price: DUCK_PURCHASE_HEARTS },
-    { id: 'duri', name: '두리', color: '#1C1C1E', price: DUCK_PURCHASE_HEARTS },
-    { id: 'ari', name: '아리', color: '#F2F2F7', price: DUCK_PURCHASE_HEARTS },
+    { id: 'tori', name: '토리', color: '#DF4135', price: DUCK_PURCHASE_HEARTS },
+    { id: 'sori', name: '소리', color: '#DEAD74', price: DUCK_PURCHASE_HEARTS },
+    { id: 'mari', name: '마리', color: '#F2C122', price: DUCK_PURCHASE_HEARTS },
+    { id: 'nuri', name: '누리', color: '#B4DB7E', price: DUCK_PURCHASE_HEARTS },
+    { id: 'bori', name: '보리', color: '#9FCFEA', price: DUCK_PURCHASE_HEARTS },
+    { id: 'yuri', name: '유리', color: '#4B4B75', price: DUCK_PURCHASE_HEARTS },
+    { id: 'nari', name: '나리', color: '#9B49BD', price: DUCK_PURCHASE_HEARTS },
+    { id: 'duri', name: '두리', color: '#49464A', price: DUCK_PURCHASE_HEARTS },
+    { id: 'ari', name: '아리', color: '#E7DCD3', price: DUCK_PURCHASE_HEARTS },
+    { id: 'miri', name: '미리', color: '#5F697B', price: DUCK_PURCHASE_HEARTS },
   ]),
 );
 
@@ -64,6 +65,7 @@ export const DUCK_3D_COLORS = Object.freeze({
   nari: { body: 0x8e24aa, collar: 0xffffff },
   duri: { body: 0x212121, collar: 0xff6b00 },
   ari: { body: 0xfafafa, collar: 0xe91e63 },
+  miri: { body: 0x5f697b, collar: 0xff6b00 },
 });
 
 /** 8마리 오리 — 성능 동일, 색만 다름 */

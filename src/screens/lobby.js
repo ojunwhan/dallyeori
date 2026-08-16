@@ -5,6 +5,7 @@
 
 import { DUCKS_NINE } from '../constants.js';
 import { resolveMediaUrl } from '../services/auth.js';
+import { applyDuckFace } from '../data/duckFaces.js';
 import { getBalance } from '../services/hearts.js';
 import { flushServerFriendNotificationsToClient, getNewFriendRejectNotifCount } from '../services/friends.js';
 import { ensureSocket } from '../services/socket.js';
@@ -93,6 +94,7 @@ export function createLobbyDuckPreview(api) {
     circle.style.backgroundColor = duck.color;
     if (duck.id === 'duri') circle.classList.add('duck-circle--dark');
     if (duck.id === 'ari') circle.classList.add('duck-circle--light');
+    applyDuckFace(circle, duck.id);
   } else {
     circle.classList.add('lobby-duck-circle--empty');
   }

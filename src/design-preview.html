@@ -16,6 +16,46 @@
 <div id="app-root">
   <div class="dp-wrap">
 
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <radialGradient id="dvol" cx="0.5" cy="0.28" r="0.8">
+          <stop offset="0" stop-color="#ffffff" stop-opacity="0.42"/>
+          <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+          <stop offset="1" stop-color="#000000" stop-opacity="0.22"/>
+        </radialGradient>
+      </defs>
+      <symbol id="duckface" viewBox="0 0 120 120">
+        <ellipse cx="60" cy="106" rx="30" ry="6.5" fill="rgba(0,0,0,.13)"/>
+        <path d="M48 24 C46 10 56 8 58 20 C60 8 62 8 63 18 C66 7 74 11 72 24 Z" fill="var(--dd)"/>
+        <ellipse cx="60" cy="66" rx="45" ry="43" fill="var(--dc)" stroke="rgba(0,0,0,.1)" stroke-width="1.5"/>
+        <ellipse cx="60" cy="80" rx="29" ry="27" fill="var(--dl)"/>
+        <ellipse cx="60" cy="66" rx="45" ry="43" fill="url(#dvol)"/>
+        <circle cx="27" cy="75" r="9" fill="#ff8fa8" opacity="0.5"/>
+        <circle cx="93" cy="75" r="9" fill="#ff8fa8" opacity="0.5"/>
+        <ellipse cx="43" cy="57" rx="12" ry="14.5" fill="#fff" stroke="rgba(0,0,0,.08)"/>
+        <ellipse cx="77" cy="57" rx="12" ry="14.5" fill="#fff" stroke="rgba(0,0,0,.08)"/>
+        <circle cx="45" cy="60" r="7" fill="#2b2f38"/>
+        <circle cx="79" cy="60" r="7" fill="#2b2f38"/>
+        <circle cx="47.6" cy="57.5" r="2.6" fill="#fff"/>
+        <circle cx="81.6" cy="57.5" r="2.6" fill="#fff"/>
+        <path d="M45 73 Q60 66 75 73 Q60 86 45 73 Z" fill="#ff9f2e" stroke="#e8611c" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M45 73 Q60 78 75 73" stroke="#e8611c" stroke-width="1.5" fill="none"/>
+      </symbol>
+    </svg>
+
+    <span class="dp-label">🦆 오리 얼굴 (실제 게임 색원 · 9색)</span>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;justify-content:center;padding:18px 12px;background:#fff;border-radius:16px;margin:0 16px 8px;box-shadow:var(--shadow-card)">
+      <div style="text-align:center"><div class="duck-circle duck-circle--face" style="width:72px;height:72px;background-image:url('./assets/ducks/face-tori.png')"></div><div style="font-size:.8rem;margin-top:5px">토리·빨강</div></div>
+      <div style="text-align:center"><div class="duck-circle duck-circle--face" style="width:72px;height:72px;background-image:url('./assets/ducks/face-sori.png')"></div><div style="font-size:.8rem;margin-top:5px">소리·주황</div></div>
+      <div style="text-align:center"><div class="duck-circle duck-circle--face" style="width:72px;height:72px;background-image:url('./assets/ducks/face-mari.png')"></div><div style="font-size:.8rem;margin-top:5px">마리·노랑</div></div>
+      <div style="text-align:center"><div class="duck-circle duck-circle--face" style="width:72px;height:72px;background-image:url('./assets/ducks/face-nuri.png')"></div><div style="font-size:.8rem;margin-top:5px">누리·초록</div></div>
+      <div style="text-align:center"><div class="duck-circle duck-circle--face" style="width:72px;height:72px;background-image:url('./assets/ducks/face-bori.png')"></div><div style="font-size:.8rem;margin-top:5px">보리·파랑</div></div>
+      <div style="text-align:center"><div class="duck-circle duck-circle--face" style="width:72px;height:72px;background-image:url('./assets/ducks/face-yuri.png')"></div><div style="font-size:.8rem;margin-top:5px">유리·남색</div></div>
+      <div style="text-align:center"><div class="duck-circle duck-circle--face" style="width:72px;height:72px;background-image:url('./assets/ducks/face-nari.png')"></div><div style="font-size:.8rem;margin-top:5px">나리·보라</div></div>
+      <div style="text-align:center"><div class="duck-circle duck-circle--face" style="width:72px;height:72px;background-image:url('./assets/ducks/face-duri.png')"></div><div style="font-size:.8rem;margin-top:5px">두리·검정</div></div>
+      <div style="text-align:center"><div class="duck-circle duck-circle--face" style="width:72px;height:72px;background-image:url('./assets/ducks/face-ari.png?v=2')"></div><div style="font-size:.8rem;margin-top:5px">아리·하양</div></div>
+    </div>
+
     <span class="dp-label">① 로비</span>
     <div class="app-screen lobby-screen">
       <button class="lobby-profile-summary app-box">
@@ -225,6 +265,38 @@
       <button class="login-btn login-btn--google"><span class="login-btn__logo"><svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg></span> Google로 로그인</button>
       <button class="login-btn login-btn--kakao"><span class="login-btn__logo"><svg viewBox="0 0 24 24" width="20" height="20" fill="#191600" aria-hidden="true"><path d="M12 3C6.48 3 2 6.54 2 10.9c0 2.79 1.86 5.24 4.65 6.62-.15.53-.97 3.35-1 3.57 0 0-.02.17.09.24.11.06.24.01.24.01.31-.04 3.6-2.36 4.17-2.76.53.08 1.08.12 1.65.12 5.52 0 10-3.54 10-7.9C22 6.54 17.52 3 12 3z"/></svg></span> 카카오로 로그인</button>
       <button class="login-btn login-btn--apple"><span class="login-btn__logo"><svg viewBox="0 0 24 24" width="21" height="21" fill="#fff" aria-hidden="true"><path d="M17.05 12.04c-.03-2.6 2.12-3.85 2.22-3.91-1.21-1.77-3.09-2.01-3.76-2.04-1.6-.16-3.12.94-3.93.94-.81 0-1.73-.92-2.85-.9-1.47.02-2.83.85-3.58 2.17-1.53 2.65-.39 6.57 1.1 8.72.73 1.05 1.6 2.23 2.74 2.19 1.1-.04 1.51-.71 2.84-.71 1.32 0 1.7.71 2.85.69 1.18-.02 1.93-1.07 2.65-2.13.84-1.22 1.18-2.4 1.2-2.46-.03-.01-2.3-.88-2.32-3.49zM14.53 4.5c.61-.74 1.02-1.77.91-2.79-.88.04-1.94.59-2.57 1.32-.56.65-1.06 1.7-.93 2.7.98.08 1.98-.5 2.59-1.23z"/></svg></span> Apple로 로그인</button>
+    </div>
+
+    <hr class="dp-divider">
+    <span class="dp-label">⑨ 경기장 (MVP · 커밍순)</span>
+    <div class="app-screen terrain-select-screen">
+      <div class="app-title">경기장 선택</div>
+      <p class="app-muted" style="margin-bottom:12px">지금은 일반 경기장 · 얼음·벼랑은 곧 공개돼요!</p>
+      <div class="terrain-select-grid">
+        <button class="app-box terrain-select-card">
+          <div class="terrain-card-stars">⭐</div>
+          <div class="terrain-card-label"><strong>일반</strong></div>
+          <div class="terrain-card-desc app-muted">일반 트랙</div>
+        </button>
+        <button class="app-box terrain-select-card terrain-select-card--soon">
+          <span class="terrain-soon-badge">COMING SOON</span>
+          <div class="terrain-card-stars">⭐⭐</div>
+          <div class="terrain-card-label"><strong>얼음</strong></div>
+          <div class="terrain-card-desc app-muted">저마찰 · 스핀</div>
+        </button>
+        <button class="app-box terrain-select-card terrain-select-card--soon">
+          <span class="terrain-soon-badge">COMING SOON</span>
+          <div class="terrain-card-stars">⭐⭐⭐</div>
+          <div class="terrain-card-label"><strong>벼랑</strong></div>
+          <div class="terrain-card-desc app-muted">좁은 길 · 추락</div>
+        </button>
+        <button class="app-box terrain-select-card terrain-select-card--soon">
+          <span class="terrain-soon-badge">COMING SOON</span>
+          <div class="terrain-card-stars">⭐⭐⭐⭐</div>
+          <div class="terrain-card-label"><strong>얼음벼랑</strong></div>
+          <div class="terrain-card-desc app-muted">얼음 + 절벽</div>
+        </button>
+      </div>
     </div>
 
   </div>

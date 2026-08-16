@@ -4,6 +4,7 @@
 
 import { DUCKS_NINE } from '../constants.js';
 import { resolveMediaUrl } from '../services/auth.js';
+import { applyDuckFace } from '../data/duckFaces.js';
 import { ensureSocket, startMockRandomMatch } from '../services/socket.js';
 
 const RACE_DELAY_MS = 1000;
@@ -70,6 +71,7 @@ function createMatchPlayerCard(opts) {
     circle.style.backgroundColor = opts.duck.color;
     if (opts.duck.id === 'duri') circle.classList.add('duck-circle--dark');
     if (opts.duck.id === 'ari') circle.classList.add('duck-circle--light');
+    applyDuckFace(circle, opts.duck.id);
   } else {
     circle.classList.add('matching-player-duck-circle--q');
     circle.textContent = '?';

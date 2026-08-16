@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>오리 전신 카드 미리보기</title>
+<link rel="stylesheet" href="./styles.css">
+<style>
+  html, body { margin: 0; }
+  #app-root { position: static; }
+  .wrap { max-width: 460px; margin: 0 auto; padding: 16px; }
+  h3 { font-family: var(--font-game); color: var(--blue-d); margin: 16px 4px 10px; }
+  .dgrid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .dcard { width: 104px; border-radius: 18px; padding: 12px 6px 8px; text-align: center;
+    box-shadow: var(--shadow-card); }
+  .dcard img { height: 118px; width: auto; display: block; margin: 0 auto;
+    filter: drop-shadow(0 5px 5px rgba(0,0,0,.18)); }
+  .dcap { font-family: var(--font-game); font-size: .88rem; margin-top: 6px; color: var(--ink); }
+  /* 통일 배경 시안용 */
+  .sky .dcard { background: linear-gradient(180deg, #eaf4fb, #d8ecf7); }
+</style>
+<div id="app-root"><div class="wrap">
+
+  <h3>🦆 시안 A — 오리색 파스텔 배경 (10색)</h3>
+  <div class="dgrid">
+    <div class="dcard" style="background:linear-gradient(180deg,#fdeceb,#f8dcd9)"><img src="./assets/ducks/face-tori.png?v=20"><div class="dcap">토리</div></div>
+    <div class="dcard" style="background:linear-gradient(180deg,#f8f0e6,#efe0cc)"><img src="./assets/ducks/face-sori.png?v=20"><div class="dcap">소리</div></div>
+    <div class="dcard" style="background:linear-gradient(180deg,#fdf6df,#f9edbf)"><img src="./assets/ducks/face-mari.png?v=20"><div class="dcap">마리</div></div>
+    <div class="dcard" style="background:linear-gradient(180deg,#f1f8e8,#e0f0cc)"><img src="./assets/ducks/face-nuri.png?v=20"><div class="dcap">누리</div></div>
+    <div class="dcard" style="background:linear-gradient(180deg,#eef7fc,#d9edf9)"><img src="./assets/ducks/face-bori.png?v=20"><div class="dcap">보리</div></div>
+    <div class="dcard" style="background:linear-gradient(180deg,#eeeef4,#dcdce8)"><img src="./assets/ducks/face-yuri.png?v=20"><div class="dcap">유리</div></div>
+    <div class="dcard" style="background:linear-gradient(180deg,#f6ecfa,#ebd7f4)"><img src="./assets/ducks/face-nari.png?v=20"><div class="dcap">나리</div></div>
+    <div class="dcard" style="background:linear-gradient(180deg,#eeedee,#dcdadc)"><img src="./assets/ducks/face-duri.png?v=20"><div class="dcap">두리</div></div>
+    <div class="dcard" style="background:linear-gradient(180deg,#f7f4f1,#ebe4dc)"><img src="./assets/ducks/face-ari.png?v=20"><div class="dcap">아리</div></div>
+    <div class="dcard" style="background:linear-gradient(180deg,#eff1f5,#dde1e9)"><img src="./assets/ducks/face-miri.png?v=20"><div class="dcap">미리</div></div>
+  </div>
+
+  <h3>🦆 실제 게임 렌더 — applyDuckFace (로비 72px)</h3>
+  <div id="live" class="dgrid" style="align-items:flex-end"></div>
+  <h3>🦆 실제 게임 렌더 — 작은 크기 (매칭·결과 52px)</h3>
+  <div id="live-sm" class="dgrid" style="align-items:flex-end"></div>
+  <script type="module">
+    import { applyDuckFace } from './data/duckFaces.js';
+    import { DUCKS_NINE } from './constants.js';
+    function render(container, extraClass) {
+      for (const d of DUCKS_NINE) {
+        const wrap = document.createElement('div');
+        wrap.style.textAlign = 'center';
+        const el = document.createElement('div');
+        el.className = 'duck-circle ' + extraClass;
+        applyDuckFace(el, d.id);
+        wrap.appendChild(el);
+        const cap = document.createElement('div');
+        cap.className = 'dcap'; cap.textContent = d.name;
+        wrap.appendChild(cap);
+        container.appendChild(wrap);
+      }
+    }
+    render(document.getElementById('live'), 'lobby-duck-circle');
+    render(document.getElementById('live-sm'), 'matching-player-duck-circle');
+  </script>
+
+</div></div>
