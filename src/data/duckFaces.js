@@ -13,8 +13,28 @@ import nari from '../assets/ducks/face-nari.png';
 import duri from '../assets/ducks/face-duri.png';
 import ari from '../assets/ducks/face-ari.png';
 import miri from '../assets/ducks/face-miri.png';
+// 누끼 안 한 원본(회색 배경째) — 오리선택 도감용, 색·질감 원본 100%
+import toriRaw from '../assets/ducks/raw/face-tori.png';
+import soriRaw from '../assets/ducks/raw/face-sori.png';
+import mariRaw from '../assets/ducks/raw/face-mari.png';
+import nuriRaw from '../assets/ducks/raw/face-nuri.png';
+import boriRaw from '../assets/ducks/raw/face-bori.png';
+import yuriRaw from '../assets/ducks/raw/face-yuri.png';
+import nariRaw from '../assets/ducks/raw/face-nari.png';
+import duriRaw from '../assets/ducks/raw/face-duri.png';
+import ariRaw from '../assets/ducks/raw/face-ari.png';
+import miriRaw from '../assets/ducks/raw/face-miri.png';
 
 const FACE = { tori, sori, mari, nuri, bori, yuri, nari, duri, ari, miri };
+const RAW = {
+  tori: toriRaw, sori: soriRaw, mari: mariRaw, nuri: nuriRaw, bori: boriRaw,
+  yuri: yuriRaw, nari: nariRaw, duri: duriRaw, ari: ariRaw, miri: miriRaw,
+};
+
+/** 오리 id → 원본(누끼 X, 회색배경째) 이미지 URL — 오리선택 도감용 */
+export function duckRawUrl(id) {
+  return RAW[id] || '';
+}
 
 /** 오리 id → 얼굴 이미지 URL (없으면 '') */
 export function duckFaceUrl(id) {

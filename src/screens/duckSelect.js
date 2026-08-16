@@ -5,7 +5,7 @@
 
 import { DUCKS_NINE } from '../constants.js';
 import { patchUserRecord } from '../services/db.js';
-import { applyDuckFace } from '../data/duckFaces.js';
+import { duckRawUrl } from '../data/duckFaces.js';
 
 // ═══ 데이터 (shop 등에서 재사용) ═══
 
@@ -95,12 +95,10 @@ export function mountDuckSelect(root, api) {
       if (isCurrent) cell.classList.add('duck-cell--active');
       cell.setAttribute('aria-label', duck.name);
 
-      const circle = document.createElement('div');
-      circle.className = 'duck-circle';
-      circle.style.backgroundColor = duck.color;
-      if (duck.id === 'duri') circle.classList.add('duck-circle--dark');
-      if (duck.id === 'ari') circle.classList.add('duck-circle--light');
-      applyDuckFace(circle, duck.id);
+      const circle = document.createElement('img');
+      circle.className = 'duck-raw-img';
+      circle.src = duckRawUrl(duck.id);
+      circle.alt = duck.name;
 
       const name = document.createElement('div');
       name.className = 'duck-name';

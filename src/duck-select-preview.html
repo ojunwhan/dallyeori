@@ -16,16 +16,17 @@
   </div>
 </div></div>
 <script type="module">
-  import { applyDuckFace } from './data/duckFaces.js';
+  import { duckRawUrl } from './data/duckFaces.js';
   import { DUCKS_NINE } from './constants.js';
   const dsg = document.getElementById('dsg');
   DUCKS_NINE.forEach((d, i) => {
     const cell = document.createElement('button');
     cell.type = 'button';
     cell.className = 'duck-cell' + (i === 5 ? ' duck-cell--active' : '');
-    const c = document.createElement('div');
-    c.className = 'duck-circle';
-    applyDuckFace(c, d.id);
+    const c = document.createElement('img');
+    c.className = 'duck-raw-img';
+    c.src = duckRawUrl(d.id);
+    c.alt = d.name;
     cell.appendChild(c);
     const n = document.createElement('div');
     n.className = 'duck-name';

@@ -540,8 +540,16 @@
   max-width: 100px;
   transition: transform 0.12s ease;
 }
-.duck-cell--active .duck-circle--face {
-  transform: scale(1.09);
+/* 오리선택 원본(회색배경째) 이미지 — 배경 회색과 이어져 원본 그대로 */
+.duck-cell .duck-raw-img {
+  width: 100%;
+  max-width: 118px;
+  display: block;
+  transition: transform 0.12s ease;
+}
+.duck-cell--active .duck-circle--face,
+.duck-cell--active .duck-raw-img {
+  transform: scale(1.06);
 }
 .duck-cell--active .duck-name {
   color: var(--blue-d);
