@@ -5,9 +5,9 @@
 import * as THREE from 'three';
 import { DUCK_3D_COLORS, RACE_ENGINE_PHYSICS, TAP_STRIDE_M } from './constants.js';
 
-const PLAYER_LANE_X = -1.25;
-const BOT_LANE_X = 1.25;
-const LANE_LATERAL_MAX = 1.25;
+const PLAYER_LANE_X = -0.82;
+const BOT_LANE_X = 0.82;
+const LANE_LATERAL_MAX = 0.6;
 const TRACK_WORLD_LEN = 400;
 /**
  * 게임 dist(m)·탭당 TAP_STRIDE_M 과 3D 전진량 비율 — 몸통 길이에 가깝게 한 걸음이 보이도록 소폭 확대
