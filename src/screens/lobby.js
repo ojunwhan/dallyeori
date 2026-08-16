@@ -84,7 +84,7 @@ export function createLobbyProfileSummary(api) {
 export function createLobbyDuckPreview(api) {
   const card = document.createElement('button');
   card.type = 'button';
-  card.className = 'lobby-duck-preview app-box';
+  card.className = 'lobby-duck-preview';
 
   const duck = duckById(api.state.selectedDuckId);
 

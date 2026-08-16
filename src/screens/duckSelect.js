@@ -38,8 +38,8 @@ export function addOwnedDuck(api, duckId) {
 
 /** @returns {import('../constants.js').DuckDef[]} */
 export function ducksShownInSelector(state) {
-  if (isFreeFirstPick(state)) return [...DUCKS_NINE];
-  return DUCKS_NINE.filter((d) => duckOwned(state, d.id));
+  // MVP: 10색 모두 자유 선택 (구매 개념 없음)
+  return [...DUCKS_NINE];
 }
 
 // ═══ 화면 ═══
@@ -69,28 +69,15 @@ export function mountDuckSelect(root, api) {
   back.addEventListener('click', () => api.navigate('lobby'));
 
   function refreshSub() {
-    sub.textContent = isFreeFirstPick(api.state)
-      ? '함께할 오리를 골라주세요.'
-      : '보유한 오리 중에서 사용할 오리를 고를 수 있어요. 새 오리는 상점에서 만나요.';
+    sub.textContent = '함께 달릴 오리를 골라주세요. 언제든 바꿀 수 있어요!';
   }
 
   function handleDuckClick(duck) {
     const state = api.state;
-    if (!duckOwned(state, duck.id) && !isFreeFirstPick(state)) return;
-
-    if (state.selectedDuckId === duck.id) return;
-
-    if (isFreeFirstPick(state)) {
-      if (!window.confirm(`「${duck.name}」 오리와 함께하시겠습니까?`)) return;
-      addOwnedDuck(api, duck.id);
-      setSelectedDuck(api, duck.id);
-      refreshSub();
-      renderGrid();
-      return;
-    }
-
-    if (!window.confirm(`「${duck.name}」 오리를 사용하시겠습니까?`)) return;
+    if (state.selectedDuckId === duck.id) return; // 이미 사용 중
+    addOwnedDuck(api, duck.id); // 무료 선택 → 보유 처리
     setSelectedDuck(api, duck.id);
+    refreshSub();
     renderGrid();
   }
 

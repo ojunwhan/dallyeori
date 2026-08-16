@@ -43,7 +43,17 @@ export function applyDuckFace(circleEl, id) {
   const duck = DUCKS_NINE.find((d) => d.id === id);
   const pastel = duck ? pastelBg(duck.color) : 'linear-gradient(180deg,#eef4fb,#dce9f5)';
   circleEl.classList.add('duck-circle--face');
-  // 오리 전신(위 레이어, 바닥 정렬) + 파스텔 배경(아래 레이어)
-  circleEl.style.background = `url(${url}) center bottom / contain no-repeat, ${pastel}`;
+  circleEl.style.backgroundColor = '';
+  circleEl.style.backgroundImage = '';
+  circleEl.style.background = 'transparent'; // 박스·배경 없이 오리만 (게임 화면 배경 위)
+  // 오리는 자식 <img> — drop-shadow로 바닥 그림자를 넣어 입체감(2D→3D)
+  let img = circleEl.querySelector('.duck-face-img');
+  if (!img) {
+    img = document.createElement('img');
+    img.className = 'duck-face-img';
+    img.alt = duck ? duck.name : '';
+    circleEl.appendChild(img);
+  }
+  img.src = url;
   return true;
 }
