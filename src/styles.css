@@ -651,8 +651,8 @@
   flex-direction: column;
   gap: 16px;
   padding-bottom: max(24px, env(safe-area-inset-bottom, 16px));
-  /* 위(오리)는 원본 회색 → 오리 발밑에서 확 밝아져 하늘·연두로 (원본 색 살리고 밝은 무드 유지) */
-  background: linear-gradient(180deg, #918f94 0%, #918f94 36%, var(--sky-top) 50%, var(--sky-bot) 100%);
+  /* 전체 회색 — 위(오리 뒤)는 원본 회색, 아래(땅바닥)로 옅어지는 회색. 오리 사각이 배경과 같은 회색이라 이음새 없음 */
+  background: linear-gradient(180deg, #918f94 0%, #918f94 40%, #b0aeb4 62%, #dcdbdf 88%, #ecebef 100%);
 }
 
 .lobby-profile-summary {
