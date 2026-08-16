@@ -91,7 +91,7 @@ export function mountDuckSelect(root, api) {
 
       const cell = document.createElement('button');
       cell.type = 'button';
-      cell.className = 'duck-cell app-box';
+      cell.className = 'duck-cell';
       if (isCurrent) cell.classList.add('duck-cell--active');
       cell.setAttribute('aria-label', duck.name);
 

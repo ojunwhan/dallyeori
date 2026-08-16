@@ -516,9 +516,20 @@
   cursor: not-allowed;
 }
 
-.duck-cell--active {
-  border-color: #9cf;
-  box-shadow: 0 0 0 1px rgba(153, 204, 255, 0.35);
+.duck-cell {
+  background: transparent;
+  border: none;
+}
+.duck-cell .duck-circle--face {
+  width: 92px;
+  transition: transform 0.12s ease;
+}
+.duck-cell--active .duck-circle--face {
+  transform: scale(1.09);
+}
+.duck-cell--active .duck-name {
+  color: var(--blue-d);
+  font-weight: 800;
 }
 
 .duck-circle {
@@ -546,6 +557,8 @@
   aspect-ratio: 3 / 4;
   height: auto !important;
   overflow: visible;
+  box-shadow: none !important;
+  border-radius: 0 !important;
 }
 /* 오리 이미지 — 바닥 그림자로 입체감(2D→3D) */
 .duck-face-img {
