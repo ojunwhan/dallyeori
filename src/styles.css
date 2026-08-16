@@ -651,11 +651,8 @@
   flex-direction: column;
   gap: 16px;
   padding-bottom: max(24px, env(safe-area-inset-bottom, 16px));
-  /* 위(오리)는 원본 회색 → 아래로 갈수록 하늘·연두로 흐려짐 (원본 색 살리고 밝은 무드 유지) */
-  background: linear-gradient(180deg, #918f94 0%, #918f94 44%, var(--sky-top) 64%, var(--sky-bot) 100%);
-  margin: -16px;
-  padding: 16px;
-  min-height: calc(100% + 32px);
+  /* 위(오리)는 원본 회색 → 오리 발밑에서 확 밝아져 하늘·연두로 (원본 색 살리고 밝은 무드 유지) */
+  background: linear-gradient(180deg, #918f94 0%, #918f94 36%, var(--sky-top) 50%, var(--sky-bot) 100%);
 }
 
 .lobby-profile-summary {
@@ -748,12 +745,14 @@
 .lobby-duck-circle {
   width: 140px;
 }
-/* 로비 원본 오리 — 회색 영역 위에 놓여 원본 그대로 */
+/* 로비 원본 오리 — 회색 배경과 이어지고, 하단은 페이드로 배경에 녹아듦(회색 박스 방지) */
 .lobby-duck-raw {
-  width: 210px;
-  max-width: 64%;
+  width: 200px;
+  max-width: 58%;
   display: block;
   margin: 0 auto;
+  -webkit-mask-image: linear-gradient(180deg, #000 82%, transparent 98%);
+  mask-image: linear-gradient(180deg, #000 82%, transparent 98%);
 }
 
 .lobby-duck-circle--empty {
