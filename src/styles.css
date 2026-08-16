@@ -651,6 +651,11 @@
   flex-direction: column;
   gap: 16px;
   padding-bottom: max(24px, env(safe-area-inset-bottom, 16px));
+  /* 위(오리)는 원본 회색 → 아래로 갈수록 하늘·연두로 흐려짐 (원본 색 살리고 밝은 무드 유지) */
+  background: linear-gradient(180deg, #918f94 0%, #918f94 44%, var(--sky-top) 64%, var(--sky-bot) 100%);
+  margin: -16px;
+  padding: 16px;
+  min-height: calc(100% + 32px);
 }
 
 .lobby-profile-summary {
@@ -742,6 +747,13 @@
 
 .lobby-duck-circle {
   width: 140px;
+}
+/* 로비 원본 오리 — 회색 영역 위에 놓여 원본 그대로 */
+.lobby-duck-raw {
+  width: 210px;
+  max-width: 64%;
+  display: block;
+  margin: 0 auto;
 }
 
 .lobby-duck-circle--empty {

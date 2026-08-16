@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>로비 그라데이션 검증</title>
+<link rel="stylesheet" href="./styles.css">
+<style>
+  html, body { margin: 0; }
+  .frame { max-width: 375px; margin: 0 auto; min-height: 780px; outline: 2px solid red; overflow: hidden; position: relative; }
+</style>
+<div class="frame"><div id="app-root" style="position:static">
+  <div class="app-screen lobby-screen">
+    <button class="lobby-profile-summary app-box">
+      <div class="lobby-profile-avatar-wrap"><div class="lobby-profile-avatar-placeholder">J</div></div>
+      <div class="lobby-profile-meta">
+        <div class="lobby-profile-nick">Jason Oh</div>
+        <div class="lobby-profile-hearts">♥ 1</div>
+      </div>
+    </button>
+    <div class="lobby-main">
+      <button class="lobby-duck-preview">
+        <img class="lobby-duck-raw" src="./assets/ducks/raw/face-bori.png">
+        <div class="lobby-duck-name">보리</div>
+        <div class="lobby-duck-tap-hint app-muted">탭하여 변경</div>
+      </button>
+      <div class="lobby-battle-section">
+        <button class="app-btn app-btn--primary app-btn--lobby-battle">대전하기</button>
+        <button class="app-btn" style="margin-top:10px">QR 대전</button>
+      </div>
+    </div>
+    <div class="lobby-bottom-menu" style="display:flex;gap:8px;margin-top:12px">
+      <button class="app-btn" style="flex:1">상점</button>
+      <button class="app-btn" style="flex:1">친구</button>
+    </div>
+  </div>
+</div></div>

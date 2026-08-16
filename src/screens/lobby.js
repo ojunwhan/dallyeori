@@ -5,7 +5,7 @@
 
 import { DUCKS_NINE } from '../constants.js';
 import { resolveMediaUrl } from '../services/auth.js';
-import { applyDuckFace } from '../data/duckFaces.js';
+import { duckRawUrl } from '../data/duckFaces.js';
 import { getBalance } from '../services/hearts.js';
 import { flushServerFriendNotificationsToClient, getNewFriendRejectNotifCount } from '../services/friends.js';
 import { ensureSocket } from '../services/socket.js';
@@ -88,15 +88,15 @@ export function createLobbyDuckPreview(api) {
 
   const duck = duckById(api.state.selectedDuckId);
 
-  const circle = document.createElement('div');
-  circle.className = 'duck-circle lobby-duck-circle';
+  let circle;
   if (duck) {
-    circle.style.backgroundColor = duck.color;
-    if (duck.id === 'duri') circle.classList.add('duck-circle--dark');
-    if (duck.id === 'ari') circle.classList.add('duck-circle--light');
-    applyDuckFace(circle, duck.id);
+    circle = document.createElement('img');
+    circle.className = 'lobby-duck-raw';
+    circle.src = duckRawUrl(duck.id);
+    circle.alt = duck.name;
   } else {
-    circle.classList.add('lobby-duck-circle--empty');
+    circle = document.createElement('div');
+    circle.className = 'duck-circle lobby-duck-circle lobby-duck-circle--empty';
   }
 
   const name = document.createElement('div');
