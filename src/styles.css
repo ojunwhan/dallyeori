@@ -787,13 +787,27 @@
 }
 
 .qr-match-qr-wrap {
-  display: flex;
+  display: inline-flex;
   justify-content: center;
-  padding: 16px;
-  background: #000;
-  border: 1px solid #333;
-  border-radius: 12px;
-  margin-bottom: 8px;
+  padding: 18px;
+  background: #fff;
+  border: none;
+  border-radius: 24px;
+  box-shadow: var(--shadow-card);
+  margin: 0 auto 10px;
+}
+/* 대기 중 내 오리 — 통통 튀며 상대를 기다림 */
+.qr-match-duck {
+  width: 104px;
+  height: auto;
+  display: block;
+  margin: 0 auto 8px;
+  filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.18));
+  animation: qrDuckBounce 1.15s ease-in-out infinite;
+}
+@keyframes qrDuckBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-9px); }
 }
 
 .qr-match-img {
@@ -832,8 +846,8 @@
 
 .qr-match-cancel-btn {
   margin-top: 4px;
-  border-color: #444;
-  color: #999;
+  border-color: var(--line);
+  color: var(--ink-2);
 }
 
 .guest-qr-wait-screen {

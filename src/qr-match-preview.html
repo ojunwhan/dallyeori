@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR 대전 검증</title>
+<link rel="stylesheet" href="./styles.css">
+<style>
+  html, body { margin: 0; }
+  .frame { max-width: 375px; margin: 0 auto; min-height: 780px; outline: 2px solid red;
+    background: linear-gradient(180deg, var(--sky-top), var(--sky-bot)); }
+  .qr-dummy { width: 240px; height: 240px; background: #fff;
+    background-image:
+      linear-gradient(90deg, #111 0 8px, transparent 0 16px),
+      linear-gradient(#111 0 8px, transparent 0 16px);
+    background-size: 16px 16px; }
+</style>
+<div class="frame"><div id="app-root" style="position:static">
+  <div class="app-screen qr-match-screen">
+    <div class="app-title qr-match-title">QR / 링크 대전</div>
+    <p class="app-muted qr-match-hint">QR을 보여주거나, 링크를 보내세요. 상대가 열면 바로 경주!</p>
+    <img class="qr-match-duck" src="./assets/ducks/face-bori.png" alt="">
+    <div class="qr-match-qr-wrap"><div class="qr-dummy"></div></div>
+    <div class="qr-match-timer app-muted">남은 시간  2:48</div>
+    <p class="qr-match-status">상대를 기다리는 중…</p>
+    <button class="app-btn app-btn--primary qr-match-copy-btn">링크 복사</button>
+    <button class="app-btn qr-match-share-btn">링크 공유하기</button>
+    <button class="app-btn qr-match-cancel-btn">취소</button>
+  </div>
+</div></div>

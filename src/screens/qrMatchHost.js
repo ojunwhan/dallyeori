@@ -13,6 +13,7 @@ import {
 } from '../services/socket.js';
 import { getBalance } from '../services/hearts.js';
 import { showAppToast } from '../services/toast.js';
+import { duckFaceUrl } from '../data/duckFaces.js';
 
 const QR_TIMEOUT_SEC = 180; // 서버 QR_PENDING_MS 와 동기화 (3분)
 
@@ -42,6 +43,12 @@ export function mountQrMatchHost(root, api) {
   const hint = document.createElement('p');
   hint.className = 'app-muted qr-match-hint';
   hint.textContent = 'QR을 보여주거나, 링크를 보내세요. 상대가 열면 바로 경주!';
+
+  /* ── 대기 오리 (통통 튀며 상대를 기다림) ── */
+  const duckImg = document.createElement('img');
+  duckImg.className = 'qr-match-duck';
+  duckImg.src = duckFaceUrl(api.state.selectedDuckId || 'bori');
+  duckImg.alt = '';
 
   /* ── QR 이미지 ── */
   const qrWrap = document.createElement('div');
@@ -73,7 +80,7 @@ export function mountQrMatchHost(root, api) {
   const btnShare = document.createElement('button');
   btnShare.type = 'button';
   btnShare.className = 'app-btn qr-match-share-btn';
-  btnShare.textContent = '카톡 · 메시지로 공유';
+  btnShare.textContent = '링크 공유하기';
   btnShare.disabled = true;
   if (!navigator.share) btnShare.hidden = true;
 
@@ -475,6 +482,7 @@ export function mountQrMatchHost(root, api) {
   /* ── DOM 조립 ── */
   wrap.appendChild(title);
   wrap.appendChild(hint);
+  wrap.appendChild(duckImg);
   wrap.appendChild(qrWrap);
   wrap.appendChild(timerEl);
   wrap.appendChild(status);
