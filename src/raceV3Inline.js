@@ -156,12 +156,10 @@ export function mountRaceV3Game(hostEl, options) {
     // → app.js 가 이 시점에 raceJoin 을 보내야 서버가 양쪽 로딩 완료를 확인하고 두 폰을 동시에 출발시킨다.
     if (options && typeof options.onReady === 'function') {
       const _onReady = options.onReady;
+      // 첫 프레임(더블 rAF) + 시계 동기화 수렴을 모두 기다린 뒤 "준비됨"을 알린다.
+      // → 양쪽이 '화면 준비 + 시계 맞추기'를 모두 끝낸 뒤에만 서버 카운트다운이 시작돼 3·2·1이 딱 맞는다.
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        try {
-          _onReady();
-        } catch (e) {
-          console.warn('[race] onReady', e);
-        }
+        waitClockSyncThenReady(_onReady);
       }));
     }
   } catch (err) {
@@ -450,6 +448,7 @@ let pingPongOffsetMs=/** @type {number|null} */(null);
 let pingPongMinRtt=Infinity;
 let clockSyncTimerId=0;
 let clockSyncBurst=0;
+let pingPongSamples=0; // 성공한 왕복 표본 수 (레디 판정용)
 let _cdGoRecoverAcc=0;
 /** 서버 레이스 이벤트 수신 시각 — connected 만으로 재연결 UI 판단 시 PC 오탐 방지 */
 let lastServerRaceIoAt=0;
@@ -966,9 +965,12 @@ function _doClockPing(sock){
       clearTimeout(to);
       const t1=Date.now();
       const rtt=t1-t0;
-      if(res&&typeof res.s==='number'&&Number.isFinite(res.s)&&rtt<pingPongMinRtt){
-        pingPongMinRtt=rtt;
-        pingPongOffsetMs=res.s+rtt/2-t1; // 최소RTT 표본의 오프셋(서버시각-로컬시각) 채택
+      if(res&&typeof res.s==='number'&&Number.isFinite(res.s)){
+        pingPongSamples+=1;
+        if(rtt<pingPongMinRtt){
+          pingPongMinRtt=rtt;
+          pingPongOffsetMs=res.s+rtt/2-t1; // 최소RTT 표본의 오프셋(서버시각-로컬시각) 채택
+        }
       }
     });
   }catch(e){/* ignore */}
@@ -977,6 +979,7 @@ function startClockSync(sock){
   stopClockSync();
   pingPongMinRtt=Infinity;
   pingPongOffsetMs=null;
+  pingPongSamples=0;
   clockSyncBurst=0;
   _doClockPing(sock);
   // 초반 집중 왕복(250ms×16≈4초)으로 최소RTT 빠르게 확보 → 이후 3초마다 유지
@@ -994,6 +997,19 @@ function stopClockSync(){
     clearInterval(clockSyncTimerId);
     clockSyncTimerId=0;
   }
+}
+// 시계 동기화가 충분히 수렴(왕복 표본 5개+)하거나 상한(2.5초) 도달 시 준비완료 콜백.
+// 강한 폰이 화면을 먼저 그려도, 시계를 덜 맞춘 채 출발신호를 보내지 않게 잡아준다.
+function waitClockSyncThenReady(cb){
+  const t0=Date.now();
+  const chk=()=>{
+    if(pingPongSamples>=5 || Date.now()-t0>=2500){
+      try{cb();}catch(e){console.warn('[race] onReady',e);}
+      return;
+    }
+    setTimeout(chk,60);
+  };
+  chk();
 }
 
 // ═══ UPDATE ═══
@@ -1877,6 +1893,7 @@ if(EMBED_APP&&!serverRaceOpt){
       stopClockSync();
       pingPongOffsetMs=null;
       pingPongMinRtt=Infinity;
+      pingPongSamples=0;
       _cdGoRecoverAcc=0;
       lastServerRaceIoAt=0;
       lastRaceTickRecvAt=0;
