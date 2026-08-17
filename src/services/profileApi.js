@@ -33,11 +33,13 @@ export function validateNicknameLocal(nickname) {
 export async function fetchProfileMeV1() {
   const t = getToken();
   if (!t) return null;
-  const res = await fetch(resolvePublicApiUrl('/api/v1/profile/me'), {
-    headers: { Authorization: `Bearer ${t}` },
-  });
-  if (!res.ok) return null;
+  // fetch 자체를 try/catch로 감싼다 — 네트워크 오류 시 throw되면
+  // navigateAfterAuth가 reject되어 화면이 검은 채로 멈춘다(로그인 후 검은화면 버그)
   try {
+    const res = await fetch(resolvePublicApiUrl('/api/v1/profile/me'), {
+      headers: { Authorization: `Bearer ${t}` },
+    });
+    if (!res.ok) return null;
     return await res.json();
   } catch {
     return null;

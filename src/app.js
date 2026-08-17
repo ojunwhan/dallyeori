@@ -688,6 +688,12 @@ function boot() {
     console.log('[dallyeori] app.js boot → JWT 세션 복원');
     void navigateAfterAuth(api, { replaceHistory: true }).catch((e) => {
       console.warn('[app] navigateAfterAuth', e);
+      // 프로필 로드 실패 등으로 화면이 안 뜨는 검은화면 방지 — 최소한 로비로 진입
+      try {
+        if (appState.screen !== 'lobby') api.navigate('lobby', undefined, { replaceHistory: true });
+      } catch (e2) {
+        console.warn('[app] fallback navigate lobby', e2);
+      }
     });
     const bootSock = ensureSocket();
     console.log('[app] boot ensureSocket result:', !!bootSock, 'connected:', bootSock?.connected);
