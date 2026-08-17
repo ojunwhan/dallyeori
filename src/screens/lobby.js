@@ -182,7 +182,6 @@ export function createLobbyBottomMenu(api) {
   const friendBadge = heartBadgeCount + rejectBadgeCount;
 
   const items = [
-    { label: '상점', onClick: () => api.navigate('shop'), badge: 0 },
     {
       label: '친구',
       onClick: () => api.navigate('friends'),

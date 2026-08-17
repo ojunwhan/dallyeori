@@ -894,7 +894,7 @@
 }
 
 .lobby-nav-cell {
-  flex: 1 1 calc(50% - 4px);
+  flex: 1 1 0;
   min-width: 0;
   position: relative;
   display: flex;

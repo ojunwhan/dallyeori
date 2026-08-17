@@ -211,7 +211,7 @@ export function mountMatching(root, api) {
       window.removeEventListener('dallyeori-match-error', onMatchErr);
       api.state._matchingMatchErrCleanup = null;
       window.alert(
-        '하트가 부족합니다! 광고를 보거나 친구에게 하트를 요청하세요',
+        '하트가 다 떨어졌어요! 친구에게 하트를 받거나, 매일 채워지는 무료 하트를 잠시 기다려 주세요.',
       );
       api.navigate('lobby');
     }
