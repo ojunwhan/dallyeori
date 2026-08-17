@@ -97,7 +97,7 @@ export function ensureUserFromAuth(authUser) {
     wins: 0,
     losses: 0,
     draws: 0,
-    hearts: 30,
+    hearts: 50,
     selectedDuckId: null,
     ownedDuckIds: [],
     profileSetupComplete: false,

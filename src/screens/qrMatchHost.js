@@ -333,9 +333,7 @@ export function mountQrMatchHost(root, api) {
     sock.off('disconnect', onHostDisconnect);
     window.removeEventListener('dallyeori-match-error', onMatchErrorHost);
     sock.emit('qrMatchCancel');
-    window.alert(
-      '하트가 다 떨어졌어요! 친구에게 하트를 받거나, 매일 채워지는 무료 하트를 잠시 기다려 주세요.',
-    );
+    showAppToast('하트가 다 떨어졌어요! 친구에게 하트를 받거나, 매일 채워지는 무료 하트를 잠시 기다려 주세요.');
     api.navigate('lobby');
   };
   window.addEventListener('dallyeori-match-error', onMatchErrorHost);

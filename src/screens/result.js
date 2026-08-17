@@ -478,11 +478,11 @@ export function mountResult(root, api) {
         return;
       }
       if (!peerId) {
-        window.alert('상대 정보를 찾을 수 없어요.');
+        showAppToast('상대 정보를 찾을 수 없어요.');
         return;
       }
       if (isFriend(uid, peerId)) {
-        window.alert('이미 친구예요.');
+        showAppToast('이미 친구예요.');
         return;
       }
       const r = sendRequest(uid, peerId, {
@@ -491,10 +491,10 @@ export function mountResult(root, api) {
         duckId: typeof opp?.duckId === 'string' ? opp.duckId : '',
       });
       if (r.ok && r.requestId) emitFriendRequestSent(peerId, r.requestId);
-      if (r.ok) window.alert('친구 요청을 보냈어요.');
-      else if (r.error === 'pending_out') window.alert('이미 요청 중이에요.');
-      else if (r.error === 'pending_in') window.alert('상대가 먼저 요청했어요. 친구 탭에서 수락해 주세요.');
-      else window.alert('요청할 수 없어요.');
+      if (r.ok) showAppToast('친구 요청을 보냈어요.');
+      else if (r.error === 'pending_out') showAppToast('이미 요청 중이에요.');
+      else if (r.error === 'pending_in') showAppToast('상대가 먼저 요청했어요. 친구 탭에서 수락해 주세요.');
+      else showAppToast('요청할 수 없어요.');
     });
 
     const btnHeart = document.createElement('button');
@@ -508,7 +508,7 @@ export function mountResult(root, api) {
         return;
       }
       if (!peerId) {
-        window.alert('상대 정보를 찾을 수 없어요.');
+        showAppToast('상대 정보를 찾을 수 없어요.');
         return;
       }
       if (!ensureSocket()) return;
@@ -579,7 +579,7 @@ export function mountResult(root, api) {
       e.preventDefault();
       e.stopPropagation();
       if (!peerId) {
-        window.alert('상대 정보를 찾을 수 없어요.');
+        showAppToast('상대 정보를 찾을 수 없어요.');
         return;
       }
       if (!uid) {

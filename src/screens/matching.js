@@ -5,6 +5,7 @@
 import { DUCKS_NINE } from '../constants.js';
 import { resolveMediaUrl } from '../services/auth.js';
 import { applyDuckFace } from '../data/duckFaces.js';
+import { showAppToast } from '../services/toast.js';
 import { ensureSocket, startMockRandomMatch } from '../services/socket.js';
 
 const RACE_DELAY_MS = 1000;
@@ -210,9 +211,7 @@ export function mountMatching(root, api) {
     if (data && data.reason === 'noHearts') {
       window.removeEventListener('dallyeori-match-error', onMatchErr);
       api.state._matchingMatchErrCleanup = null;
-      window.alert(
-        '하트가 다 떨어졌어요! 친구에게 하트를 받거나, 매일 채워지는 무료 하트를 잠시 기다려 주세요.',
-      );
+      showAppToast('하트가 다 떨어졌어요! 친구에게 하트를 받거나, 매일 채워지는 무료 하트를 잠시 기다려 주세요.');
       api.navigate('lobby');
     }
   };

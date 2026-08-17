@@ -317,8 +317,8 @@ export function mountFriends(root, api) {
       const r = giftToFriend(api.state, friendId, n);
       if (r.ok) {
         giftOverlay.hidden = true;
-        window.alert('선물했어요!');
-      } else if (r.error === 'funds') window.alert('하트가 부족해요.');
+        showAppToast('선물했어요!');
+      } else if (r.error === 'funds') showAppToast('하트가 부족해요.');
     });
     const btnX = document.createElement('button');
     btnX.type = 'button';
@@ -605,18 +605,18 @@ export function mountFriends(root, api) {
         const pr = await postFriendRequestV1(peerId);
         if (!pr.ok) {
           if (pr.error === 'incoming_pending') {
-            window.alert('상대가 먼저 요청했어요. 요청 탭에서 수락해 주세요.');
-          } else window.alert('요청에 실패했어요.');
+            showAppToast('상대가 먼저 요청했어요. 요청 탭에서 수락해 주세요.');
+          } else showAppToast('요청에 실패했어요.');
           return;
         }
         const r = sendRequest(uid, peerId, { nickname: u.nickname });
         if (r.ok && r.requestId) emitFriendRequestSent(peerId, r.requestId);
-        if (r.ok) window.alert('친구 요청을 보냈어요.');
-        else if (r.message) window.alert(r.message);
-        else if (r.error === 'pending_out') window.alert('이미 요청 중이에요.');
+        if (r.ok) showAppToast('친구 요청을 보냈어요.');
+        else if (r.message) showAppToast(r.message);
+        else if (r.error === 'pending_out') showAppToast('이미 요청 중이에요.');
         else if (r.error === 'pending_in') {
-          window.alert('상대가 먼저 요청했다면 요청 탭에서 수락해 주세요.');
-        } else window.alert('요청할 수 없어요.');
+          showAppToast('상대가 먼저 요청했다면 요청 탭에서 수락해 주세요.');
+        } else showAppToast('요청할 수 없어요.');
         if (typeof afterRequest === 'function') {
           afterRequest();
         } else {
@@ -681,8 +681,8 @@ export function mountFriends(root, api) {
         const pr = await postFriendRequestV1(peerId);
         if (!pr.ok) {
           if (pr.error === 'incoming_pending') {
-            window.alert('상대가 먼저 요청했어요. 요청 탭에서 수락해 주세요.');
-          } else window.alert('요청에 실패했어요.');
+            showAppToast('상대가 먼저 요청했어요. 요청 탭에서 수락해 주세요.');
+          } else showAppToast('요청에 실패했어요.');
           return;
         }
         const r = sendRequest(uid, peerId, { nickname: u.nickname });
@@ -692,11 +692,11 @@ export function mountFriends(root, api) {
           btn.disabled = true;
           btn.classList.remove('app-btn--primary');
           showAppToast('친구 요청을 보냈어요.');
-        } else if (r.message) window.alert(r.message);
-        else if (r.error === 'pending_out') window.alert('이미 요청 중이에요.');
+        } else if (r.message) showAppToast(r.message);
+        else if (r.error === 'pending_out') showAppToast('이미 요청 중이에요.');
         else if (r.error === 'pending_in') {
-          window.alert('상대가 먼저 요청했다면 요청 탭에서 수락해 주세요.');
-        } else window.alert('요청할 수 없어요.');
+          showAppToast('상대가 먼저 요청했다면 요청 탭에서 수락해 주세요.');
+        } else showAppToast('요청할 수 없어요.');
         if (typeof afterRequest === 'function') afterRequest();
         else {
           void runFindTabNicknameSearch();
@@ -897,18 +897,18 @@ export function mountFriends(root, api) {
         const pr = await postFriendRequestV1(peerId);
         if (!pr.ok) {
           if (pr.error === 'incoming_pending') {
-            window.alert('상대가 먼저 요청했어요. 요청 탭에서 수락해 주세요.');
-          } else window.alert('요청에 실패했어요.');
+            showAppToast('상대가 먼저 요청했어요. 요청 탭에서 수락해 주세요.');
+          } else showAppToast('요청에 실패했어요.');
           return;
         }
         const r = sendRequest(uid, peerId, { nickname: u.nickname });
         if (r.ok && r.requestId) emitFriendRequestSent(peerId, r.requestId);
-        if (r.ok) window.alert('친구 요청을 보냈어요.');
-        else if (r.message) window.alert(r.message);
-        else if (r.error === 'pending_out') window.alert('이미 요청 중이에요.');
+        if (r.ok) showAppToast('친구 요청을 보냈어요.');
+        else if (r.message) showAppToast(r.message);
+        else if (r.error === 'pending_out') showAppToast('이미 요청 중이에요.');
         else if (r.error === 'pending_in') {
-          window.alert('상대가 먼저 요청했다면 요청 탭에서 수락해 주세요.');
-        } else window.alert('요청할 수 없어요.');
+          showAppToast('상대가 먼저 요청했다면 요청 탭에서 수락해 주세요.');
+        } else showAppToast('요청할 수 없어요.');
         void refreshRecentOpponents();
         renderReq();
       });

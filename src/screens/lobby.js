@@ -162,10 +162,6 @@ export function createLobbyBattleSection(api) {
   return wrap;
 }
 
-function showRankingSoon() {
-  window.alert('준비 중입니다.');
-}
-
 /**
  * 하단 가로 메뉴
  * @param {{ navigate: Function, state: object }} api
