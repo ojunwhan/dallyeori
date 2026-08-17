@@ -152,6 +152,18 @@ export function mountRaceV3Game(hostEl, options) {
       oppDuckId: serverRaceOpt?.oppDuckId || 'tori',
       myServerSlot,
     });
+    // 레디 체크: 경기장 첫 프레임을 다 그린 뒤에 "준비됨"을 상위(app.js)에 알린다(더블 rAF = 첫 페인트 보장).
+    // → app.js 가 이 시점에 raceJoin 을 보내야 서버가 양쪽 로딩 완료를 확인하고 두 폰을 동시에 출발시킨다.
+    if (options && typeof options.onReady === 'function') {
+      const _onReady = options.onReady;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        try {
+          _onReady();
+        } catch (e) {
+          console.warn('[race] onReady', e);
+        }
+      }));
+    }
   } catch (err) {
     console.error('[race] 3D/WebGL 초기화 실패', err);
     const fail = document.createElement('div');

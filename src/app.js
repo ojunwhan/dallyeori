@@ -627,6 +627,19 @@ function runRace(_payload) {
       getAppState: () => appState,
       serverRace,
       embedMode: false,
+      // 레디 체크: 경기장 첫 프레임을 다 그린 뒤에야 raceJoin(=준비완료)을 보낸다.
+      // 이래야 서버가 양쪽 로딩 완료를 확인하고 두 폰을 동시에 출발시킨다(호스트 딸림 방지).
+      onReady: () => {
+        if (pr && raceSlot != null && pr.roomId && liveRaceSock) {
+          emitRaceJoin(
+            pr.roomId,
+            raceSlot,
+            liveRaceSock,
+            getJwtUid() || (typeof appState.user?.uid === 'string' ? appState.user.uid : ''),
+          );
+          delete globalThis.__dallyeoriPendingRace;
+        }
+      },
     });
   } catch (err) {
     console.error('[race] mountRaceV3Game 실패', err);
@@ -652,10 +665,7 @@ function runRace(_payload) {
     showAppToast('경기 화면을 띄우지 못했어요.');
   }
 
-  if (pr && raceSlot != null && pr.roomId && liveRaceSock) {
-    emitRaceJoin(pr.roomId, raceSlot, liveRaceSock, getJwtUid() || (typeof appState.user?.uid === 'string' ? appState.user.uid : ''));
-    delete globalThis.__dallyeoriPendingRace;
-  }
+  // raceJoin(=준비완료)은 위 mountRaceV3Game 의 onReady(경기장 첫 프레임 페인트 후)에서 보낸다 — 레디 체크
 }
 
 function boot() {
