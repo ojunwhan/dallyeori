@@ -765,6 +765,18 @@
   transform: translateY(1px);
 }
 
+/* 로비 오리 — 제자리 뛰기 (달려오리답게 통통, 착지 때 살짝 눌림) */
+@keyframes lobby-duck-hop {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  28% { transform: translateY(-15px) scaleY(1.04); }
+  50% { transform: translateY(0) scaleY(0.94); }
+  68% { transform: translateY(-5px) scaleY(1.01); }
+}
+.lobby-duck-raw {
+  animation: lobby-duck-hop 1s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+
 .lobby-main {
   flex: 1;
   display: flex;
