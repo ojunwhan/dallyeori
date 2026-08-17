@@ -23,7 +23,16 @@ export function isFreeFirstPick(state) {
 export function setSelectedDuck(api, duckId) {
   api.state.selectedDuckId = duckId;
   const uid = api.state.user?.uid;
-  if (uid) patchUserRecord(uid, { selectedDuckId: duckId });
+  if (uid) {
+    patchUserRecord(uid, { selectedDuckId: duckId });
+  } else if (api.state.isGuest) {
+    // 게스트: 계정이 없으니 localStorage에만 남긴다(가입 시 승계 전까지)
+    try {
+      localStorage.setItem('dallyeori_guest_duck', duckId);
+    } catch {
+      /* 저장 불가(프라이빗 모드 등) — 무시 */
+    }
+  }
 }
 
 /** @param {{ state: object }} api */

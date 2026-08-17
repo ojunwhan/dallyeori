@@ -1113,12 +1113,13 @@ function startLocalMockMatch(excludeUid) {
 
 /**
  * @param {string} [excludeUid]
+ * @param {{ forceLocal?: boolean }} [opts] 게스트 등 로그인 없이 체험용 로컬 매칭을 강제할 때
  * @returns {{ promise: Promise<object>, cancel: () => void, waitMs: number }}
  */
-export function startMockRandomMatch(excludeUid) {
+export function startMockRandomMatch(excludeUid, opts = {}) {
   const mockOnly =
     import.meta.env.VITE_SOCKET_USE_MOCK === 'true' || import.meta.env.VITE_SOCKET_USE_MOCK === '1';
-  if (mockOnly) {
+  if (mockOnly || opts.forceLocal) {
     return startLocalMockMatch(excludeUid);
   }
   const s = ensureSocket();

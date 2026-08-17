@@ -716,6 +716,36 @@
   font-size: 0.9rem;
 }
 
+/* 게스트 가입 입구 배너 (로그인 안 한 상태의 로비 상단) */
+.lobby-profile-summary--guest {
+  background: linear-gradient(135deg, #4aa8ff, #2b7dff);
+  border: none;
+  box-shadow: 0 4px 14px rgba(43, 125, 255, 0.28);
+}
+.lobby-profile-summary--guest .lobby-guest-cta-icon {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+.lobby-guest-cta-title {
+  font-weight: 800;
+  font-size: 1.02rem;
+  color: #fff;
+  line-height: 1.2;
+}
+.lobby-guest-cta-sub {
+  margin-top: 3px;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.2;
+}
+.lobby-guest-cta-arrow {
+  flex-shrink: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #fff;
+  padding-right: 2px;
+}
+
 .lobby-main {
   flex: 1;
   display: flex;

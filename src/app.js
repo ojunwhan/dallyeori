@@ -55,7 +55,7 @@ let raceV3Unmount = null;
 /** @type {(() => void) | null} */
 let screenUnmount = null;
 
-/** @type {{ screen: string, user: object | null, nickname: string, language: string, translateTone: 'casual'|'formal', profilePhotoURL: string, profileSetupComplete: boolean, wins: number, losses: number, draws: number, hearts: number, selectedDuckId: string | null, ownedDuckIds: string[], lastRaceResult: object | null, lastOpponent: object | null, terrain: string, navTab: string, qrGuestOneShot: boolean, rematchFromRacePending: boolean, _matchingTimer: ReturnType<typeof setTimeout> | null, _matchingUiTimer: ReturnType<typeof setTimeout> | null, _matchingCancel: (() => void) | null, _chatPeerId: string }} */
+/** @type {{ screen: string, user: object | null, nickname: string, language: string, translateTone: 'casual'|'formal', profilePhotoURL: string, profileSetupComplete: boolean, wins: number, losses: number, draws: number, hearts: number, selectedDuckId: string | null, ownedDuckIds: string[], lastRaceResult: object | null, lastOpponent: object | null, terrain: string, navTab: string, qrGuestOneShot: boolean, isGuest: boolean, rematchFromRacePending: boolean, _matchingTimer: ReturnType<typeof setTimeout> | null, _matchingUiTimer: ReturnType<typeof setTimeout> | null, _matchingCancel: (() => void) | null, _chatPeerId: string }} */
 export const appState = {
   screen: 'splash',
   user: null,
@@ -75,6 +75,7 @@ export const appState = {
   terrain: 'normal',
   navTab: 'lobby',
   qrGuestOneShot: false,
+  isGuest: false,
   _matchingTimer: null,
   _matchingUiTimer: null,
   _matchingCancel: null,
@@ -570,7 +571,7 @@ function runRace(_payload) {
   const raceSlot = slotNum === 0 || slotNum === 1 ? /** @type {0|1} */ (slotNum) : null;
   /** @type {{ socket: import('socket.io-client').Socket, roomId: string, mySlot: 0|1, myUid?: string, myDuckId: string, oppDuckId: string, myDuckName: string, oppDuckName: string, oppUid?: string, myProfile?: Record<string, unknown>, emitTap?: (foot: 'left'|'right') => void } | undefined} */
   let serverRace;
-  if (!isGuestQrFlowActive()) {
+  if (!isGuestQrFlowActive() && !appState.isGuest) {
     ensureSocket();
   }
   const liveRaceSock = getGameSocket() || pr?.socket;
@@ -692,8 +693,22 @@ function boot() {
     console.log('[app] boot ensureSocket result:', !!bootSock, 'connected:', bootSock?.connected);
     flushPendingRematchAfterLogin();
   } else {
-    console.log('[dallyeori] app.js boot → splash');
-    navigate('splash', undefined, { replaceHistory: true });
+    console.log('[dallyeori] app.js boot → 게스트 로비 (둘러보기)');
+    appState.isGuest = true;
+    // 게스트도 대전 체험이 되도록 하트 시드
+    if (typeof appState.hearts !== 'number' || appState.hearts <= 0) appState.hearts = 50;
+    // 게스트가 고른 오리는 localStorage에만 남는다(가입 시 승계 전까지)
+    try {
+      const gd = localStorage.getItem('dallyeori_guest_duck');
+      if (gd) {
+        appState.selectedDuckId = gd;
+        if (!Array.isArray(appState.ownedDuckIds)) appState.ownedDuckIds = [];
+        if (!appState.ownedDuckIds.includes(gd)) appState.ownedDuckIds.push(gd);
+      }
+    } catch {
+      /* localStorage 접근 불가(프라이빗 모드 등) — 무시 */
+    }
+    navigate('lobby', undefined, { replaceHistory: true });
   }
 }
 

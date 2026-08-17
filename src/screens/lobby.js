@@ -11,6 +11,7 @@ import { flushServerFriendNotificationsToClient, getNewFriendRejectNotifCount } 
 import { ensureSocket } from '../services/socket.js';
 import { getNewHeartsCount } from '../services/likes.js';
 import { getTotalUnreadCount } from '../services/chat.js';
+import { showAppToast } from '../services/toast.js';
 
 /** @param {string | null | undefined} id */
 function duckById(id) {
@@ -29,6 +30,16 @@ function hasSelectedDuck(state) {
 }
 
 /**
+ * 게스트를 가입(로그인) 화면으로 안내한다.
+ * @param {{ navigate: Function }} api
+ * @param {string} msg
+ */
+function guideGuestToSignup(api, msg) {
+  showAppToast(msg);
+  api.navigate('splash');
+}
+
+/**
  * 상단: 프로필 사진 + 닉네임 + 하트 — 탭 시 프로필
  * @param {{ navigate: Function, state: object }} api
  */
@@ -36,6 +47,41 @@ export function createLobbyProfileSummary(api) {
   const row = document.createElement('button');
   row.type = 'button';
   row.className = 'lobby-profile-summary app-box';
+
+  // 게스트: 프로필 대신 '가입하고 친구 만들기' 입구로 교체
+  if (api.state.isGuest) {
+    row.classList.add('lobby-profile-summary--guest');
+
+    const avatarWrap = document.createElement('div');
+    avatarWrap.className = 'lobby-profile-avatar-wrap';
+    const ph = document.createElement('div');
+    ph.className = 'lobby-profile-avatar-placeholder lobby-guest-cta-icon';
+    ph.textContent = '🦆';
+    ph.setAttribute('aria-hidden', 'true');
+    avatarWrap.appendChild(ph);
+
+    const meta = document.createElement('div');
+    meta.className = 'lobby-profile-meta';
+    const ctaTitle = document.createElement('div');
+    ctaTitle.className = 'lobby-guest-cta-title';
+    ctaTitle.textContent = '가입하고 친구 만들기';
+    const ctaSub = document.createElement('div');
+    ctaSub.className = 'lobby-guest-cta-sub';
+    ctaSub.textContent = '게스트로 둘러보는 중 · 탭하여 가입';
+    meta.appendChild(ctaTitle);
+    meta.appendChild(ctaSub);
+
+    const arrow = document.createElement('div');
+    arrow.className = 'lobby-guest-cta-arrow';
+    arrow.textContent = '→';
+    arrow.setAttribute('aria-hidden', 'true');
+
+    row.appendChild(avatarWrap);
+    row.appendChild(meta);
+    row.appendChild(arrow);
+    row.addEventListener('click', () => api.navigate('splash'));
+    return row;
+  }
 
   const avatarWrap = document.createElement('div');
   avatarWrap.className = 'lobby-profile-avatar-wrap';
@@ -145,6 +191,10 @@ export function createLobbyBattleSection(api) {
   btnQr.textContent = 'QR 대전';
   btnQr.addEventListener('click', () => {
     if (!hasSelectedDuck(api.state)) return;
+    if (api.state.isGuest) {
+      guideGuestToSignup(api, 'QR 대전은 가입 후 이용할 수 있어요');
+      return;
+    }
     api.navigate('qrMatchHost');
   });
 
@@ -177,19 +227,30 @@ export function createLobbyBottomMenu(api) {
   const rejectBadgeCount = uid ? getNewFriendRejectNotifCount(uid) : 0;
   const friendBadge = heartBadgeCount + rejectBadgeCount;
 
+  const guest = api.state.isGuest === true;
   const items = [
     {
       label: '친구',
-      onClick: () => api.navigate('friends'),
-      badge: friendBadge,
+      onClick: guest
+        ? () => guideGuestToSignup(api, '가입하면 친구를 만들 수 있어요')
+        : () => api.navigate('friends'),
+      badge: guest ? 0 : friendBadge,
       badgeTitle: '새 알림',
     },
     {
       label: '메시지',
-      onClick: () => api.navigate('messages'),
-      badge: getTotalUnreadCount(uid),
+      onClick: guest
+        ? () => guideGuestToSignup(api, '가입하면 친구와 채팅할 수 있어요')
+        : () => api.navigate('messages'),
+      badge: guest ? 0 : getTotalUnreadCount(uid),
     },
-    { label: '랭킹', onClick: () => api.navigate('ranking'), badge: 0 },
+    {
+      label: '랭킹',
+      onClick: guest
+        ? () => guideGuestToSignup(api, '가입하면 랭킹에 참여할 수 있어요')
+        : () => api.navigate('ranking'),
+      badge: 0,
+    },
   ];
 
   for (const it of items) {

@@ -28,6 +28,7 @@ export async function navigateAfterAuth(api, navOpts = {}) {
     return;
   }
   api.state.user = u;
+  api.state.isGuest = false; // 로그인 완료 — 게스트 모드 해제
   const token = getToken();
   const raw = token ? decodeJWT(token) : null;
   const jwtIsNewUser =

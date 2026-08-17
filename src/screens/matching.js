@@ -221,7 +221,8 @@ export function mountMatching(root, api) {
   };
 
   btnRandom.addEventListener('click', () => {
-    if (!ensureSocket()) {
+    const guest = api.state.isGuest === true;
+    if (!guest && !ensureSocket()) {
       menuLayer.hidden = false;
       waitLayer.hidden = true;
       backLobby.hidden = false;
@@ -235,7 +236,9 @@ export function mountMatching(root, api) {
     cancel.hidden = false;
     loadingText.textContent = '매칭 중…';
 
-    const { promise, cancel: abortMatch } = startMockRandomMatch(api.state.user?.uid);
+    const { promise, cancel: abortMatch } = startMockRandomMatch(api.state.user?.uid, {
+      forceLocal: guest,
+    });
     api.state._matchingCancel = abortMatch;
 
     promise
