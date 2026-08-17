@@ -7,12 +7,14 @@ import {
   getConversation,
   isBlocked,
   markConversationRead,
+  mergeServerHistory,
   sendMessage,
   setupChatSocketListener,
   unblockUser,
 } from '../services/chat.js';
 import { showAppToast } from '../services/toast.js';
 import { getMockUser } from '../services/mockUsers.js';
+import { fetchPublicProfileV1, fetchMessageHistoryV1 } from '../services/profileApi.js';
 import { resolveMediaUrl } from '../services/auth.js';
 import { openAvatarLightbox } from '../components/avatarLightbox.js';
 
@@ -242,6 +244,25 @@ export function mountChatRoom(root, api) {
 
   syncBlockUi();
   renderMsgs();
+
+  // 서버에서 대화 히스토리 + 상대 실명·프로필 로드 (mockUser·로컬 유실 보완)
+  if (uid && peerId) {
+    void (async () => {
+      const hr = await fetchMessageHistoryV1(peerId, { limit: 50 });
+      if (hr.ok && mergeServerHistory(uid, peerId, hr.messages)) {
+        renderMsgs();
+        scrollBottom();
+      }
+      const pr = await fetchPublicProfileV1(peerId);
+      if (pr.ok && pr.profile) {
+        const nn = String(pr.profile.nickname || '').trim();
+        if (nn) {
+          hTitle.textContent = nn;
+          if (!peerPhoto) av.textContent = nn.slice(0, 1);
+        }
+      }
+    })();
+  }
 
   function onChatUpdate(/** @type {CustomEvent} */ ev) {
     if (ev.detail?.peerId === peerId) {

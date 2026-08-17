@@ -262,6 +262,32 @@ export function getConversation(uid, targetId) {
 }
 
 /**
+ * 서버 히스토리를 로컬 대화에 병합(id 중복 제거, ts 오름차순 정렬). chatRoom 진입 시 사용.
+ * @param {string} uid
+ * @param {string} peerId
+ * @param {object[]} serverMsgs  서버 rowToClientMessage 배열
+ * @returns {boolean} 병합 후 변경 여부
+ */
+export function mergeServerHistory(uid, peerId, serverMsgs) {
+  if (!uid || !peerId || !Array.isArray(serverMsgs) || serverMsgs.length === 0) return false;
+  const mapped = serverMsgs.map((m) => ({
+    id: String(m.id),
+    fromId: String(m.fromId ?? ''),
+    toId: String(m.toId ?? ''),
+    text: String(m.text ?? ''),
+    ts: Number(m.ts) || Date.now(),
+    originalText: m.originalText != null ? String(m.originalText) : undefined,
+    translatedText: m.translatedText != null ? String(m.translatedText) : undefined,
+  }));
+  const existing = readConv(uid, peerId);
+  const byId = new Map();
+  for (const m of [...existing, ...mapped]) byId.set(String(m.id), m);
+  const merged = [...byId.values()].sort((a, b) => a.ts - b.ts);
+  writeConv(uid, peerId, merged);
+  return true;
+}
+
+/**
  * @param {string} uid
  */
 export function getConversationList(uid) {

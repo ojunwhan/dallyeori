@@ -305,6 +305,53 @@ export async function fetchFriendListV1() {
 }
 
 /**
+ * GET /api/v1/profile/:uid — 상대 공개 프로필(닉네임·사진·오리)
+ * @param {string} uid
+ * @returns {Promise<{ ok: true, profile: object } | { ok: false, profile: null }>}
+ */
+export async function fetchPublicProfileV1(uid) {
+  const t = getToken();
+  if (!t || !uid) return { ok: false, profile: null };
+  try {
+    const res = await fetch(resolvePublicApiUrl(`/api/v1/profile/${encodeURIComponent(uid)}`), {
+      headers: { Authorization: `Bearer ${t}` },
+    });
+    if (!res.ok) return { ok: false, profile: null };
+    const profile = await res.json();
+    return { ok: true, profile };
+  } catch {
+    return { ok: false, profile: null };
+  }
+}
+
+/**
+ * GET /api/messages/:peerUid — 서버에 저장된 대화 히스토리(최신순)
+ * @param {string} peerUid
+ * @param {{ limit?: number, beforeId?: number }} [opts]
+ * @returns {Promise<{ ok: true, messages: object[] } | { ok: false, messages: [] }>}
+ */
+export async function fetchMessageHistoryV1(peerUid, opts = {}) {
+  const t = getToken();
+  if (!t || !peerUid) return { ok: false, messages: [] };
+  try {
+    const params = new URLSearchParams();
+    if (opts.limit) params.set('limit', String(opts.limit));
+    if (opts.beforeId) params.set('beforeId', String(opts.beforeId));
+    const qs = params.toString();
+    const url = `/api/messages/${encodeURIComponent(peerUid)}${qs ? `?${qs}` : ''}`;
+    const res = await fetch(resolvePublicApiUrl(url), {
+      headers: { Authorization: `Bearer ${t}` },
+    });
+    if (!res.ok) return { ok: false, messages: [] };
+    const data = await res.json();
+    const messages = Array.isArray(data?.messages) ? data.messages : [];
+    return { ok: true, messages };
+  } catch {
+    return { ok: false, messages: [] };
+  }
+}
+
+/**
  * GET /api/v1/notifications
  * @returns {Promise<{ ok: true, pendingReceived: object[], unreadResults: object[] } | { ok: false, pendingReceived: [], unreadResults: [] }>}
  */
