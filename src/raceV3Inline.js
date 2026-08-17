@@ -444,6 +444,12 @@ let serverFinishPayload=null;
 let serverCdStartAt=/** @type {number|null} */(null);
 /** countdown.serverNow 와 수신 시점 Date.now() 차이 — 폰 시계·서버 시계 어긋남 보정(ms) */
 let serverClockOffsetMs=0;
+// 핑퐁 클럭 동기화: 서버까지 왕복을 여러 번 재 '가장 빠른 왕복'의 오프셋만 채택 → 편도지연 편향 제거.
+// pingPongOffsetMs = 서버시각 - 로컬시각. null이면 아직 미측정(단방향 폴백 사용).
+let pingPongOffsetMs=/** @type {number|null} */(null);
+let pingPongMinRtt=Infinity;
+let clockSyncTimerId=0;
+let clockSyncBurst=0;
 let _cdGoRecoverAcc=0;
 /** 서버 레이스 이벤트 수신 시각 — connected 만으로 재연결 UI 판단 시 PC 오탐 방지 */
 let lastServerRaceIoAt=0;
@@ -945,6 +951,50 @@ function blendServerDucks(dt){
 
 // ═══ HELPERS ═══
 function lerp(a,b,t){return a+(b-a)*t}
+
+// ═══ 핑퐁 클럭 동기화 ═══
+// 서버까지 왕복(clockPing)을 여러 번 재서 '가장 빠른 왕복'의 오프셋만 채택한다.
+// 편도지연이 최소인 표본이라 오프셋 편향이 거의 없어, 두 폰이 같은 서버시계를 잡는다.
+function _doClockPing(sock){
+  if(!sock||!sock.connected)return;
+  const t0=Date.now();
+  let settled=false;
+  const to=setTimeout(()=>{settled=true;},2500);
+  try{
+    sock.emit('clockPing',t0,(res)=>{
+      if(settled)return;
+      clearTimeout(to);
+      const t1=Date.now();
+      const rtt=t1-t0;
+      if(res&&typeof res.s==='number'&&Number.isFinite(res.s)&&rtt<pingPongMinRtt){
+        pingPongMinRtt=rtt;
+        pingPongOffsetMs=res.s+rtt/2-t1; // 최소RTT 표본의 오프셋(서버시각-로컬시각) 채택
+      }
+    });
+  }catch(e){/* ignore */}
+}
+function startClockSync(sock){
+  stopClockSync();
+  pingPongMinRtt=Infinity;
+  pingPongOffsetMs=null;
+  clockSyncBurst=0;
+  _doClockPing(sock);
+  // 초반 집중 왕복(250ms×16≈4초)으로 최소RTT 빠르게 확보 → 이후 3초마다 유지
+  clockSyncTimerId=window.setInterval(()=>{
+    clockSyncBurst+=1;
+    _doClockPing(sock);
+    if(clockSyncBurst>=16){
+      stopClockSync();
+      clockSyncTimerId=window.setInterval(()=>_doClockPing(sock),3000);
+    }
+  },250);
+}
+function stopClockSync(){
+  if(clockSyncTimerId){
+    clearInterval(clockSyncTimerId);
+    clockSyncTimerId=0;
+  }
+}
 
 // ═══ UPDATE ═══
 /**
@@ -1548,9 +1598,14 @@ if(serverRaceOpt){
       const n=Number(rawSn);
       if(Number.isFinite(n)&&n>0)serverNowMs=n;
     }
-    if(Number.isFinite(serverNowMs) && firstCd){
-      // 첫 카운트다운 이벤트에만 오프셋 확정 → 이벤트마다 재계산으로 인한 숫자 튐(지터) 제거
-      serverClockOffsetMs=serverNowMs-Date.now();
+    if(firstCd){
+      // 오프셋 확정은 첫 카운트다운에만 → 이벤트마다 재계산 지터 제거.
+      // 핑퐁(왕복 최소RTT) 측정값이 있으면 우선 사용 — 편도지연 편향이 없어 두 폰이 같은 서버시계를 잡는다.
+      if(pingPongOffsetMs!=null){
+        serverClockOffsetMs=pingPongOffsetMs;
+      }else if(Number.isFinite(serverNowMs)){
+        serverClockOffsetMs=serverNowMs-Date.now(); // 폴백: 핑퐁 미완 시 단방향 근사
+      }
     }
     const rawSa=d&&Object.prototype.hasOwnProperty.call(d,'startAt')?d.startAt:undefined;
     let startMs=NaN;
@@ -1680,6 +1735,8 @@ if(serverRaceOpt){
     applyPeerTapVisual(foot);
     console.log('[raceV3] peerTap applied', foot, 'forcedMovingTimer=', CPU.forcedMovingTimer);
   };
+  // 대전 진입 즉시 서버 시계 왕복 측정 시작 — 카운트다운 전에 최소RTT 오프셋 확보
+  startClockSync(sock);
   sock.on('race-matched',onRaceMatched);
   sock.on('countdown',onCountdown);
   sock.on('race-start',onRaceStart);
@@ -1817,6 +1874,9 @@ if(EMBED_APP&&!serverRaceOpt){
       }
       serverCdStartAt=null;
       serverClockOffsetMs=0;
+      stopClockSync();
+      pingPongOffsetMs=null;
+      pingPongMinRtt=Infinity;
       _cdGoRecoverAcc=0;
       lastServerRaceIoAt=0;
       lastRaceTickRecvAt=0;
