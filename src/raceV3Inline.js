@@ -1519,8 +1519,9 @@ if(serverRaceOpt){
       countdownWallMsIntervalId=0;
     }
     ensureAudio();
+    const firstCd = state !== 'countdown';
     state='countdown';
-    serverClockOffsetMs=0;
+    if (firstCd) serverClockOffsetMs = 0;
     const rawC=d&&Object.prototype.hasOwnProperty.call(d,'count')?d.count:3;
     const cNum=typeof rawC==='number'?rawC:Number(rawC);
     const c=Number.isFinite(cNum)?cNum:3;
@@ -1535,7 +1536,8 @@ if(serverRaceOpt){
       const n=Number(rawSn);
       if(Number.isFinite(n)&&n>0)serverNowMs=n;
     }
-    if(Number.isFinite(serverNowMs)){
+    if(Number.isFinite(serverNowMs) && firstCd){
+      // 첫 카운트다운 이벤트에만 오프셋 확정 → 이벤트마다 재계산으로 인한 숫자 튐(지터) 제거
       serverClockOffsetMs=serverNowMs-Date.now();
     }
     const rawSa=d&&Object.prototype.hasOwnProperty.call(d,'startAt')?d.startAt:undefined;
