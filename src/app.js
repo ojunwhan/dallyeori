@@ -699,22 +699,9 @@ function boot() {
     console.log('[app] boot ensureSocket result:', !!bootSock, 'connected:', bootSock?.connected);
     flushPendingRematchAfterLogin();
   } else {
-    console.log('[dallyeori] app.js boot → 게스트 로비 (둘러보기)');
-    appState.isGuest = true;
-    // 게스트도 대전 체험이 되도록 하트 시드
-    if (typeof appState.hearts !== 'number' || appState.hearts <= 0) appState.hearts = 50;
-    // 게스트가 고른 오리는 localStorage에만 남는다(가입 시 승계 전까지)
-    try {
-      const gd = localStorage.getItem('dallyeori_guest_duck');
-      if (gd) {
-        appState.selectedDuckId = gd;
-        if (!Array.isArray(appState.ownedDuckIds)) appState.ownedDuckIds = [];
-        if (!appState.ownedDuckIds.includes(gd)) appState.ownedDuckIds.push(gd);
-      }
-    } catch {
-      /* localStorage 접근 불가(프라이빗 모드 등) — 무시 */
-    }
-    navigate('lobby', undefined, { replaceHistory: true });
+    // 게스트 로비 롤백(8/17): 미로그인은 로그인 화면으로. 게스트↔로그인 경계 불안정으로 보류.
+    console.log('[dallyeori] app.js boot → splash');
+    navigate('splash', undefined, { replaceHistory: true });
   }
 }
 
