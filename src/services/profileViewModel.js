@@ -6,6 +6,7 @@ import { DUCKS_NINE } from '../constants.js';
 import { getBalance } from './hearts.js';
 import { getUserRecord, patchUserRecord } from './db.js';
 import { resolveMediaUrl } from './auth.js';
+import { postProfile } from './profileApi.js';
 
 /** @typedef {ReturnType<typeof buildProfileViewModel>} ProfileViewModel */
 
@@ -75,6 +76,15 @@ export function persistLanguage(state, language) {
   if (!uid) return;
   state.language = language;
   patchUserRecord(uid, { language });
+  // 서버에도 반영 — 채팅 상대가 내 최신 언어로 번역받도록
+  void postProfile({
+    nickname: state.nickname || state.user?.displayName || '플레이어',
+    language,
+    selectedDuckId: state.selectedDuckId || 'bori',
+    photoURL: state.profilePhotoURL || '',
+  }).catch(() => {
+    /* 서버 저장 실패는 조용히 무시 — 로컬은 이미 반영됨 */
+  });
 }
 
 /**
