@@ -4,6 +4,7 @@
 
 import { getConversationList } from '../services/chat.js';
 import { getMockUser } from '../services/mockUsers.js';
+import { fetchPublicProfileV1 } from '../services/profileApi.js';
 import { resolveMediaUrl } from '../services/auth.js';
 import { openAvatarLightbox } from '../components/avatarLightbox.js';
 
@@ -264,8 +265,17 @@ export function mountMessages(root, api) {
       top.className = 'messages-peer-line';
       const nn = document.createElement('span');
       nn.className = 'messages-nick';
-      nn.textContent = u?.nickname ?? row.peerId;
+      nn.textContent = row.nickname || u?.nickname || row.peerId;
       top.appendChild(nn);
+      // 서버 프로필로 실명·사진 갱신 (mockUser·UID 노출 보완)
+      void fetchPublicProfileV1(row.peerId).then((pr) => {
+        if (!pr.ok || !pr.profile) return;
+        const sn = String(pr.profile.nickname || '').trim();
+        if (sn) {
+          nn.textContent = sn;
+          if (av.className === 'messages-av') av.textContent = sn.slice(0, 1);
+        }
+      });
       if (row.unread > 0) {
         const ub = document.createElement('span');
         ub.className = 'messages-unread';
