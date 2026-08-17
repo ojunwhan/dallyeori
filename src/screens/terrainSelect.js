@@ -1,12 +1,15 @@
 /**
  * 경기장(지형) 선택 — 매칭 전 단계
+ * MVP: 일반만 활성, 나머지는 Coming Soon (추후 업데이트로 공개)
  */
 
+import { showAppToast } from '../services/toast.js';
+
 const OPTIONS = [
-  { id: 'normal', label: '일반', stars: '⭐', desc: '일반 트랙' },
-  { id: 'ice', label: '얼음', stars: '⭐⭐', desc: '저마찰 · 스핀' },
-  { id: 'cliff', label: '벼랑', stars: '⭐⭐⭐', desc: '좁은 길 · 추락' },
-  { id: 'iceCliff', label: '얼음벼랑', stars: '⭐⭐⭐⭐', desc: '얼음 + 절벽' },
+  { id: 'normal', label: '일반', stars: '⭐', desc: '일반 트랙', available: true },
+  { id: 'ice', label: '얼음', stars: '⭐⭐', desc: '저마찰 · 스핀', available: false },
+  { id: 'cliff', label: '벼랑', stars: '⭐⭐⭐', desc: '좁은 길 · 추락', available: false },
+  { id: 'iceCliff', label: '얼음벼랑', stars: '⭐⭐⭐⭐', desc: '얼음 + 절벽', available: false },
 ];
 
 /**
@@ -26,7 +29,7 @@ export function mountTerrainSelect(root, api) {
   const hint = document.createElement('p');
   hint.className = 'app-muted';
   hint.style.marginBottom = '12px';
-  hint.textContent = '지형에 따라 미끄러짐·벼랑 추락이 달라져요.';
+  hint.textContent = '지금은 일반 경기장 · 얼음·벼랑은 곧 공개돼요!';
 
   const grid = document.createElement('div');
   grid.className = 'terrain-select-grid';
@@ -34,16 +37,23 @@ export function mountTerrainSelect(root, api) {
   for (const opt of OPTIONS) {
     const card = document.createElement('button');
     card.type = 'button';
-    card.className = 'app-box terrain-select-card';
+    card.className = 'app-box terrain-select-card' + (opt.available ? '' : ' terrain-select-card--soon');
     card.innerHTML = `
+      ${opt.available ? '' : '<span class="terrain-soon-badge">COMING SOON</span>'}
       <div class="terrain-card-stars">${opt.stars}</div>
       <div class="terrain-card-label"><strong>${opt.label}</strong></div>
       <div class="terrain-card-desc app-muted">${opt.desc}</div>
     `;
-    card.addEventListener('click', () => {
-      api.state.terrain = opt.id;
-      api.navigate('matching');
-    });
+    if (opt.available) {
+      card.addEventListener('click', () => {
+        api.state.terrain = opt.id;
+        api.navigate('matching');
+      });
+    } else {
+      card.addEventListener('click', () => {
+        showAppToast('곧 만나요! 준비 중인 경기장이에요 🚧');
+      });
+    }
     grid.appendChild(card);
   }
 
