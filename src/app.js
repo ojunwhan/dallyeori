@@ -55,6 +55,19 @@ let raceV3Unmount = null;
 /** @type {(() => void) | null} */
 let screenUnmount = null;
 
+// PWA 홈화면 설치 프롬프트 캡처 (로비 설치 버튼에서 사용)
+if (typeof window !== 'undefined') {
+  window.__dallyeoriInstallPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    window.__dallyeoriInstallPrompt = e;
+    window.dispatchEvent(new Event('dallyeori-can-install'));
+  });
+  window.addEventListener('appinstalled', () => {
+    window.__dallyeoriInstallPrompt = null;
+  });
+}
+
 /** @type {{ screen: string, user: object | null, nickname: string, language: string, translateTone: 'casual'|'formal', profilePhotoURL: string, profileSetupComplete: boolean, wins: number, losses: number, draws: number, hearts: number, selectedDuckId: string | null, ownedDuckIds: string[], lastRaceResult: object | null, lastOpponent: object | null, terrain: string, navTab: string, qrGuestOneShot: boolean, isGuest: boolean, rematchFromRacePending: boolean, _matchingTimer: ReturnType<typeof setTimeout> | null, _matchingUiTimer: ReturnType<typeof setTimeout> | null, _matchingCancel: (() => void) | null, _chatPeerId: string }} */
 export const appState = {
   screen: 'splash',

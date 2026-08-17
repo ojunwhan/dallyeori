@@ -3,7 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#000000" />
+  <meta name="theme-color" content="#3cc4ff" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="달려오리" />
   <title>달려오리 DALLYEORI</title>
   <!-- build-marker: 2026-03-31 결과창 한판더 제거·경기장 rematch 전용 — 페이지 소스 보기로 이 줄 있는지 확인 -->
   <!-- CSS는 모듈 import 금지 — 동일 폴더의 실제 파일만 링크 -->
@@ -149,6 +154,13 @@
         showFallbackOverlay();
       }, 900);
     })();
+  </script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').catch(function () {});
+      });
+    }
   </script>
   <script type="module" src="./app.js"></script>
 </body>

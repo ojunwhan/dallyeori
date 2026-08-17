@@ -746,6 +746,25 @@
   padding-right: 2px;
 }
 
+/* 홈화면 설치 버튼 */
+.lobby-install-btn {
+  display: block;
+  width: 100%;
+  margin: 10px 0 4px;
+  padding: 12px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #3cc4ff, #2b9be0);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 3px 12px rgba(43, 155, 224, 0.32);
+}
+.lobby-install-btn:active {
+  transform: translateY(1px);
+}
+
 .lobby-main {
   flex: 1;
   display: flex;

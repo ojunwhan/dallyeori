@@ -39,6 +39,44 @@ function guideGuestToSignup(api, msg) {
   api.navigate('splash');
 }
 
+function isIOSDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent || '');
+}
+function isStandaloneMode() {
+  return (
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    window.navigator?.standalone === true
+  );
+}
+
+/** 홈화면 설치 버튼 — 설치 가능한 환경에서만 반환 */
+function createLobbyInstallButton(api) {
+  if (isStandaloneMode()) return null; // 이미 설치됨
+  const canPrompt = !!window.__dallyeoriInstallPrompt;
+  const ios = isIOSDevice();
+  if (!canPrompt && !ios) return null; // 설치 불가 환경(데스크톱 크롬 일부 등)
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'lobby-install-btn';
+  btn.textContent = '📲 홈 화면에 앱 설치';
+  btn.addEventListener('click', async () => {
+    const p = window.__dallyeoriInstallPrompt;
+    if (p && typeof p.prompt === 'function') {
+      p.prompt();
+      try {
+        await p.userChoice;
+      } catch {
+        /* 사용자 취소 — 무시 */
+      }
+      window.__dallyeoriInstallPrompt = null;
+      btn.remove();
+    } else if (ios) {
+      showAppToast('사파리 하단 공유 버튼 → "홈 화면에 추가"를 누르면 설치돼요');
+    }
+  });
+  return btn;
+}
+
 /**
  * 상단: 프로필 사진 + 닉네임 + 하트 — 탭 시 프로필
  * @param {{ navigate: Function, state: object }} api
@@ -327,6 +365,15 @@ export function mountLobby(root, api) {
   wrap.appendChild(main);
   wrap.appendChild(battle);
   wrap.appendChild(bottom);
+
+  // 홈화면 설치 버튼 — mount 시점 또는 설치가능 이벤트 도착 시 하단메뉴 위에 삽입
+  function tryAddInstall() {
+    if (wrap.querySelector('.lobby-install-btn')) return;
+    const b = createLobbyInstallButton(api);
+    if (b) wrap.insertBefore(b, bottom);
+  }
+  tryAddInstall();
+  window.addEventListener('dallyeori-can-install', tryAddInstall, { once: true });
 
   root.appendChild(wrap);
 
