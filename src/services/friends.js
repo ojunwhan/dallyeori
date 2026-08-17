@@ -3,6 +3,7 @@
  */
 
 import { getMockUser, searchMockUsersByNickname, shouldAutoRejectFriendRequest } from './mockUsers.js';
+import { fetchFriendListV1 } from './profileApi.js';
 import { fetchProfileByUid, fetchSocialNotificationsV1, markSocialNotificationsReadV1 } from './profileApi.js';
 import { showAppToast } from './toast.js';
 
@@ -578,7 +579,41 @@ export function isFriend(myUid, peerId) {
  * @param {string} myUid
  * @returns {{ id: string, nickname: string, duckId: string, online: boolean, addedAt: number, mutualHeart?: boolean }[]}
  */
+/** 서버 친구 목록 캐시 (uid별) */
+let _friendCache = null;
+
+/**
+ * 서버에서 친구 목록을 받아 캐시·localStorage에 저장. 친구 탭 진입 시 호출.
+ * @param {string} myUid
+ * @returns {Promise<boolean>} 성공 여부
+ */
+export async function refreshFriendListFromServer(myUid) {
+  if (!myUid) return false;
+  const r = await fetchFriendListV1();
+  if (!r.ok) return false;
+  const mapped = r.users.map((u) => ({
+    id: String(u.uid),
+    nickname: u.nickname && String(u.nickname).trim() ? String(u.nickname).trim() : String(u.uid),
+    duckId: (u.selectedDuckId && String(u.selectedDuckId).trim()) || 'bori',
+    online: Boolean(u.isOnline),
+    photoURL: typeof u.profilePhotoURL === 'string' ? u.profilePhotoURL : '',
+    addedAt: Date.now(),
+  }));
+  _friendCache = { uid: myUid, list: mapped };
+  // 오프라인 폴백용 localStorage 갱신
+  writeFriendList(
+    myUid,
+    mapped.map((f) => ({ peerId: f.id, nickname: f.nickname, duckId: f.duckId, photoURL: f.photoURL, addedAt: f.addedAt })),
+  );
+  return true;
+}
+
+/**
+ * 친구 목록. 서버 캐시가 있으면 그것(온라인 실값), 없으면 localStorage 폴백(온라인=false).
+ * @param {string} myUid
+ */
 export function getFriendList(myUid) {
+  if (_friendCache && _friendCache.uid === myUid) return _friendCache.list;
   const list = readFriendList(myUid);
   return list.map((x) => {
     const u = getMockUser(x.peerId);
@@ -587,7 +622,7 @@ export function getFriendList(myUid) {
       id: x.peerId,
       nickname: storedNick || u?.nickname || x.peerId,
       duckId: (x.duckId && String(x.duckId).trim()) || u?.duckId || 'bori',
-      online: Math.random() < 0.35,
+      online: false,
       addedAt: x.addedAt,
     };
   });

@@ -285,6 +285,26 @@ export async function fetchRecentOpponentsV1() {
 }
 
 /**
+ * GET /api/v1/friends/list — 내 친구 목록(양방향, 온라인 상태 포함)
+ * @returns {Promise<{ ok: true, users: object[] } | { ok: false, users: [] }>}
+ */
+export async function fetchFriendListV1() {
+  const t = getToken();
+  if (!t) return { ok: false, users: [] };
+  try {
+    const res = await fetch(resolvePublicApiUrl('/api/v1/friends/list'), {
+      headers: { Authorization: `Bearer ${t}` },
+    });
+    if (!res.ok) return { ok: false, users: [] };
+    const data = await res.json();
+    const users = Array.isArray(data) ? data : [];
+    return { ok: true, users };
+  } catch {
+    return { ok: false, users: [] };
+  }
+}
+
+/**
  * GET /api/v1/notifications
  * @returns {Promise<{ ok: true, pendingReceived: object[], unreadResults: object[] } | { ok: false, pendingReceived: [], unreadResults: [] }>}
  */

@@ -10,6 +10,7 @@ import {
   cancelSentRequest,
   formatFriendRejectLine,
   getFriendList,
+  refreshFriendListFromServer,
   getFriendRejectNotifications,
   getPendingRequests,
   getSentRequests,
@@ -1168,6 +1169,12 @@ export function mountFriends(root, api) {
     panelFriends.hidden = which !== 'friends';
     panelFind.hidden = which !== 'find';
     panelReq.hidden = which !== 'req';
+    if (which === 'friends') {
+      renderFriends(); // 캐시/폴백 즉시 표시
+      void refreshFriendListFromServer(uid).then((ok) => {
+        if (ok) renderFriends(); // 서버 최신(온라인 실값)으로 갱신
+      });
+    }
     if (which === 'find') {
       if (getFindTabNickSearchQuery()) void runFindTabNicknameSearch();
       if (hasDiscoveryFilter()) void runDiscoverySearch(true);
@@ -1183,6 +1190,10 @@ export function mountFriends(root, api) {
   renderFriends();
   renderReq();
   if (uid) {
+    // 진입 즉시 서버에서 친구 목록·온라인 상태 동기화
+    void refreshFriendListFromServer(uid).then((ok) => {
+      if (ok) renderFriends();
+    });
     queueMicrotask(() => void enrichStaleFriendMeta(uid));
   }
 }
