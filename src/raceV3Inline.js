@@ -1368,16 +1368,8 @@ function syncRace3D() {
             showAppToast('상대방 정보가 없습니다.');
             return;
           }
-          if (appSt && appSt.qrGuestOneShot) {
-            const roomId =
-              serverRaceOpt && typeof serverRaceOpt.roomId === 'string' ? serverRaceOpt.roomId.trim() : '';
-            if (!roomId) {
-              showAppToast('방 정보가 없어 한판더를 이어갈 수 없어요.');
-              return;
-            }
-            showQrGuestRematchLoginModal({ targetUid, roomId });
-            return;
-          }
+          // 게스트도 같은 상대와 즉석 재대전 가능(무료) — 로그인 모달로 빠지지 않고 바로 요청한다.
+          // (친구 등록·전적 저장·다른 상대 매칭은 여전히 가입 필요.)
           const sock = getRaceIoSocket() || serverRaceOpt?.socket;
           if (!sock || !sock.connected) {
             showAppToast('상대방이 떠났습니다.');
